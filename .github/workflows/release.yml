@@ -11,6 +11,8 @@ permissions:
 jobs:
   build:
     strategy:
+      # Chaque plateforme va au bout et montre sa propre erreur (sinon l'échec de l'une annule l'autre).
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest # arm64
