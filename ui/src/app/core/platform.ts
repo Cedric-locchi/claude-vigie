@@ -22,9 +22,9 @@ export const CLIENT_OS = new InjectionToken<ClientOs>('CLIENT_OS', { providedIn:
 
 /**
  * Raccourci « modificateur + touche » : Cmd sur mac, Ctrl ailleurs (hors mac, Meta = touche Windows/Super, prise par l'OS).
- * Rien d'autre d'enfoncé, pour ne pas voler Ctrl+Shift+F & co.
+ * Rien d'autre d'enfoncé (Maj seulement si `shift`), pour ne pas voler Ctrl+Shift+F & co.
  */
-export function isShortcut(e: KeyboardEvent, key: string, mac: boolean): boolean {
+export function isShortcut(e: KeyboardEvent, key: string, mac: boolean, shift = false): boolean {
   const mod = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
-  return mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === key.toLowerCase();
+  return mod && !e.altKey && e.shiftKey === shift && e.key.toLowerCase() === key.toLowerCase();
 }

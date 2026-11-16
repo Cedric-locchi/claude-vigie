@@ -5,9 +5,9 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { listProjectFiles, readProjectFile, writeProjectFile } from './files.mjs';
+import { listProjectFiles, readProjectFile, searchProjectFiles, writeProjectFile } from './files.mjs';
 import { readGitDiff } from './git.mjs';
-import { FileBody, ProjectFiles } from '../contract/index.mjs';
+import { FileBody, ProjectFiles, SearchResults } from '../contract/index.mjs';
 
 const conforme = (S, v) => { const j = JSON.parse(JSON.stringify(v)); assert.deepStrictEqual(S.parse(j), j); };
 const sha = (b) => createHash('sha256').update(b).digest('hex');
@@ -100,4 +100,77 @@ test('writeProjectFile : fichier non modifié écrit, 412 laisse intact, 403 sou
   const f = await readProjectFile(path.join(home, '.claude'), 'settings.json');
   await assert.rejects(writeProjectFile(path.join(home, '.claude'), 'settings.json', '{"x":1}\n', f.hash, home), (e) => e.status === 403 && /lecture seule/.test(e.message));
   assert.equal(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'), '{}\n');
+});
+
+const paths = (r) => r.files.map((f) => f.path).sort();
+
+test('searchProjectFiles (git) : conforme ; ignorés (.env, dist/) jamais lus ; chemins relatifs à la racine', async () => {
+  const dir = repo();
+  put(dir, 'sous/c.txt', 'rien\nun v1 ici\n');
+  const r = await searchProjectFiles(path.join(dir, 'sous'), 'v1');
+  conforme(SearchResults, r);
+  assert.equal(r.truncated, false);
+  assert.deepEqual(paths(r), ['non-suivi.txt', 'sous/b.txt', 'sous/c.txt', 'suivi.txt']);
+  assert.deepEqual(r.files.find((f) => f.path === 'sous/c.txt').matches, [{ line: 2, col: 4, text: 'un v1 ici', at: 3 }]);
+  assert.deepEqual((await searchProjectFiles(dir, 'FAUX')).files, []);
+});
+
+test('searchProjectFiles (hors git) : conforme ; node_modules et lien sautés', async () => {
+  const dir = fs.realpathSync(tmp('vigie-search-'));
+  put(dir, 'a.txt', 'aiguille\n'); put(dir, 'node_modules/x/i.js', 'aiguille\n');
+  fs.symlinkSync(path.join(dir, 'a.txt'), path.join(dir, 'lien.txt'));
+  const r = await searchProjectFiles(dir, 'aiguille');
+  conforme(SearchResults, r);
+  assert.deepEqual(paths(r), ['a.txt']);
+});
+
+test('searchProjectFiles : casse, texte littéral, CRLF, extrait d’une ligne longue', async () => {
+  const dir = fs.realpathSync(tmp('vigie-search-'));
+  put(dir, 'casse.txt', 'Bonjour\n');
+  put(dir, 'lit.txt', 'axb\nf(x)\n');
+  put(dir, 'crlf.txt', 'un\r\ndeux\r\n  trois\r\n');
+  const long = 'é'.repeat(500) + 'CIBLE' + 'z'.repeat(500);
+  put(dir, 'long.txt', long);
+  assert.deepEqual(paths(await searchProjectFiles(dir, 'bonjour')), ['casse.txt']);
+  assert.deepEqual(paths(await searchProjectFiles(dir, 'bonjour', { matchCase: true })), []);
+  assert.deepEqual(paths(await searchProjectFiles(dir, 'Bonjour', { matchCase: true })), ['casse.txt']);
+  assert.deepEqual(paths(await searchProjectFiles(dir, 'a.b')), []);
+  assert.deepEqual((await searchProjectFiles(dir, 'f(')).files[0].matches, [{ line: 2, col: 1, text: 'f(x)', at: 0 }]);
+  assert.deepEqual((await searchProjectFiles(dir, 'trois')).files[0].matches, [{ line: 3, col: 3, text: '  trois', at: 2 }]);
+  const [m] = (await searchProjectFiles(dir, 'cible')).files[0].matches;
+  assert.equal(m.col, 501);
+  assert.ok(m.text.length <= 200);
+  assert.equal(m.text.slice(m.at, m.at + 5), 'CIBLE');
+});
+
+test('searchProjectFiles : binaire, > 100 Ko, non UTF-8 sautés ; plafond ; signal annulé', async () => {
+  const dir = fs.realpathSync(tmp('vigie-search-'));
+  put(dir, 'bin.dat', Buffer.from('mot\0mot'));
+  put(dir, 'gros.txt', 'mot\n'.repeat(30_000));
+  put(dir, 'latin1.txt', Buffer.from('mot \xe9t\xe9\n', 'latin1'));
+  put(dir, 'ok.txt', 'mot\nmot\nmot\nmot\nmot\n');
+  const r = await searchProjectFiles(dir, 'mot');
+  assert.deepEqual(paths(r), ['ok.txt']);
+  assert.equal(r.files[0].matches.length, 5);
+  const cut = await searchProjectFiles(dir, 'mot', { max: 3 });
+  assert.equal(cut.truncated, true);
+  assert.equal(cut.files.flatMap((f) => f.matches).length, 3);
+  assert.deepEqual((await searchProjectFiles(dir, 'mot', { signal: AbortSignal.abort() })).files, []);
+});
+
+test('searchProjectFiles : dossier parent devenu lien vers l’extérieur sauté ; BOM gardé comme /files/read', async () => {
+  const dir = repo();
+  put(dir, 'a/b.txt', 'rien\n');
+  execFileSync('git', ['add', 'a/b.txt'], { cwd: dir });
+  const outside = fs.realpathSync(tmp('vigie-dehors-'));
+  put(outside, 'b.txt', 'aiguille\n');
+  fs.rmSync(path.join(dir, 'a'), { recursive: true });
+  fs.symlinkSync(outside, path.join(dir, 'a'));
+  assert.deepEqual((await searchProjectFiles(dir, 'aiguille')).files, []);
+
+  put(dir, 'bom.txt', '\uFEFFcible\n');
+  const [m] = (await searchProjectFiles(dir, 'cible')).files.find((f) => f.path === 'bom.txt').matches;
+  const { content } = await readProjectFile(dir, 'bom.txt');
+  assert.equal(m.col, 2);
+  assert.equal(content.split('\n')[0].slice(m.col - 1, m.col + 4), 'cible');
 });

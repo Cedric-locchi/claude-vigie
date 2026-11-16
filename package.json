@@ -1,6 +1,6 @@
 {
   "name": "vigie",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Monitoring des sessions Claude Code",
   "scripts": {
     "start": "node daemon/server.mjs",

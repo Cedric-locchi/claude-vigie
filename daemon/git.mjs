@@ -8,7 +8,7 @@ import path from 'node:path';
 
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'; // dépôt sans commit : on compare à l'arbre vide
 const MAX_FILES = 200;
-const MAX_PATCH = 100_000;
+export const MAX_PATCH = 100_000;
 
 /** git sans prompt ni pager ; `ok` : codes de sortie attendus (diff --no-index rend 1 quand ça diffère). */
 export function git(cwd, args, ok = [0]) {

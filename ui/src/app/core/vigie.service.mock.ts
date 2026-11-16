@@ -1,6 +1,6 @@
 import { Provider, computed, signal } from '@angular/core';
 import { vi } from 'vitest';
-import { Agent, ClaudeConfig, MiseTasks, Project, ProjectFiles, SessionCost, SessionSummary, Settings, Snapshot, Terminal, Usage, UsageRow, UsageRows, XcodeProject, XcodeTargets } from './models';
+import { Agent, ClaudeConfig, MiseTasks, Project, ProjectFiles, SearchResults, SessionCost, SessionSummary, Settings, Snapshot, Terminal, Usage, UsageRow, UsageRows, XcodeProject, XcodeTargets } from './models';
 import { VigieService } from './vigie.service';
 
 export function aSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -68,6 +68,18 @@ export function aTerminal(overrides: Partial<Terminal> = {}): Terminal {
 
 export function aProjectFiles(overrides: Partial<ProjectFiles> = {}): ProjectFiles {
   return { root: '/dev/meeplebox', repo: true, files: ['src/a.ts', '.env', 'README.md'], collapsed: ['node_modules'], truncated: false, ...overrides };
+}
+
+/** Réponse de GET /api/sessions/:id/files/search?q=export : deux lignes dans un fichier, une dans un autre. */
+export function aSearchResults(overrides: Partial<SearchResults> = {}): SearchResults {
+  return {
+    files: [
+      { path: 'src/a.ts', matches: [{ line: 1, col: 1, text: 'export const a = 1;', at: 0 }, { line: 3, col: 3, text: '  export const b = 2;', at: 2 }] },
+      { path: 'README.md', matches: [{ line: 2, col: 5, text: 'On export tout.', at: 3 }] },
+    ],
+    truncated: false,
+    ...overrides,
+  };
 }
 
 /** Réponse de GET /api/sessions/:id/mise : une tâche du projet, une globale (l'UI filtre). */
@@ -164,6 +176,7 @@ export function provideVigieServiceMock(overrides: Partial<VigieService> = {}): 
       files: vi.fn(async () => aProjectFiles()),
       readProjectFile: vi.fn(async (_id: string, path: string) => ({ path, content: 'export const a = 1;\n', hash: 'a'.repeat(64) })),
       writeProjectFile: vi.fn(async () => ({ ok: true })),
+      searchFiles: vi.fn(async () => aSearchResults()),
       closeTerminal: vi.fn(async () => ({ ok: true })),
       sendKeys: vi.fn(async () => ({ ok: true })),
       deleteSession: vi.fn(async () => ({ ok: true })),

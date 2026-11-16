@@ -1,5 +1,5 @@
 import * as C from '@vigie/contract';
-import { aConfig, aMiseTasks, aProjectFiles, PROJECTS, aSession, aSessionCost, aSettings, aSnapshot, aTerminal, aUsageRows, anAgent, anUsage, anXcodeProject, anXcodeTargets } from './vigie.service.mock';
+import { aConfig, aMiseTasks, aProjectFiles, aSearchResults, PROJECTS, aSession, aSessionCost, aSettings, aSnapshot, aTerminal, aUsageRows, anAgent, anUsage, anXcodeProject, anXcodeTargets } from './vigie.service.mock';
 
 // Les fabriques de test suivent le contrat : un mock qui diverge du daemon ferait passer des tests à tort.
 describe('mocks du daemon', () => {
@@ -19,5 +19,6 @@ describe('mocks du daemon', () => {
     expect(() => C.Settings.parse(aSettings({ alerts: { dailyCost: 20, windowPct: 0.8 } }))).not.toThrow();
     expect(() => C.SessionCost.parse(aSessionCost())).not.toThrow();
     expect(() => C.Projects.parse(PROJECTS)).not.toThrow();
+    expect(() => C.SearchResults.parse(aSearchResults({ truncated: true }))).not.toThrow();
   });
 });

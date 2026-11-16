@@ -21,5 +21,7 @@ describe('platform', () => {
     expect(isShortcut(key('f', { metaKey: true }), 'f', false)).toBe(false); // touche Windows/Super
     expect(isShortcut(key('f', { ctrlKey: true, shiftKey: true }), 'f', false)).toBe(false);
     expect(isShortcut(key('Enter', { ctrlKey: true }), 'Enter', false)).toBe(true);
+    expect(isShortcut(key('F', { ctrlKey: true, shiftKey: true }), 'f', false, true)).toBe(true); // Maj demandée
+    expect(isShortcut(key('f', { metaKey: true }), 'f', true, true)).toBe(false);
   });
 });
