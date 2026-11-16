@@ -267,6 +267,12 @@ export const FileBody = z.object({ path: str, content: str, hash: str });
 // `collapsed` : dossiers listés sans leur contenu (ignorés par git, node_modules, .git), sans `/` final ; `truncated` au-delà de 20 000 entrées.
 // Lecture et écriture d'un fichier : GET …/files/read?path=… (FileBody) et POST …/files/write (WriteBody).
 export const ProjectFiles = z.object({ root: str, repo: bool, files: z.array(str), collapsed: z.array(str), truncated: bool });
+// Recherche texte (GET …/files/search) : une entrée par ligne trouvée (première occurrence de la ligne). line/col à partir de 1,
+// col en unités UTF-16 sur la ligne d'origine. text : extrait ≤ 200 caractères autour de la colonne ; at : position du texte
+// trouvé dans text. truncated : arrêt à 2 000 lignes ou liste de fichiers coupée.
+export const SearchMatch = z.object({ line: num, col: num, text: str, at: num });
+export const SearchFile = z.object({ path: str, matches: z.array(SearchMatch) });
+export const SearchResults = z.object({ files: z.array(SearchFile), truncated: bool });
 
 // ── Tâches mise (GET /api/sessions/:id/mise) ──────────────────────────────
 // `source` et `file` : relatifs au cwd s'ils sont dedans, sinon `~/…`, sinon absolus ; `depends` / `run` en texte.
@@ -325,6 +331,11 @@ export const HookEvent = z.object({
 }, body);
 export const RestoreBody = z.object({ path: text('Indique le fichier à restaurer') }, body);
 export const FileQuery = z.object({ path: text('Indique le fichier') }, body); // GET …/git/file ou …/files/read (paramètre d'URL)
+// GET /api/sessions/:id/files/search?q=…&case=1 (paramètres d'URL). Texte littéral ; insensible à la casse sauf case=1.
+export const SearchQuery = z.object({
+  q: text('Indique le texte à chercher').check(z.minLength(2, 'Au moins 2 caractères'), z.maxLength(200, '200 caractères au plus')),
+  case: z.boolean(),
+}, body);
 // GET /api/usage?days=N (paramètre d'URL, absent = 14) ; 400 = RETENTION_DAYS du daemon.
 export const UsageQuery = z.object({
   days: z.int({ error: 'Nombre de jours invalide' }).check(z.gte(1, 'Entre 1 et 400 jours'), z.lte(400, 'Entre 1 et 400 jours')),

@@ -10,9 +10,9 @@ import crypto from 'node:crypto';
 import pty from 'node-pty';
 import { WebSocketServer } from 'ws';
 // Chemin relatif, pas `@vigie/contract` : la copie des liens de workspace par electron-builder n'est pas garantie.
-import { BranchBody, CommitBody, FileQuery, HookEvent, InputBody, NewSessionBody, PtyMessage, RestoreBody, SettingsBody, TerminalBody, UsageQuery, WriteBody } from '../contract/index.mjs';
+import { BranchBody, CommitBody, FileQuery, HookEvent, InputBody, NewSessionBody, PtyMessage, RestoreBody, SearchQuery, SettingsBody, TerminalBody, UsageQuery, WriteBody } from '../contract/index.mjs';
 import { readClaudeConfig } from './claude-config.mjs';
-import { listProjectFiles, readProjectFile, writeProjectFile } from './files.mjs';
+import { listProjectFiles, readProjectFile, searchProjectFiles, writeProjectFile } from './files.mjs';
 import { commitAll, createBranch, readGitDiff, readWorktreeFile, restoreFile, suggestCommitMessage, writeWorktreeFile } from './git.mjs';
 import { hostOk, staticFile } from './guard.mjs';
 import { readMiseTasks } from './mise.mjs';
@@ -215,6 +215,18 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       const q = valid(FileQuery, { path: url.searchParams.get('path') }, res);
       if (!q) return;
       try { return json(res, 200, await readProjectFile(cwd, q.path)); } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
+    }
+    // Recherche texte : même contrôle d'origine que la lecture (renvoie des extraits de fichiers).
+    if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/files\/search$/))) {
+      if (refused(req, res)) return;
+      const cwd = sessionCwd(r[1], res);
+      if (!cwd) return;
+      const q = valid(SearchQuery, { q: url.searchParams.get('q'), case: url.searchParams.get('case') === '1' }, res);
+      if (!q) return;
+      // Onglet fermé ou nouvelle frappe : la requête est abandonnée, la recherche s'arrête au fichier suivant.
+      const ac = new AbortController();
+      res.on('close', () => ac.abort());
+      try { return json(res, 200, await searchProjectFiles(cwd, q.q, { matchCase: q.case, signal: ac.signal })); } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
     }
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/log$/))) {
       const log = store.sessionLog(r[1], Number(url.searchParams.get('since')) || 0);

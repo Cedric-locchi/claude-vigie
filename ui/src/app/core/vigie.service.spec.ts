@@ -68,6 +68,30 @@ describe('VigieService', () => {
     await expect(done).resolves.toEqual({ ok: true });
   });
 
+  it('recherche : case seulement si vrai, réponse validée, annulation qui coupe la requête', async () => {
+    const service = TestBed.inject(VigieService);
+    const http = TestBed.inject(HttpTestingController);
+    const done = service.searchFiles('s1', 'export', false);
+    const req = http.expectOne((r) => r.url === '/api/sessions/s1/files/search');
+    expect(req.request.params.get('q')).toBe('export');
+    expect(req.request.params.has('case')).toBe(false);
+    req.flush({ files: [{ path: 'a.ts', matches: [{ line: 1, col: 1, text: 'export', at: 0 }] }], truncated: false });
+    await expect(done).resolves.toEqual({ files: [{ path: 'a.ts', matches: [{ line: 1, col: 1, text: 'export', at: 0 }] }], truncated: false });
+
+    const bad = service.searchFiles('s1', 'Ex', true);
+    const req2 = http.expectOne((r) => r.url === '/api/sessions/s1/files/search');
+    expect(req2.request.params.get('case')).toBe('1');
+    req2.flush({ files: 'non' });
+    await expect(bad).rejects.toThrow(OUTDATED);
+
+    const ctrl = new AbortController();
+    const cut = service.searchFiles('s1', 'lent', false, ctrl.signal);
+    const req3 = http.expectOne((r) => r.url === '/api/sessions/s1/files/search');
+    ctrl.abort();
+    expect(req3.cancelled).toBe(true);
+    await expect(cut).rejects.toBeDefined();
+  });
+
   it('réponse rapide : null si la touche part, sinon un message lisible (erreur du daemon ou daemon muet)', async () => {
     expect(await sendReply({ sendKeys: vi.fn(async () => ({ ok: true })) }, 't1', KEYS.allow)).toBeNull();
     expect(await sendReply({ sendKeys: vi.fn(async () => { throw { status: 404, error: { error: 'terminal inconnu' } }; }) }, 't1', KEYS.allow))

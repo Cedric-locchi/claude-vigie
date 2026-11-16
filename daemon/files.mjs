@@ -3,7 +3,7 @@
 // Les gardes de lecture/écriture sont celles de l'onglet Diff (git.checkFile, git.replaceFile) ; seule l'appartenance change.
 import fs from 'node:fs';
 import path from 'node:path';
-import { checkFile, fail, git, repoRoot, replaceFile, sha256 } from './git.mjs';
+import { checkFile, fail, git, MAX_PATCH, repoRoot, replaceFile, sha256 } from './git.mjs';
 
 const MAX_TREE = 20_000;
 // Dossiers repliés hors dépôt : énormes et sans intérêt à parcourir ; listés sans leur contenu.
@@ -75,4 +75,69 @@ export async function readProjectFile(cwd, rel) {
 /** Remplace un fichier du projet (empreinte vérifiée, 412 ; jamais sous `<home>/.claude`, 403). */
 export function writeProjectFile(cwd, rel, content, hash, home) {
   return replaceFile(() => projectFile(cwd, rel), content, hash, home);
+}
+
+const EXCERPT = 200;
+
+/** Lignes de `content` contenant `re` : première occurrence par ligne, extrait centré sur la colonne. */
+function matchLines(content, re) {
+  const out = [];
+  content.split(/\r?\n/).forEach((l, n) => {
+    const m = re.exec(l);
+    if (!m) return;
+    const start = Math.max(0, Math.min(m.index - ((EXCERPT - m[0].length) >> 1), l.length - EXCERPT));
+    out.push({ line: n + 1, col: m.index + 1, text: l.slice(start, start + EXCERPT), at: m.index - start });
+  });
+  return out;
+}
+
+/**
+ * Recherche d'un texte littéral dans les fichiers texte du projet. Dans un dépôt, seulement suivis + non suivis
+ * (jamais les ignorés : pas de .env dans les résultats) ; hors dépôt, tout l'arbre de `listProjectFiles` (node_modules
+ * replié), .env compris, comme dans l'explorateur. Mêmes gardes que checkFile, sautées sans erreur : liens, non ordinaires,
+ * hors de la racine (dossier parent lien), > MAX_PATCH, binaires, non UTF-8, illisibles. `max` : lignes trouvées au plus.
+ * ponytail: 16 lecteurs en parallèle, donc au plafond les fichiers retenus varient d'une recherche à l'autre (le total, lui,
+ * est exact) ; lire par lots ordonnés si un résultat stable compte.
+ * ponytail: Node pur plutôt que `git grep` (même code dans et hors dépôt, pas de parsing de sortie) ; passer à `git grep`
+ * si on mesure plus de 2 s sur un vrai dépôt.
+ */
+export async function searchProjectFiles(cwd, q, { matchCase = false, signal, max = 2000 } = {}) {
+  let root = await repoRoot(cwd), files, truncated = false;
+  if (root) {
+    // Set : un fichier en conflit apparaît une fois par étape d'index.
+    files = [...new Set((await git(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'])).split('\0').filter(Boolean))];
+    if (files.length > MAX_TREE) { files = files.slice(0, MAX_TREE); truncated = true; }
+  } else {
+    ({ root, files, truncated } = await listProjectFiles(cwd));
+  }
+  // Calculé une fois : chaque fichier doit avoir son realpath sous la racine réelle (comme checkFile).
+  const realRoot = await fs.promises.realpath(root);
+  const re = new RegExp(RegExp.escape(q), matchCase ? '' : 'i');
+  const found = new Array(files.length);
+  let next = 0, count = 0;
+  async function worker() {
+    while (next < files.length) {
+      if (signal?.aborted) return;
+      if (count >= max) { truncated = true; return; }
+      const i = next++;
+      try {
+        const full = path.join(root, files[i]);
+        const st = await fs.promises.lstat(full);
+        if (!st.isFile() || st.size > MAX_PATCH) continue;
+        // Un dossier parent devenu lien (a/ → /etc) ferait lire hors du projet malgré le lstat du fichier.
+        const out = path.relative(realRoot, await fs.promises.realpath(full));
+        if (out === '..' || out.startsWith('..' + path.sep) || path.isAbsolute(out)) continue;
+        const buf = await fs.promises.readFile(full);
+        if (buf.subarray(0, 8000).includes(0)) continue; // même heuristique que checkFile
+        const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buf); // comme checkFile : col = celle de /files/read
+        if (!re.test(content)) continue;
+        let matches = matchLines(content, re);
+        if (matches.length > max - count) { matches = matches.slice(0, max - count); truncated = true; }
+        count += matches.length;
+        if (matches.length) found[i] = { path: files[i], matches };
+      } catch { /* fichier disparu, illisible ou non UTF-8 : sauté */ }
+    }
+  }
+  await Promise.all(Array.from({ length: 16 }, worker));
+  return { files: found.filter(Boolean), truncated };
 }

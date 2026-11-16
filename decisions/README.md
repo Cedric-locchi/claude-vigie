@@ -36,6 +36,7 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [028](2026-11-13-028-graphique-heros-consommation.md) | Un graphique principal pour la page Consommation | Acceptée | 2026-11-13 |
 | [029](2026-11-13-029-selecteur-projets.md) | Sélecteur de projet : GET /api/projects remplace /api/dirs | Acceptée | 2026-11-13 |
 | [030](2026-11-13-030-onglet-xcode.md) | Onglet Xcode : frontière de plateforme par l’outil, DerivedData sous ~/.vigie/xcode | Acceptée | 2026-11-13 |
+| [031](2026-11-16-031-arborescence-ui-un-dossier-par-composant.md) | Arborescence de l’UI : un dossier par composant | Acceptée | 2026-11-16 |
 
 ## En attente de ton choix
 

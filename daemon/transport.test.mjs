@@ -46,6 +46,7 @@ function request(server, method, url, { headers = {}, body } = {}) {
       statusCode: 0, headersSent: false,
       writeHead(code) { this.statusCode = code; this.headersSent = true; },
       end(data = '') { resolve({ status: this.statusCode, body: String(data) }); },
+      on() { return this; }, // res.on('close') : la recherche s'annule à la fermeture
     };
     server.emit('request', req, res);
   });
@@ -310,6 +311,26 @@ test('explorateur : arbre conforme, lecture d’un fichier non modifié, écritu
   const busy = await send({ path: 'a.txt', content: 'v3\n', hash: sha256('v2\n') });
   assert.deepEqual([busy.status, JSON.parse(busy.body)], [409, { error: 'Claude travaille dans cette session' }]);
   assert.equal(fs.readFileSync(path.join(proj, 'a.txt'), 'utf8'), 'v2\n');
+});
+
+test('recherche dans l’explorateur : conforme, origine, session inconnue, q invalide, casse', async () => {
+  const { SearchResults } = await import('../contract/index.mjs');
+  const { server, proj } = fixture();
+  fs.writeFileSync(path.join(proj, 'a.txt'), 'Aiguille\n');
+  const get = (url, headers) => request(server, 'GET', url, { headers });
+  const r = await get('/api/sessions/S/files/search?q=aiguille');
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.deepStrictEqual(SearchResults.parse(j), j);
+  assert.deepEqual(j.files.map((f) => f.path), ['a.txt']);
+  assert.deepEqual(JSON.parse((await get('/api/sessions/S/files/search?q=aiguille&case=1')).body).files, []);
+  assert.equal(JSON.parse((await get('/api/sessions/S/files/search?q=Aiguille&case=1')).body).files.length, 1);
+  assert.equal((await get('/api/sessions/S/files/search?q=aiguille', { origin: 'http://evil.com' })).status, 403);
+  assert.equal((await get('/api/sessions/inconnue/files/search?q=aiguille')).status, 404);
+  const none = await get('/api/sessions/S/files/search');
+  assert.deepEqual([none.status, JSON.parse(none.body)], [400, { error: 'Indique le texte à chercher' }]);
+  const one = await get('/api/sessions/S/files/search?q=a');
+  assert.deepEqual([one.status, JSON.parse(one.body)], [400, { error: 'Au moins 2 caractères' }]);
 });
 
 test('/mise : origine étrangère 403, session inconnue 404, réponse conforme ; env sans MISE_YES, hors ligne', async () => {

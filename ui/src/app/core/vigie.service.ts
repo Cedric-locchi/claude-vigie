@@ -2,7 +2,7 @@ import { DOCUMENT, DestroyRef, Injector, Service, Signal, inject, signal } from 
 import { HttpClient, HttpResourceRef, httpResource } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import * as C from '@vigie/contract';
-import { FileBody, ProjectFiles, SessionCost, SessionLog, SessionSummary, Settings, SettingsBody, Snapshot, Terminal, TerminalBody, WriteBody } from './models';
+import { FileBody, ProjectFiles, SearchResults, SessionCost, SessionLog, SessionSummary, Settings, SettingsBody, Snapshot, Terminal, TerminalBody, WriteBody } from './models';
 
 /** Touches envoyées au PTY par les réponses rapides : le terminal reste la seule source d'interaction. */
 /** Discussion sans projet : lancée par Vigie dans ~/.vigie/chat. */
@@ -220,6 +220,19 @@ export class VigieService {
   /** Contenu de n'importe quel fichier texte du projet (ignorés compris), avec son empreinte (à renvoyer à l'écriture). */
   readProjectFile(sessionId: string, path: string): Promise<FileBody> {
     return firstValueFrom(this.http.get(`/api/sessions/${sessionId}/files/read`, { params: { path } })).then(check(C.FileBody));
+  }
+
+  /**
+   * Recherche texte littérale dans les fichiers du projet (insensible à la casse sauf `matchCase`).
+   * `signal` annulé : la requête HTTP est coupée (le daemon arrête alors sa recherche) et la promesse rejetée.
+   */
+  searchFiles(sessionId: string, q: string, matchCase: boolean, signal?: AbortSignal): Promise<SearchResults> {
+    const params: Record<string, string> = matchCase ? { q, case: '1' } : { q };
+    return new Promise<unknown>((resolve, reject) => {
+      if (signal?.aborted) return reject(signal.reason);
+      const sub = this.http.get(`/api/sessions/${sessionId}/files/search`, { params }).subscribe({ next: resolve, error: reject });
+      signal?.addEventListener('abort', () => { sub.unsubscribe(); reject(signal.reason); }, { once: true });
+    }).then(check(C.SearchResults));
   }
 
   /** Écrit un fichier du projet ; refus si Claude travaille (409), si le fichier a changé (412) ou sous ~/.claude (403). */
