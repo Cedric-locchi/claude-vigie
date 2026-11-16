@@ -1,0 +1,57 @@
+# Paquets de l'app sur un tag v* (ex. v0.2.0) : .app zippée (macOS arm64) et .deb (Linux x64), attachés à une GitHub Release.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest # arm64
+            script: dist
+          - os: ubuntu-latest
+            script: dist:linux
+    runs-on: ${{ matrix.os }}
+    env:
+      CI: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: package.json
+          cache: npm
+      # Le tag doit correspondre à la version de package.json, sinon les noms de paquets mentent.
+      - run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - run: npm ci
+      - run: npm test
+      - run: npm run ${{ matrix.script }}
+      # ditto garde les liens symboliques des frameworks Electron (zip -r les casse).
+      - if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/mac-arm64/Vigie.app "dist/Vigie-$GITHUB_REF_NAME-mac-arm64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vigie-${{ runner.os }}
+          path: |
+            dist/*.zip
+            dist/*.deb
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - run: gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

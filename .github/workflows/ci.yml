@@ -1,0 +1,36 @@
+# Tests et build de l'UI sur chaque PR et chaque push sur main, sur les deux plateformes supportées.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Un nouveau push sur la même PR annule le run précédent.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Les tests n'ouvrent pas Electron : inutile de télécharger son binaire (~100 Mo).
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      CI: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: package.json # lit volta.node
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
