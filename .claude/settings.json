@@ -1,0 +1,11 @@
+{
+  "outputStyle": "Concise",
+  "sandbox": {
+    "network": {
+      "allowLocalBinding": true
+    }
+  },
+  "permissions": {
+    "deny": ["Read(**/.env)", "Read(**/.env.*)"]
+  }
+}

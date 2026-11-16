@@ -1,0 +1,9 @@
+node_modules/
+ui/node_modules/
+ui/dist/
+ui/.angular/
+dist/
+.DS_Store
+.vigie/
+.claude/settings.local.json
+.claude/.cc-writes/

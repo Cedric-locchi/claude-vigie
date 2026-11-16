@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vigie",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["daemon/server.mjs"],
+      "port": 4317
+    }
+  ]
+}

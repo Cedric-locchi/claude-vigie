@@ -1,0 +1,369 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-11T22:59:53.157Z",
+  "title": "Design System: Vigie",
+  "extensions": {
+    "colorMeta": {
+      "night": {
+        "role": "neutral",
+        "displayName": "Night",
+        "canonical": "oklch(17.6% 0.012 254)",
+        "tonalRamp": [
+          "oklch(15% 0.012 254)",
+          "oklch(25% 0.012 254)",
+          "oklch(35% 0.012 254)",
+          "oklch(48% 0.012 254)",
+          "oklch(60% 0.012 254)",
+          "oklch(72% 0.012 254)",
+          "oklch(84% 0.012 254)",
+          "oklch(95% 0.012 254)"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "canonical": "oklch(23.6% 0.016 252)",
+        "tonalRamp": [
+          "oklch(15% 0.016 252)",
+          "oklch(25% 0.016 252)",
+          "oklch(35% 0.016 252)",
+          "oklch(48% 0.016 252)",
+          "oklch(60% 0.016 252)",
+          "oklch(72% 0.016 252)",
+          "oklch(84% 0.016 252)",
+          "oklch(95% 0.016 252)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(33.0% 0.019 255)",
+        "tonalRamp": [
+          "oklch(15% 0.019 255)",
+          "oklch(25% 0.019 255)",
+          "oklch(35% 0.019 255)",
+          "oklch(48% 0.019 255)",
+          "oklch(60% 0.019 255)",
+          "oklch(72% 0.019 255)",
+          "oklch(84% 0.019 255)",
+          "oklch(95% 0.019 255)"
+        ]
+      },
+      "control": {
+        "role": "neutral",
+        "displayName": "Control Edge",
+        "canonical": "oklch(55.9% 0.020 256)",
+        "tonalRamp": [
+          "oklch(15% 0.020 256)",
+          "oklch(25% 0.020 256)",
+          "oklch(35% 0.020 256)",
+          "oklch(48% 0.020 256)",
+          "oklch(60% 0.020 256)",
+          "oklch(72% 0.020 256)",
+          "oklch(84% 0.020 256)",
+          "oklch(95% 0.020 256)"
+        ]
+      },
+      "signal-blue": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "oklch(75.1% 0.120 255)",
+        "tonalRamp": [
+          "oklch(15% 0.120 255)",
+          "oklch(25% 0.120 255)",
+          "oklch(35% 0.120 255)",
+          "oklch(48% 0.120 255)",
+          "oklch(60% 0.120 255)",
+          "oklch(72% 0.120 255)",
+          "oklch(84% 0.120 255)",
+          "oklch(95% 0.120 255)"
+        ]
+      },
+      "amber-wait": {
+        "role": "secondary",
+        "displayName": "Amber Wait",
+        "canonical": "oklch(83.6% 0.148 77)",
+        "tonalRamp": [
+          "oklch(15% 0.148 77)",
+          "oklch(25% 0.148 77)",
+          "oklch(35% 0.148 77)",
+          "oklch(48% 0.148 77)",
+          "oklch(60% 0.148 77)",
+          "oklch(72% 0.148 77)",
+          "oklch(84% 0.148 77)",
+          "oklch(95% 0.148 77)"
+        ]
+      },
+      "coral-err": {
+        "role": "tertiary",
+        "displayName": "Coral Err",
+        "canonical": "oklch(73.0% 0.159 22)",
+        "tonalRamp": [
+          "oklch(15% 0.159 22)",
+          "oklch(25% 0.159 22)",
+          "oklch(35% 0.159 22)",
+          "oklch(48% 0.159 22)",
+          "oklch(60% 0.159 22)",
+          "oklch(72% 0.159 22)",
+          "oklch(84% 0.159 22)",
+          "oklch(95% 0.159 22)"
+        ]
+      },
+      "mint-ok": {
+        "role": "tertiary",
+        "displayName": "Mint OK",
+        "canonical": "oklch(77.0% 0.100 160)",
+        "tonalRamp": [
+          "oklch(15% 0.100 160)",
+          "oklch(25% 0.100 160)",
+          "oklch(35% 0.100 160)",
+          "oklch(48% 0.100 160)",
+          "oklch(60% 0.100 160)",
+          "oklch(72% 0.100 160)",
+          "oklch(84% 0.100 160)",
+          "oklch(95% 0.100 160)"
+        ]
+      },
+      "lilac-cmd": {
+        "role": "tertiary",
+        "displayName": "Lilac Cmd",
+        "canonical": "oklch(74.1% 0.110 305)",
+        "tonalRamp": [
+          "oklch(15% 0.110 305)",
+          "oklch(25% 0.110 305)",
+          "oklch(35% 0.110 305)",
+          "oklch(48% 0.110 305)",
+          "oklch(60% 0.110 305)",
+          "oklch(72% 0.110 305)",
+          "oklch(84% 0.110 305)",
+          "oklch(95% 0.110 305)"
+        ]
+      },
+      "slate-read": {
+        "role": "tertiary",
+        "displayName": "Slate Read",
+        "canonical": "oklch(62.0% 0.045 254)",
+        "tonalRamp": [
+          "oklch(15% 0.045 254)",
+          "oklch(25% 0.045 254)",
+          "oklch(35% 0.045 254)",
+          "oklch(48% 0.045 254)",
+          "oklch(60% 0.045 254)",
+          "oklch(72% 0.045 254)",
+          "oklch(84% 0.045 254)",
+          "oklch(95% 0.045 254)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Titre de page, un par écran."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "En-têtes de colonnes et d'indicateurs, en majuscules."
+      },
+      "data": {
+        "displayName": "Data",
+        "purpose": "Valeurs mesurées : coûts, durées, tokens."
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating",
+        "value": "0 8px 24px var(--shadow)",
+        "purpose": "Bulles et infobulles flottantes uniquement."
+      },
+      {
+        "name": "state-bar",
+        "value": "inset 2px 0 0 var(--brand)",
+        "purpose": "Barre d'état à gauche d'une ligne de navigation ou de tableau active ou urgente (3px dans les tableaux). Jamais sur une carte."
+      },
+      {
+        "name": "state-halo",
+        "value": "0 0 0 3px var(--wait-bg)",
+        "purpose": "Anneau autour d'un point d'état."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.2, 0, 0, 1)",
+        "purpose": "Courbe unique : sortie rapide, arrivée douce."
+      },
+      {
+        "name": "dur-fast",
+        "value": "120ms",
+        "purpose": "Survol, pression, couleur."
+      },
+      {
+        "name": "dur",
+        "value": "200ms",
+        "purpose": "Changements de taille, rotation de chevron, barres."
+      },
+      {
+        "name": "pulse",
+        "value": "1.6s ease-in-out infinite",
+        "purpose": "Point d'état d'une session urgente ; coupé si réduire les animations."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Arrivée franche, réservée au moment « une session se met à attendre »."
+      },
+      {
+        "name": "wait-arrive",
+        "value": "900ms ease-out, fond de wait 30 % → wait-bg ; barre d'état scaleY 0 → 1 en 420ms",
+        "purpose": "Seul mouvement signé : arrivée d'une attente (ligne du tableau, ligne de la barre latérale, carte d'agent). Réduire les animations : couleur seule, 600ms."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "page-compact",
+        "value": "720px"
+      },
+      {
+        "name": "mobile-sidebar",
+        "value": "767px"
+      },
+      {
+        "name": "board-stacked",
+        "value": "820px"
+      },
+      {
+        "name": "board-compact",
+        "value": "1200px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Action principale unique de l'écran.",
+      "html": "<button class=\"ds-btn-primary\">Nouvelle session <kbd class=\"ds-kbd\">⌘N</kbd></button>",
+      "css": ".ds-btn-primary{font-family:Inter,system-ui,sans-serif;font-size:14px;font-weight:500;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 10px;border:1px solid transparent;border-radius:8px;background:var(--brand,#79b1f9);color:var(--on-brand,#0d1116);cursor:pointer;transition:background-color 120ms cubic-bezier(.2,0,0,1)}.ds-btn-primary:hover{background:color-mix(in oklch,var(--brand,#79b1f9) 80%,transparent)}.ds-btn-primary:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in oklch,var(--brand,#79b1f9) 50%,transparent)}.ds-btn-primary:active{transform:translateY(1px)}.ds-kbd{font:500 11px 'JetBrains Mono',monospace;padding:1px 4px;border-radius:4px;background:rgb(0 0 0/.15)}"
+    },
+    {
+      "name": "Wait Button",
+      "kind": "button",
+      "refersTo": "button-wait",
+      "description": "Débloque une session qui attend (Autoriser, Répondre).",
+      "html": "<button class=\"ds-btn-wait\">Autoriser</button>",
+      "css": ".ds-btn-wait{font-family:Inter,system-ui,sans-serif;font-size:14px;font-weight:600;height:32px;padding:0 10px;border:0;border-radius:8px;background:var(--wait,#ffbb49);color:var(--on-wait,#201301);cursor:pointer;transition:background-color 120ms cubic-bezier(.2,0,0,1)}.ds-btn-wait:hover{background:var(--wait-hover,#ffcc79)}.ds-btn-wait:focus-visible{outline:2px solid var(--brand,#79b1f9);outline-offset:2px}.ds-btn-wait:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Action secondaire.",
+      "html": "<button class=\"ds-btn-outline\">Refuser</button>",
+      "css": ".ds-btn-outline{font-family:Inter,system-ui,sans-serif;font-size:14px;font-weight:500;height:32px;padding:0 10px;border:1px solid var(--line-strong,#414853);border-radius:8px;background:color-mix(in oklch,var(--line-strong,#414853) 30%,transparent);color:var(--text,#e8ebef);cursor:pointer;transition:background-color 120ms cubic-bezier(.2,0,0,1)}.ds-btn-outline:hover{background:color-mix(in oklch,var(--line-strong,#414853) 50%,transparent)}.ds-btn-outline:focus-visible{outline:2px solid var(--brand,#79b1f9);outline-offset:2px}"
+    },
+    {
+      "name": "State Badges",
+      "kind": "chip",
+      "refersTo": "badge-waiting",
+      "description": "Pilules d'état de session.",
+      "html": "<span class=\"ds-badge ds-wait\">Attend</span> <span class=\"ds-badge ds-run\">En cours</span> <span class=\"ds-badge ds-ok\">Terminée</span> <span class=\"ds-badge ds-err\">Erreur</span>",
+      "css": ".ds-badge{display:inline-flex;align-items:center;height:20px;padding:2px 8px;border-radius:999px;font:600 12px Inter,system-ui,sans-serif}.ds-wait{background:var(--wait-bg,#33230a);color:var(--wait,#ffbb49)}.ds-run{background:var(--brand-bg,#162537);color:var(--brand,#79b1f9)}.ds-ok{background:var(--ok-bg,#13281d);color:var(--ok,#78c89e)}.ds-err{background:var(--err-bg,#361919);color:var(--err,#fc7a79)}"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Champ de recherche / saisie.",
+      "html": "<input class=\"ds-input\" type=\"search\" placeholder=\"Rechercher…\">",
+      "css": ".ds-input{font-family:Inter,system-ui,sans-serif;font-size:14px;height:36px;width:240px;padding:0 12px;border:1px solid var(--line-strong,#414853);border-radius:8px;background:var(--bg,#0d1116);color:var(--text,#e8ebef);transition:border-color 120ms cubic-bezier(.2,0,0,1)}.ds-input::placeholder{color:var(--faint,#9299a2)}.ds-input:focus-visible{outline:none;border-color:var(--brand,#79b1f9);box-shadow:0 0 0 3px color-mix(in oklch,var(--brand,#79b1f9) 50%,transparent)}"
+    },
+    {
+      "name": "Sidebar Nav",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Navigation latérale à angles droits, barre d'état à gauche.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-active\" href=\"#\">Sessions</a><a class=\"ds-nav-item\" href=\"#\">Consommation</a><a class=\"ds-nav-item ds-urgent\" href=\"#\">refonte du login<span>attend : Bash</span></a></nav>",
+      "css": ".ds-nav{display:flex;flex-direction:column;width:240px;padding:8px;background:var(--nav,#11151b)}.ds-nav-item{font-family:Inter,system-ui,sans-serif;font-size:14px;display:flex;flex-direction:column;padding:8px 10px;color:var(--text-2,#cdd1d8);text-decoration:none;transition:background-color 120ms cubic-bezier(.2,0,0,1)}.ds-nav-item span{font:400 11px 'JetBrains Mono',monospace;color:var(--wait,#ffbb49)}.ds-nav-item:hover{background:color-mix(in oklch,var(--surface-2,#232932),var(--text,#e8ebef) 4%);color:var(--text,#e8ebef)}.ds-nav-item:focus-visible{outline:2px solid var(--brand,#79b1f9);outline-offset:-2px}.ds-active{background:var(--brand-bg,#162537);color:var(--text,#e8ebef);box-shadow:inset 2px 0 0 var(--brand,#79b1f9)}.ds-urgent{box-shadow:inset 2px 0 0 var(--wait,#ffbb49)}"
+    },
+    {
+      "name": "Session Row",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Ligne signature du tableau des sessions, ici en état urgent.",
+      "html": "<div class=\"ds-board\"><div class=\"ds-row ds-row-urgent\"><span class=\"ds-badge ds-wait\">Attend</span><span class=\"ds-who\"><b>refonte du login</b><small>app · <code>feat/login</code></small></span><span class=\"ds-num\">4 min</span><span class=\"ds-num\">$1.20</span></div><div class=\"ds-row\"><span class=\"ds-badge ds-run\">En cours</span><span class=\"ds-who\"><b>tests e2e</b><small>app · <code>main</code></small></span><span class=\"ds-num\">22 min</span><span class=\"ds-num\">$3.05</span></div></div>",
+      "css": ".ds-board{width:520px;border:1px solid var(--line,#2f363f);border-radius:12px;background:var(--surface,#191f26);overflow:hidden}.ds-row{display:grid;grid-template-columns:92px 1fr 64px 64px;gap:16px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line,#2f363f);font:14px/1.4 Inter,system-ui,sans-serif;color:var(--text,#e8ebef);cursor:pointer;transition:background-color 120ms cubic-bezier(.2,0,0,1)}.ds-row:last-child{border-bottom:0}.ds-row:hover{background:color-mix(in oklch,var(--surface-2,#232932),var(--text,#e8ebef) 4%)}.ds-row-urgent{background:var(--wait-bg,#33230a);box-shadow:inset 3px 0 0 var(--wait,#ffbb49)}.ds-who{display:flex;flex-direction:column}.ds-who small{font-size:12px;color:var(--faint,#9299a2)}.ds-who code,.ds-num{font-family:'JetBrains Mono',monospace}.ds-num{font-size:12px;text-align:right}.ds-badge{display:inline-flex;align-items:center;height:20px;padding:2px 8px;border-radius:999px;font:600 12px Inter,sans-serif;width:fit-content}.ds-wait{background:var(--wait-bg,#33230a);color:var(--wait,#ffbb49)}.ds-run{background:var(--brand-bg,#162537);color:var(--brand,#79b1f9)}"
+    },
+    {
+      "name": "Agent Card",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Carte d'agent spartan à plat : filet, aucune ombre ; l'état recolore la bordure.",
+      "html": "<article class=\"ds-card\"><div class=\"ds-card-top\"><strong>Agent principal</strong><span class=\"ds-card-chip\">En cours</span></div><span class=\"ds-card-meta\">12 outils · 48k tok · 3 min</span></article><article class=\"ds-card ds-card-wait\"><div class=\"ds-card-top\"><strong>reviewer</strong><span class=\"ds-card-chip ds-wait\">Question</span></div><span class=\"ds-card-meta\">Veut lancer npm test</span></article>",
+      "css": ".ds-card{display:flex;flex-direction:column;gap:10px;padding:14px 16px;margin-bottom:12px;border:1px solid #2f363f;border-radius:12px;background:#191f26;color:#e8ebef;font:14px/1.4 Inter,system-ui,sans-serif;transition:border-color 120ms cubic-bezier(0.2,0,0,1),background-color 120ms cubic-bezier(0.2,0,0,1)} .ds-card:hover{border-color:#414853;background:color-mix(in oklch,#191f26,#e8ebef 3%)} .ds-card:focus-visible{outline:2px solid #79b1f9;outline-offset:2px} .ds-card-top{display:flex;justify-content:space-between;align-items:center} .ds-card-chip{padding:2px 8px;border-radius:999px;background:#162537;color:#79b1f9;font-size:12px} .ds-card-meta{font:12px \"JetBrains Mono\",ui-monospace,monospace;color:#9299a2} .ds-card-wait{border-color:#664610;background:color-mix(in oklch,#191f26,#33230a 60%)} .ds-wait{background:#33230a;color:#ffbb49}"
+    }
+  ],
+  "narrative": {
+    "northStar": "La Tour de contrôle",
+    "overview": "Vigie est une salle de contrôle de nuit. Le fond est sombre et calme, presque silencieux ; l'information est dense mais rangée en lignes et en colonnes alignées, lisibles d'un balayage. La couleur n'est pas décorative : elle signale. Une session qui attend s'allume en ambre, une session qui travaille en bleu, une session finie s'éteint vers le vert ou le gris. Si rien n'attend, l'écran est presque monochrome, et c'est voulu.\n\nL'interface s'efface derrière ce qu'elle surveille : terminaux, chronologies, chiffres de consommation. Les contrôles sont précis et retenus ; seule l'action qui débloque une session (Autoriser, Répondre) prend un aplat de couleur. La profondeur vient de strates de ton et de filets de 1px, jamais d'ombres posées sur des cartes. Le thème sombre est le thème par défaut ; un thème clair existe et reprend les mêmes rôles, valeur pour valeur.",
+    "keyCharacteristics": [
+      "Sombre par défaut, thème clair complet avec les mêmes rôles de couleur.",
+      "Couleur = état. Ambre attend, bleu tourne, vert terminé, corail erreur, lilas commande.",
+      "Dense et aligné : tableaux, colonnes de chiffres en mono, lignes de 12px de haut de padding.",
+      "Plat : strates de fond et filets, une seule ombre réelle (les bulles flottantes).",
+      "Micro-interactions courtes et identiques partout (120 ms / 200 ms, même courbe)."
+    ],
+    "rules": [
+      {
+        "name": "The Luminance-Hierarchy Rule",
+        "body": "Les accents ne sont pas égaux : leur clarté (OKLCH) suit l'urgence. Thème sombre : ambre « attend » L 0,84 (le plus lumineux de l'écran), corail L 0,73, bleu L 0,75, lilas L 0,74, menthe « terminé » L 0,77 mais moins saturée (C 0,10) pour s'effacer. Thème clair : tous vers L 0,50–0,52 pour tenir 4,5:1, la hiérarchie passe par la chroma et les fonds lavés.",
+        "section": "colors"
+      },
+      {
+        "name": "The Separation Rule",
+        "body": "Les strates se voient sans ombre : panneau/fond ≥ 1,14:1, filet/panneau ≥ 1,33:1, contrôle/fond ≥ 3:1, couleurs de données (barres, sparklines) ≥ 3:1 sur le panneau. Neutres teintés vers la marque (teinte OKLCH 255, chroma ≤ 0,02). Tout nouveau jeton passe ces seuils dans les deux thèmes avant d'être ajouté.",
+        "section": "colors"
+      },
+      {
+        "name": "The Lights-Out Rule",
+        "body": "Au repos, l'écran est neutre. Une couleur d'état n'apparaît que si l'état existe ; un écran sans session en attente ne contient pas d'ambre.",
+        "section": "colors"
+      },
+      {
+        "name": "The Same-Role Rule",
+        "body": "Chaque couleur a un jumeau dans le thème clair (`:root[data-theme='light']`). On n'écrit jamais de hex dans un composant : on passe par la variable CSS, et les composants spartan passent par les jetons sémantiques dérivés (`--primary`, `--muted`, `--border`…).",
+        "section": "colors"
+      },
+      {
+        "name": "The Measured-Mono Rule",
+        "body": "Le mono est réservé à ce qui se mesure ou se copie (montants, durées, tokens, branches, chemins, commandes). Jamais pour faire « technique ».",
+        "section": "typography"
+      },
+      {
+        "name": "The 11px Floor Rule",
+        "body": "11px est le plus petit texte courant. 9–10px n'existe que pour les graduations de la chronologie et les valeurs au-dessus des barres du graphique.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Aucune carte, ligne ou panneau ne porte d'ombre au repos. Une ombre signifie « flotte au-dessus » ; rien d'autre.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** passer par les variables CSS de `styles.css` (`--brand`, `--wait`, `--line`…) ou les jetons spartan dérivés ; jamais de hex dans un composant.",
+      "**Do** utiliser `--dur-fast` (120 ms), `--dur` (200 ms) et `--ease` (`cubic-bezier(0.2, 0, 0, 1)` : sortie rapide, arrivée douce) pour toute transition.",
+      "**Do** mettre en mono les montants, durées, tokens, branches, chemins et commandes, alignés à droite dans les tableaux.",
+      "**Do** vérifier chaque nouvelle couleur de texte à 4,5:1 dans les deux thèmes, y compris sur `nav-night` et `panel-raised`.",
+      "**Do** vérifier aussi les seuils non textuels avant d'ajouter un jeton : contrôles 3:1 sur le fond, couleurs de données (barres, sparklines) 3:1 sur `panel`, filets 1,33:1 sur `panel`.",
+      "**Do** donner à chaque élément cliquable un survol (`--hover`), une pression (`--press`) et un focus visible Signal Blue."
+    ],
+    "donts": [
+      "**Don't** utiliser l'ambre pour autre chose qu'un état qui attend l'utilisateur.",
+      "**Don't** atténuer du texte avec `opacity` : passer à `--text-muted` ou `--faint`.",
+      "**Don't** poser d'ombre sur une carte, une ligne ou un panneau au repos.",
+      "**Don't** empiler des cartes dans des cartes ; une liste dans un panneau se sépare par des filets.",
+      "**Don't** utiliser d'emoji ou de caractères Unicode comme icônes : SVG en trait de 2px (1.8px pour les grandes icônes), `currentColor`."
+    ]
+  }
+}

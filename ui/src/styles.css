@@ -1,0 +1,256 @@
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css';
+@import '@spartan-ng/brain/hlm-tailwind-preset.css';
+@import '@xterm/xterm/css/xterm.css';
+/* Polices embarquées : aucune requête hors de la machine, et l'app fonctionne hors ligne. */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
+/* `dark:` des composants spartan : suit data-theme (posé par ThemeService), pas la classe .dark. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+
+/* Palette Vigie : sombre par défaut, claire via data-theme="light" (ThemeService). */
+:root {
+  --bg: #0d1116;
+  --bg-deep: #070a0f;
+  --nav: #11151b;
+  --surface: #191f26;
+  --surface-2: #232932;
+  --line: #2f363f;
+  --control: #6d7580; /* bordure des champs et contrôles : 3:1 sur le fond */
+  --line-strong: #414853;
+  --text: #e8ebef;
+  --text-2: #cdd1d8;
+  --text-muted: #abb2ba;
+  --faint: #9299a2;
+  --brand: #79b1f9;
+  --brand-hover: #98c7ff;
+  --wait: #ffbb49;
+  --wait-line: #664610;
+  --wait-bg: #33230a;
+  --ok: #78c89e;
+  --ok-bg: #13281d;
+  --err: #fc7a79;
+  --err-line: #6c3434;
+  --err-bg: #361919;
+  --cmd: #bb99e3;
+  --read: #7488a1;
+  /* Texte posé sur un aplat de couleur (boutons, barres de chronologie). */
+  --on-brand: #091018;
+  --on-wait: #201301;
+  --on-cmd: #150e1c;
+  --on-ok: #05160d;
+  --wait-hover: #ffcc79;
+  --brand-bg: #162537;
+  --dim-bg: #13181e;
+  --neutral: #6f757d;
+  --projected: #314968;
+  --backdrop: #040609;
+  --shadow: rgb(0 0 0 / 0.45);
+  --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: #f1f4f7;
+  --bg-deep: #ffffff;
+  --nav: #eaedf2;
+  --surface: #ffffff;
+  --surface-2: #e8ebf1;
+  --line: #dce0e5;
+  --control: #868d95;
+  --line-strong: #cdd1d8;
+  --text: #161b22;
+  --text-2: #333840;
+  --text-muted: #4f565e;
+  --faint: #60676f; /* 4,5:1 minimum aussi sur --nav et --surface-2 (vérifié) */
+  --brand: #145ec1;
+  --brand-hover: #004aa5;
+  --wait: #9c5400;
+  --wait-line: #eccb9e;
+  --wait-bg: #fff1de;
+  --ok: #0b7643;
+  --ok-bg: #e6f9ee;
+  --err: #ba2b2e;
+  --err-line: #f6c2bf;
+  --err-bg: #ffefed;
+  --cmd: #7945ab;
+  --read: #708298;
+  --on-brand: #ffffff;
+  --on-wait: #ffffff;
+  --on-cmd: #ffffff;
+  --on-ok: #ffffff;
+  --wait-hover: #864500;
+  --brand-bg: #e5f1ff;
+  --dim-bg: #f5f7f9;
+  --neutral: #878d94;
+  --projected: #aac7eb;
+  --backdrop: #e3e6eb;
+  --shadow: rgb(15 20 30 / 0.14);
+  color-scheme: light;
+}
+
+/*
+ * Design system spartan/ui : ses tokens sémantiques sont dérivés de la palette Vigie ci-dessus,
+ * donc les deux thèmes (sombre / clair) s'appliquent aux composants hlm sans dupliquer les couleurs.
+ */
+:root {
+  --radius: 0.5rem;
+  /* Micro-interactions : mêmes durées et même courbe partout (sortie rapide, arrivée douce). */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  /* Arrivée assurée (décélération franche) : réservée au moment où une session ou un agent se met à attendre. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-arrive: 900ms;
+  /* Survol / pression sur une surface : léger mélange vers la couleur du texte, juste en clair comme en sombre. */
+  --hover: color-mix(in oklch, var(--surface-2), var(--text) 4%);
+  --press: color-mix(in oklch, var(--surface-2), var(--text) 9%);
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--nav);
+  --popover-foreground: var(--text);
+  --primary: var(--brand);
+  --primary-foreground: var(--on-brand);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--brand-bg); /* ligne survolée des menus : doit trancher sur --popover */
+  --accent-foreground: var(--text);
+  --destructive: var(--err);
+  --border: var(--line);
+  --input: var(--control);
+  --ring: var(--brand);
+  --chart-1: var(--brand);
+  --chart-2: var(--cmd);
+  --chart-3: var(--ok);
+  --chart-4: var(--wait);
+  --chart-5: var(--read);
+  --sidebar: var(--nav);
+  --sidebar-foreground: var(--text-2);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--on-brand);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--brand);
+}
+
+/* Couleurs d'état Vigie exposées à Tailwind : bg-wait, text-ok, border-err-line… */
+@theme inline {
+  --color-brand: var(--brand);
+  --color-wait: var(--wait);
+  --color-wait-bg: var(--wait-bg);
+  --color-wait-line: var(--wait-line);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-err: var(--err);
+  --color-err-bg: var(--err-bg);
+  --color-err-line: var(--err-line);
+  --color-faint: var(--faint);
+  --color-nav: var(--nav);
+  --font-mono: var(--mono);
+}
+
+/* Cartes spartan : plates (pas d'ombre au repos, DESIGN.md), filet --line ; les états recolorent la bordure. */
+[data-slot='card'] { box-shadow: none; border: 1px solid var(--line); }
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html, body { min-height: 100%; }
+  /* Surfaces navigateur : sélection, curseur, barres de défilement et cases natives aux couleurs Vigie. */
+  html { scrollbar-color: var(--line-strong) transparent; accent-color: var(--brand); caret-color: var(--brand); }
+  ::selection { background: color-mix(in oklch, var(--brand) 32%, transparent); color: var(--text); }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 Inter, system-ui, sans-serif;
+  }
+  /* Liens de texte uniquement : les liens-boutons spartan (data-slot) gardent la couleur de leur variant. */
+  a:not([data-slot]) { color: var(--brand); text-decoration: none; transition: color var(--dur-fast) var(--ease); }
+  a:not([data-slot]):hover { color: var(--brand-hover); }
+  /* Tailwind v4 met `cursor: default` sur les boutons : on rend la main à tout ce qui est cliquable. */
+  button:not(:disabled), [role='button']:not([aria-disabled='true']), summary { cursor: pointer; }
+  /* Focus des éléments natifs ; les composants spartan (data-slot) ont leur propre anneau. */
+  :focus-visible:not([data-slot]) { outline: 2px solid var(--brand); outline-offset: 2px; }
+}
+
+@layer components {
+  .mono { font-family: var(--mono); }
+  .muted { color: var(--text-muted); }
+  .faint { color: var(--faint); }
+  .small { font-size: 12px; }
+  .wait { color: var(--wait); }
+
+  .dot { width: 8px; height: 8px; border-radius: 4px; flex: none; display: inline-block; transition: background-color var(--dur) var(--ease); }
+  .dot-waiting { background: var(--wait); }
+  /* « À toi » : anneau sans fond, le point plein reste réservé à « Attend ». */
+  .dot-turn { background: transparent; border: 1.5px solid var(--wait); }
+  .dot-running { background: var(--brand); }
+  .dot-done { background: var(--ok); }
+
+  /* Jauge (fenêtre 5 h) : nom spécifique, pour ne pas entrer en collision avec les classes des composants. */
+  .meter { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; position: relative; }
+  .meter > span { display: block; height: 100%; border-radius: 4px; background: var(--brand); transition: width var(--dur) var(--ease); }
+
+  .page { padding: 28px 36px 40px; display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+  @media (max-width: 720px) { .page { padding: 20px 16px 32px; } }
+
+  /* Hauteur de la barre mobile (app.ts) : les vues en pleine hauteur la retranchent. */
+  :root { --chrome-top: 0px; }
+  @media (max-width: 767px) { :root { --chrome-top: 52px; } }
+  /* Raccourcis clavier (⌘N, ⌘↵) : sans objet au doigt. */
+  @media (pointer: coarse) { [data-slot='kbd'] { display: none; } }
+
+}
+
+/*
+ * Moment signature : une session ou un agent se met à attendre ta réponse. L'ambre arrive plus fort puis se pose sur
+ * son fond lavé (une seule fois, pas de boucle : le point qui pulse porte la persistance).
+ */
+.wait-arrive { animation: wait-arrive var(--dur-arrive) var(--ease-out); }
+@keyframes wait-arrive { from { background-color: color-mix(in oklch, var(--wait-bg), var(--wait) 30%); } }
+
+/* Réglage système « réduire les animations » : on coupe transitions et animations partout. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}/* …sauf l'arrivée d'une attente : sans mouvement, seule la couleur change, et elle porte l'état. */
+@media (prefers-reduced-motion: reduce) {
+  .wait-arrive { animation-duration: 600ms !important; animation-timing-function: ease-out !important; }
+}
+
+
+/* Markdown rendu (rapports d'agents). Global : le contenu injecté par [innerHTML] échappe aux styles de composant. */
+.markdown { font-size: 13px; line-height: 1.6; color: var(--text-2); overflow-wrap: anywhere; }
+.markdown > :first-child { margin-top: 0; }
+.markdown :is(h1, h2, h3, h4) { margin: 1.2em 0 0.4em; font-weight: 600; line-height: 1.3; color: var(--text); }
+.markdown h1 { font-size: 18px; }
+.markdown h2 { font-size: 16px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.markdown h3 { font-size: 14px; }
+.markdown h4 { font-size: 13px; }
+.markdown :is(p, ul, ol, pre, table, blockquote) { margin: 0 0 0.8em; }
+.markdown :is(ul, ol) { padding-inline-start: 1.4em; }
+.markdown ul { list-style: disc; }
+.markdown ol { list-style: decimal; }
+.markdown li + li { margin-top: 2px; }
+.markdown li > input[type='checkbox'] { margin-inline-end: 6px; vertical-align: -1px; }
+.markdown a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
+.markdown strong { color: var(--text); font-weight: 600; }
+.markdown code { padding: 1px 4px; background: var(--surface-2); font-family: var(--mono); font-size: 12px; }
+.markdown pre { padding: 10px 12px; background: var(--bg-deep); border: 1px solid var(--line); overflow-x: auto; }
+.markdown pre code { padding: 0; background: none; }
+.markdown blockquote { padding-inline-start: 12px; border-inline-start: 2px solid var(--line-strong); color: var(--text-muted); }
+.markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 12px; }
+.markdown :is(th, td) { padding: 5px 10px; border: 1px solid var(--line); text-align: start; }
+.markdown th { background: var(--surface-2); font-weight: 600; color: var(--text); }
+.markdown hr { margin: 1em 0; border: 0; border-top: 1px solid var(--line); }

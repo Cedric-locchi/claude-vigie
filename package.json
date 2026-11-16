@@ -1,0 +1,81 @@
+{
+  "name": "vigie",
+  "version": "0.1.0",
+  "description": "Monitoring des sessions Claude Code",
+  "scripts": {
+    "start": "node daemon/server.mjs",
+    "build": "npm run build -w ui",
+    "test": "node --test daemon/*.test.mjs && npm test -w ui -- --no-watch",
+    "postinstall": "[ \"$(uname)\" = Darwin ] || exit 0; chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper",
+    "app": "electron .",
+    "dist": "npm run build && electron-builder --mac dir",
+    "dist:linux": "npm run build && electron-builder --linux dir deb"
+  },
+  "type": "module",
+  "dependencies": {
+    "node-pty": "^1.1.0",
+    "ws": "^8.22.1",
+    "zod": "^4.6.6"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true,
+    "electron@45.2.3": true
+  },
+  "private": true,
+  "bin": {
+    "vigie": "bin/vigie.mjs"
+  },
+  "main": "electron/main.mjs",
+  "build": {
+    "appId": "dev.vigie.app",
+    "productName": "Vigie",
+    "electronDist": "node_modules/electron/dist",
+    "asar": true,
+    "files": [
+      "package.json",
+      "electron/**",
+      "daemon/**",
+      "!daemon/*.test.mjs",
+      "contract/**",
+      "bin/**",
+      "ui/dist/**",
+      "node_modules/**",
+      "!node_modules/zod/{src,v3}{,/**}",
+      "!node_modules/zod/**/*.{cjs,d.ts,d.cts,d.mts,map}"
+    ],
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.developer-tools",
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "linux": {
+      "target": [
+        "dir",
+        "deb"
+      ],
+      "category": "Development",
+      "executableName": "vigie-app",
+      "maintainer": "cedric.locchi@gmail.com"
+    },
+    "asarUnpack": [
+      "node_modules/node-pty/**",
+      "daemon/**"
+    ],
+    "electronLanguages": [
+      "fr",
+      "en"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "volta": {
+    "node": "24.18.1"
+  },
+  "workspaces": [
+    "ui",
+    "contract"
+  ]
+}

@@ -1,0 +1,47 @@
+// Contrat de l'API du daemon : types dérivés des schémas de @vigie/contract (source unique, validée des deux côtés).
+// Imports de type seulement : aucun octet de zod dans le bundle par ce fichier.
+import type * as z from 'zod/mini';
+import type * as C from '@vigie/contract';
+
+export type SessionState = z.infer<typeof C.SessionState>;
+export type SessionSummary = z.infer<typeof C.SessionSummary>;
+export type Terminal = z.infer<typeof C.Terminal>;
+export type UsageWindow = z.infer<typeof C.UsageWindow>;
+export type Usage = z.infer<typeof C.Usage>;
+export type Snapshot = z.infer<typeof C.Snapshot>;
+export type ClaudeStatus = z.infer<typeof C.ClaudeStatus>;
+export type ToolBar = z.infer<typeof C.ToolBar>;
+export type Agent = z.infer<typeof C.Agent>;
+export type SessionDetail = z.infer<typeof C.SessionDetail>;
+export type SessionUsage = z.infer<typeof C.SessionUsage>;
+export type UsageRow = z.infer<typeof C.UsageRow>;
+export type UsageRows = z.infer<typeof C.UsageRows>;
+export type QuotaBlock = z.infer<typeof C.QuotaBlock>;
+export type SessionCost = z.infer<typeof C.SessionCost>;
+export type LogKind = z.infer<typeof C.LogKind>;
+export type LogEntry = z.infer<typeof C.LogEntry>;
+export type SessionLog = z.infer<typeof C.SessionLog>;
+export type ConfigScope = z.infer<typeof C.ConfigScope>;
+export type ClaudeConfig = z.infer<typeof C.ClaudeConfig>;
+export type TraceStep = z.infer<typeof C.TraceStep>;
+export type TraceAgent = z.infer<typeof C.TraceAgent>;
+export type TraceTurn = z.infer<typeof C.TraceTurn>;
+export type SessionTrace = z.infer<typeof C.SessionTrace>;
+export type GitFile = z.infer<typeof C.GitFile>;
+export type GitDiff = z.infer<typeof C.GitDiff>;
+export type FileBody = z.infer<typeof C.FileBody>;
+export type WriteBody = z.infer<typeof C.WriteBody>;
+export type ProjectFiles = z.infer<typeof C.ProjectFiles>;
+export type ProjectKind = z.infer<typeof C.ProjectKind>;
+export type Project = z.infer<typeof C.Project>;
+export type MiseTask = z.infer<typeof C.MiseTask>;
+export type MiseTasks = z.infer<typeof C.MiseTasks>;
+export type TerminalBody = z.infer<typeof C.TerminalBody>;
+export type XcodeContainer = z.infer<typeof C.XcodeContainer>;
+export type XcodeProject = z.infer<typeof C.XcodeProject>;
+export type Simulator = z.infer<typeof C.Simulator>;
+export type XcodeTargets = z.infer<typeof C.XcodeTargets>;
+export type XcodeAction = z.infer<typeof C.XcodeAction>;
+export type Settings = z.infer<typeof C.Settings>;
+export type Alerts = z.infer<typeof C.Alerts>;
+export type SettingsBody = z.infer<typeof C.SettingsBody>;
