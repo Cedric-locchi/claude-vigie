@@ -65,6 +65,7 @@ export class SessionsPageVm {
       blocked: this.waiting().filter((s) => s.state === 'waiting').length,
       turn: this.waiting().filter((s) => s.state === 'turn').length,
       running: this.running().length,
+      doneToday: this.done().length,
       subagents: active.reduce((n, s) => n + s.activeSubagents, 0),
       todayCost: this.usage()?.today.cost ?? 0,
       window: w?.active ? { pct: w.pct, end: w.end, limitAt: w.limitAt, bar: Math.min(100, w.pct * 100) } : null,
