@@ -1,29 +1,27 @@
 import { Component, ElementRef, Injector, afterNextRender, inject, viewChild } from '@angular/core';
-import { HlmInput } from '@spartan-ng/helm/input';
-import { HlmTooltip } from '@spartan-ng/helm/tooltip';
 import { Icon } from '../../../../core/icon.component';
-import { FilesSearchVm } from './files-search.vm';
 import { SessionFilesVm } from '../session-files.vm';
+import { FilesSearchVm } from './files-search.vm';
 
 /**
- * Vue Rechercher de l'onglet Fichiers (⌘⇧F / Ctrl+Shift+F) : champ, bascule « Aa », résumé, résultats groupés par fichier.
- * Les résultats suivent le motif ARIA « tree » de l'explorateur (mêmes touches). Vue seule : la logique est dans `FilesSearchVm`.
+ * Fenêtre d'outil Rechercher (⌘⇧F / Ctrl+Shift+F) : champ de recherche dans le contenu, résumé, résultats groupés par fichier.
+ * « Respecter la casse » est dans l'en-tête de la fenêtre. Résultats en motif ARIA « tree », mêmes touches que l'arbre du projet ;
+ * ↓ dans le champ y entre, Échap ou ↑ sur la première ligne rend la main au champ. Vue seule : la logique est dans `FilesSearchVm`.
  */
 @Component({
   selector: 'app-files-search',
-  imports: [Icon, HlmInput, HlmTooltip],
+  imports: [Icon],
   template: `
-    <div class="head"><h2 class="title">Rechercher</h2></div>
     <div class="field">
-      <input #q hlmInput type="search" class="q" placeholder="Rechercher dans les fichiers" aria-label="Texte à chercher dans les fichiers du projet"
+      <svg appIcon="search" class="lens"></svg>
+      <input #q class="q" type="search" placeholder="Chercher dans le contenu" aria-label="Texte à chercher dans les fichiers du projet"
         maxlength="200" autocomplete="off" spellcheck="false" [attr.aria-keyshortcuts]="files.keys.aria + '+Shift+F'"
-        [value]="vm.query()" (input)="vm.query.set($any($event.target).value)" (keydown.arrowdown)="$event.preventDefault(); focusRow()" />
-      <button type="button" class="aa" aria-label="Respecter la casse" [attr.aria-pressed]="vm.matchCase()" (click)="vm.toggleCase()"
-        hlmTooltip="Respecter la casse" [showDelay]="300">Aa</button>
+        [value]="vm.query()" (input)="vm.query.set($any($event.target).value)" (keydown)="fieldKey($event)" />
     </div>
     @if (vm.summary(); as s) { <p class="sum" [class.err]="s.err" role="status">{{ s.text }}</p> }
+    @else { <p class="sum">Texte littéral, dans tous les fichiers du projet.</p> }
     @if (vm.truncated()) { <p class="sum" role="status">Résultats coupés à 2 000 lignes : affine la recherche</p> }
-    <div #list class="results" role="tree" aria-label="Résultats de la recherche" (keydown)="key($event)">
+    <div #list class="results" role="tree" aria-label="Résultats dans le contenu" (keydown)="key($event)">
       @for (r of vm.rows(); track r.path) {
         @if (r.parts; as p) {
           <div role="treeitem" class="row hit" aria-level="2" [attr.data-path]="r.path" [attr.tabindex]="r.path === vm.focusRow() ? 0 : -1" (click)="vm.pick(r)">
@@ -44,37 +42,36 @@ import { SessionFilesVm } from '../session-files.vm';
   `,
   styles: `
     :host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    .head { flex: none; display: flex; align-items: center; min-height: 40px; padding: 4px 12px 0; }
-    .title { margin: 0; font-size: 12px; font-weight: 600; color: var(--text); }
-    .field { flex: none; position: relative; margin: 0 8px 4px; }
-    .q { width: 100%; height: 30px; padding-right: 36px; font-size: 12px; }
-    .aa {
-      position: absolute; top: 3px; right: 3px; width: 26px; height: 24px; border: 1px solid transparent; border-radius: 4px;
-      background: none; color: var(--faint); font: 600 11px/1 var(--mono); cursor: pointer;
-      transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+    .field { flex: none; position: relative; margin: 2px 8px 4px; }
+    .lens { position: absolute; left: 8px; top: 7px; width: 14px; height: 14px; color: var(--faint); stroke-linecap: round; pointer-events: none; }
+    .q {
+      width: 100%; height: 28px; padding: 0 8px 0 28px; border: 1px solid var(--control); border-radius: 6px; background: var(--bg); color: var(--text);
+      font: inherit; font-size: 13px; outline: none; transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
     }
-    .aa:hover { background: var(--hover); color: var(--text); }
-    .aa[aria-pressed='true'] { background: var(--brand-bg); border-color: var(--brand); color: var(--text); }
-    .aa:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
-    .sum { flex: none; margin: 0; padding: 2px 12px 4px; font-size: 12px; color: var(--text-muted); }
+    .q::placeholder { color: var(--faint); }
+    .q:focus-visible { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+    .sum { flex: none; margin: 0; padding: 2px 12px 4px; font-size: 12px; color: var(--faint); }
+    .sum[role='status'] { color: var(--text-muted); }
     .sum.err { color: var(--err); }
-    .results { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 8px 8px; }
+    .results { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 4px 8px; scrollbar-width: thin; }
     .row {
-      display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 6px; cursor: pointer; white-space: nowrap;
-      color: var(--text-2); font-size: 12px; transition: background-color var(--dur-fast) var(--ease);
+      display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 4px; cursor: pointer; white-space: nowrap;
+      color: var(--text-2); font-size: 13px; transition: background-color var(--dur-fast) var(--ease);
     }
     .row:hover { background: var(--hover); color: var(--text); }
     .row:active { background: var(--press); }
+    .row:focus { background: var(--brand-bg); color: var(--text); }
     .row:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
-    .ic { flex: none; width: 14px; height: 14px; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--dur-fast) var(--ease); }
+    .ic { flex: none; width: 14px; height: 14px; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; color: var(--faint); transition: transform var(--dur-fast) var(--ease); }
     .ic.open { transform: rotate(90deg); }
     .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
-    .dir { flex: 1 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--faint); }
-    .n { flex: none; margin-left: auto; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--surface-2); font-size: 11px; line-height: 16px; text-align: center; }
-    .hit { padding-left: 28px; }
+    .dir { flex: 1 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--faint); }
+    .n { flex: none; margin-left: auto; font-size: 11px; color: var(--faint); }
+    .hit { padding-left: 28px; font-size: 12px; }
     .ln { flex: none; min-width: 3ch; font-size: 11px; text-align: right; color: var(--faint); }
     .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     mark { border-radius: 2px; background: var(--brand-bg); color: var(--text); box-shadow: inset 0 -1px 0 var(--brand); }
+    @media (prefers-reduced-motion: reduce) { .ic { transition: none; } }
   `,
 })
 export class FilesSearchComponent {
@@ -84,21 +81,32 @@ export class FilesSearchComponent {
   private readonly input = viewChild.required<ElementRef<HTMLInputElement>>('q');
   private readonly list = viewChild.required<ElementRef<HTMLElement>>('list');
 
-  /** Focus dans le champ, saisie sélectionnée (⌘⇧F). */
-  focus(): void {
-    const el = this.input().nativeElement;
-    el.focus();
-    el.select();
+  /** ⌘⇧F, ou « Chercher dans le contenu » depuis ⌘P : focus dans le champ, saisie sélectionnée (après rendu : la vue vient peut-être d'apparaître). */
+  focusField(): void {
+    afterNextRender(() => { const el = this.input().nativeElement; el.focus(); el.select(); }, { injector: this.injector });
+  }
+
+  /** ↓ entre dans les résultats ; Échap vide le champ (champ vide : remonte, le tiroir se ferme). */
+  protected fieldKey(e: KeyboardEvent): void {
+    if (e.key === 'ArrowDown' && this.vm.rows().length) { e.preventDefault(); this.focusRow(); }
+    else if (e.key === 'Escape' && this.vm.query()) { e.preventDefault(); e.stopPropagation(); this.vm.query.set(''); }
   }
 
   protected key(e: KeyboardEvent): void {
+    const first = this.vm.rows()[0]?.path === this.vm.focusRow();
+    if (e.key === 'Escape' || (e.key === 'ArrowUp' && first)) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.input().nativeElement.focus();
+      return;
+    }
     if (!this.vm.key(e.key)) return;
     e.preventDefault();
     this.focusRow();
   }
 
   /** Après rendu : focus (et défilement) sur la ligne qui porte le tabindex. */
-  protected focusRow(): void {
+  focusRow(): void {
     afterNextRender(() => {
       const path = this.vm.focusRow();
       const el = [...this.list().nativeElement.querySelectorAll<HTMLElement>('[role=treeitem]')].find((r) => r.dataset['path'] === path);

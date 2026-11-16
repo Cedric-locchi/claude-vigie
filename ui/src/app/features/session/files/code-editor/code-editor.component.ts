@@ -49,7 +49,7 @@ const LH = 18, PAD = 8;
   `,
   styles: `
     :host { flex: 1; min-height: 0; display: flex; }
-    .scroll { flex: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; }
+    .scroll { flex: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
     /* Ligne qui dépasse à droite : ombre fixée au bord (scroll), masquée par un cache collé à la fin du contenu (local). */
     .scroll {
       background:

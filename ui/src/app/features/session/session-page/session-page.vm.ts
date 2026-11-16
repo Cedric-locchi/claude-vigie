@@ -7,6 +7,7 @@ import { stateLabel } from '../../../core/session-view';
 import { hasMise, projectTasks } from '../mise/session-mise.vm';
 import type { WaitBar } from '../agents/wait-bar/wait-bar.component';
 import { counter, entering, keepLast } from '../../../core/signals';
+import { CLIENT_OS, isShortcut } from '../../../core/platform';
 
 /** Filtres de la liste des agents, dans l'ordre d'urgence. */
 /** « Non terminés » regroupe ceux qui t'attendent (question, autorisation, fin de tour) et ceux qui tournent ;
@@ -159,6 +160,31 @@ export class SessionPageVm {
 
   showView(view: SessionView): void {
     this.view.set(view);
+  }
+
+  private readonly mac = inject(CLIENT_OS) === 'mac';
+  /** Raccourci de la vue Fichiers, selon la plateforme du client (libellé et aria-keyshortcuts). */
+  readonly filesKey = this.mac ? { label: '⌘⇧E', aria: 'Meta+Shift+E' } : { label: 'Ctrl+Shift+E', aria: 'Control+Shift+E' };
+  /** Bouton Fichiers : absent pour une discussion (pas de projet). */
+  readonly canFiles = computed(() => !!this.summary() && !this.isChat());
+  /** Vue quittée en entrant dans Fichiers, rendue en ressortant. */
+  private beforeFiles: SessionView = 'workspace';
+
+  /** Bouton Fichiers (ou ⌘⇧E) : la vue Fichiers occupe la page sous l'en-tête ; recliquer rend la vue précédente. */
+  toggleFiles(): void {
+    if (this.view() === 'files') return this.view.set(this.beforeFiles);
+    this.beforeFiles = this.view();
+    this.view.set('files');
+  }
+
+  /**
+   * Raccourcis de la page : ⌘⇧E / Ctrl+Shift+E bascule la vue Fichiers. Libre dans l'app (⌘N, ⌘B, ⌘F, ⌘P, ⌘⇧F, ⌘S sont pris ailleurs),
+   * dans Electron (menu par défaut) et Chrome ; c'est celui de l'explorateur de VS Code.
+   */
+  shortcut(e: KeyboardEvent): void {
+    if (!this.canFiles() || !isShortcut(e, 'e', this.mac, true)) return;
+    e.preventDefault();
+    this.toggleFiles();
   }
 
   readonly historyMode = signal<HistoryMode>('timeline');

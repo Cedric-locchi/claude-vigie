@@ -3,12 +3,12 @@ import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfirmService } from '../../../core/confirm.service';
 import { provideConfirmServiceMock } from '../../../core/confirm.service.mock';
-import { GitDiff, SessionTrace } from '../../../core/models';
+import { GitDiff, SessionSummary, SessionTrace } from '../../../core/models';
 import { CLIENT_OS } from '../../../core/platform';
 import { OUTDATED, VigieService } from '../../../core/vigie.service';
-import { aProjectFiles, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
+import { aProjectFiles, aSession, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
 import { SessionPageVm } from '../session-page/session-page.vm';
-import { MAX_MATCHES, Row, SessionFilesVm, Tab, buildTree, closeTab, openTab, quickMatch, sideWidth, treeKey } from './session-files.vm';
+import { Row, SessionFilesVm, Tab, buildTree, closeTab, openTab, quickMatch, sideWidth, treeKey } from './session-files.vm';
 
 const httpError = (status: number, error: string) => Object.assign(new Error('http'), { status, error: { error } });
 
@@ -21,7 +21,7 @@ async function setup(extra: Partial<VigieService> = {}, answer = true) {
   return { vm, idle, vigie: TestBed.inject(VigieService), confirm: TestBed.inject(ConfirmService) };
 }
 
-const names = (vm: SessionFilesVm) => vm.view().rows.map((r) => '  '.repeat(r.depth) + r.name + (r.kind === 'file' ? '' : r.open ? '/-' : '/+'));
+const names = (vm: SessionFilesVm) => vm.rows().map((r) => '  '.repeat(r.depth) + r.name + (r.kind === 'file' ? '' : r.open ? '/-' : '/+'));
 const key = (k: string, mods: Partial<KeyboardEvent> = { ctrlKey: true }) => ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods, preventDefault: vi.fn() }) as unknown as KeyboardEvent;
 const tab = (path: string, draft: string | null = null): Tab => ({ path, body: { path, content: 'x', hash: 'h' }, error: null, draft, conflict: false });
 
@@ -109,7 +109,7 @@ describe('SessionFilesVm', () => {
     const { vm, vigie } = await setup({ files: vi.fn(async () => aProjectFiles({ files: ['src/app/a.ts', 'src/b.ts', 'README.md'], collapsed: ['dist'] })) });
     expect(vigie.files).toHaveBeenCalledWith('s1');
     expect(names(vm)).toEqual(['dist/+', 'src/+', 'README.md']);
-    expect(vm.view().rows[0].kind).toBe('ignored');
+    expect(vm.rows()[0].kind).toBe('ignored');
     vm.toggle('src');
     expect(names(vm)).toEqual(['dist/+', 'src/-', '  app/+', '  b.ts', 'README.md']);
     vm.toggle('src');
@@ -117,24 +117,6 @@ describe('SessionFilesVm', () => {
     vm.refresh();
     await TestBed.inject(ApplicationRef).whenStable();
     expect(vigie.files).toHaveBeenCalledTimes(2);
-  });
-
-  it('le filtre garde les résultats et déplie leurs dossiers', async () => {
-    const { vm } = await setup({ files: vi.fn(async () => aProjectFiles({ files: ['src/app/Main.ts', 'src/b.ts', 'lib/main.md', 'README.md'], collapsed: ['node_modules'] })) });
-    vm.query.set(' main ');
-    expect(names(vm)).toEqual(['lib/-', '  main.md', 'src/-', '  app/-', '    Main.ts']);
-    vm.query.set('zzz');
-    expect(vm.view().rows).toEqual([]);
-    vm.query.set('');
-    expect(names(vm)).toEqual(['lib/+', 'node_modules/+', 'src/+', 'README.md']);
-  });
-
-  it('le filtre s’arrête au-delà de MAX_MATCHES résultats', async () => {
-    const files = Array.from({ length: MAX_MATCHES + 10 }, (_, i) => `d/f${i}.ts`);
-    const { vm } = await setup({ files: vi.fn(async () => aProjectFiles({ files, collapsed: [] })) });
-    vm.query.set('f');
-    expect(vm.view().limited).toBe(true);
-    expect(vm.view().rows).toHaveLength(MAX_MATCHES + 1); // + le dossier
   });
 
   it('réponse hors contrat : message « le daemon est-il à jour ? »', async () => {
@@ -155,9 +137,7 @@ describe('SessionFilesVm', () => {
     await TestBed.inject(ApplicationRef).whenStable();
     expect(vm.active()?.path).toBe('src/a.ts');
     vm.toggle('src');
-    vm.query.set('readme');
     vm.reveal('src');
-    expect(vm.query()).toBe('');
     expect(names(vm)).toContain('src/-');
     expect(vm.focusRow()).toBe('src');
   });
@@ -188,6 +168,7 @@ describe('SessionFilesVm', () => {
     const { vm } = await setup({ gitResource: (() => fakeResource(diff)) as unknown as VigieService['gitResource'] });
     expect(vm.changes().dirs.has('src')).toBe(true);
     expect(vm.changes().files.get('src/a.ts')?.status).toBe('M');
+    expect(vm.branch()).toBe('main'); // barre d'état
     await vm.open('src/a.ts');
     expect(vm.marks()).toMatchObject([{ kind: 'add', from: 2, to: 2 }]);
     await vm.open('README.md');
@@ -240,7 +221,7 @@ describe('SessionFilesVm', () => {
     expect(vm.active()).toBeNull();
   });
 
-  it('Ctrl+S enregistre avec l’empreinte lue et les fins de ligne du fichier, puis relit ; Ctrl+P ouvre la palette ; Ctrl+W laissé au système', async () => {
+  it('Ctrl+S enregistre avec l’empreinte lue et les fins de ligne du fichier, puis relit ; Ctrl+P ouvre « Aller au fichier », Ctrl+Shift+F Rechercher ; Ctrl+W laissé au système', async () => {
     const readProjectFile = vi.fn(async (_id: string, path: string) => ({ path, content: 'a\r\nb\r\n', hash: 'h1' }));
     const { vm, vigie } = await setup({ readProjectFile });
     await vm.open('a.ts');
@@ -256,26 +237,13 @@ describe('SessionFilesVm', () => {
     expect(vigie.writeProjectFile).toHaveBeenCalledWith('s1', { path: 'a.ts', content: 'a\r\nb\r\nc\r\n', hash: 'h1' });
     expect(vm.shortcut(key('s', { metaKey: true }))).toBeNull(); // ⌘ hors mac : ignoré
     expect(vm.shortcut(key('p'))).toBe('quick');
+    expect(vm.side()).toBe('project'); // ⌘P ne change pas de vue
+    expect(vm.shortcut(key('F', { ctrlKey: true, shiftKey: true }))).toBe('search');
+    expect(vm.side()).toBe('search');
     const w = key('w');
     vm.shortcut(w);
     expect(w.preventDefault).not.toHaveBeenCalled();
     expect(vm.tabs().length).toBe(1);
-  });
-
-  it('palette : onglets ouverts d’abord, saisie floue, flèches circulaires, réouverture sur une saisie vide', async () => {
-    const { vm } = await setup();
-    await vm.open('README.md');
-    expect(vm.quickResults()[0]).toBe('README.md');
-    vm.quickQuery.set('sat');
-    expect(vm.quickResults()).toEqual(['src/a.ts']);
-    expect(vm.quickStep(-1)).toBe(true);
-    expect(vm.quickIndex()).toBe(0); // un seul résultat : on reste dessus
-    vm.quickQuery.set('zz');
-    expect(vm.quickStep(1)).toBe(false);
-    vm.openQuick();
-    expect(vm.quickQuery()).toBe('');
-    vm.quickStep(-1);
-    expect(vm.quickIndex()).toBe(vm.quickResults().length - 1);
   });
 
   it('bloqué pendant que Claude travaille', async () => {
@@ -360,7 +328,7 @@ describe('SessionFilesVm', () => {
     it('« Voir dans l’historique » ouvre le journal de la page sur le fichier', async () => {
       const openLog = vi.fn();
       const { extra } = traced(trace([['edit', 'src/a.ts', 1]]));
-      TestBed.configureTestingModule({ providers: [{ provide: SessionPageVm, useValue: { openLog } }] });
+      TestBed.configureTestingModule({ providers: [{ provide: SessionPageVm, useValue: { openLog, summary: signal(null) } }] });
       const { vm } = await setup(extra);
       expect(vm.canShowHistory).toBe(true);
       vm.showInHistory(vm.touched()[0]);
@@ -378,34 +346,138 @@ describe('SessionFilesVm', () => {
     });
   });
 
-  describe('barre d’activité', () => {
-    it('recliquer la vue affichée ne la replie pas ; une ancienne préférence « changes » retombe sur l’arbre', async () => {
-      localStorage.setItem('vigie.files.side', 'changes');
+  describe('barre d’activité et fenêtre d’outil', () => {
+    const clear = () => ['collapsed', 'side'].forEach((k) => localStorage.removeItem(`vigie.files.${k}`));
+
+    it('Projet par défaut ; une vue s’affiche et se mémorise ; la vue affichée ne bouge pas au clic', async () => {
+      clear();
       const { vm } = await setup();
-      expect(vm.side()).toBe('tree');
-      expect(vm.isShown('tree')).toBe(true);
-      vm.showSide('tree');
-      expect(vm.isShown('tree')).toBe(true);
-      vm.showSide('search');
-      expect([vm.side(), vm.isShown('tree'), vm.isShown('search')]).toEqual(['search', false, true]);
-      expect(localStorage.getItem('vigie.files.side')).toBe('search');
-      localStorage.removeItem('vigie.files.side');
+      expect([vm.side(), vm.isShown('project'), vm.isShown('search')]).toEqual(['project', true, false]);
+      vm.showSide('claude');
+      expect([vm.side(), vm.isShown('claude'), vm.isShown('project')]).toEqual(['claude', true, false]);
+      expect(localStorage.getItem('vigie.files.side')).toBe('claude');
+      vm.showSide('claude');
+      expect([vm.side(), vm.panelShown()]).toEqual(['claude', true]); // pas de repli au reclic
+      clear();
     });
 
-    it('écran étroit : l’état actif suit le tiroir ; la vue active ouvre le tiroir fermé, ouvrir un fichier le ferme', async () => {
-      localStorage.removeItem('vigie.files.side');
+    it('panneau masqué (mémorisé) : recliquer sur la vue active le rouvre, une autre vue aussi ; le fil d’Ariane et ⌘⇧F aussi', async () => {
+      clear();
+      const { vm } = await setup();
+      vm.showPanel(false);
+      expect([vm.collapsed(), vm.panelShown(), vm.isShown('project')]).toEqual([true, false, false]);
+      expect(localStorage.getItem('vigie.files.collapsed')).toBe('1');
+      vm.showSide('project');
+      expect([vm.panelShown(), vm.side()]).toEqual([true, 'project']);
+      vm.showPanel(false);
+      vm.showSide('search');
+      expect([vm.panelShown(), vm.side()]).toEqual([true, 'search']);
+      vm.showPanel(false);
+      vm.reveal('src');
+      expect([vm.panelShown(), vm.side()]).toEqual([true, 'project']);
+      vm.showPanel(false);
+      vm.shortcut(key('F', { ctrlKey: true, shiftKey: true }));
+      expect([vm.panelShown(), vm.side()]).toEqual([true, 'search']);
+      clear();
+    });
+
+    it('préférence inconnue (ancienne vue « tree ») : retombe sur Projet', async () => {
+      localStorage.setItem('vigie.files.side', 'tree');
+      const { vm } = await setup();
+      expect(vm.side()).toBe('project');
+      clear();
+    });
+
+    it('« Localiser le fichier ouvert » déplie ses dossiers, le désigne et affiche Projet ; « Tout replier » revient à la racine', async () => {
+      clear();
+      const { vm } = await setup({ files: vi.fn(async () => aProjectFiles({ files: ['src/app/deep/x.ts', 'src/b.ts', 'README.md'], collapsed: [] })) });
+      expect(vm.locate()).toBe(false); // aucun fichier ouvert
+      await vm.open('src/app/deep/x.ts');
+      vm.showSide('search');
+      expect(vm.locate()).toBe(true);
+      expect(vm.side()).toBe('project');
+      expect(names(vm)).toEqual(['src/-', '  app/-', '    deep/-', '      x.ts', '  b.ts', 'README.md']);
+      expect(vm.focusRow()).toBe('src/app/deep/x.ts');
+      vm.collapseAll();
+      expect(names(vm)).toEqual(['src/+', 'README.md']);
+      clear();
+    });
+
+    it('écran étroit : la barre d’activité ouvre le tiroir, fermé quand on ouvre un fichier ; le repli n’est pas touché', async () => {
+      clear();
       const { vm } = await setup();
       vm.narrow.set(true);
-      expect(vm.isShown('tree')).toBe(false);
-      vm.showSide('tree');
-      expect(vm.drawer()).toBe(true);
-      expect(vm.isShown('tree')).toBe(true);
-      vm.showSide('tree');
-      expect(vm.drawer()).toBe(true);
+      expect([vm.panelShown(), vm.isShown('project')]).toEqual([false, false]);
+      vm.showSide('project');
+      expect([vm.drawer(), vm.panelShown(), vm.collapsed()]).toEqual([true, true, false]);
       await vm.open('src/a.ts');
-      expect(vm.drawer()).toBe(false);
-      expect(vm.isShown('tree')).toBe(false);
-      localStorage.removeItem('vigie.files.side');
+      expect(vm.panelShown()).toBe(false);
+      clear();
+    });
+  });
+
+  describe('Claude ici', () => {
+    const files = ['src/a.ts', 'src/b.ts', 'README.md'];
+    async function here(state: Partial<SessionSummary> = {}, trace: SessionTrace | null = null) {
+      const summary = signal(aSession({ state: 'running', ...state }));
+      TestBed.configureTestingModule({ providers: [{ provide: SessionPageVm, useValue: { summary, openLog: vi.fn() } }] });
+      const r = await setup({
+        files: vi.fn(async () => aProjectFiles({ root: '/dev/meeplebox', files })),
+        ...(trace ? { traceResource: (() => fakeResource(trace)) as unknown as VigieService['traceResource'] } : {}),
+      });
+      r.idle.set(false);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return { ...r, summary };
+    }
+
+    it('déduit le fichier de l’outil en cours, puis du détail de l’attente (chemin complet)', async () => {
+      const { vm, summary } = await here({ tool: 'Read · src/b.ts' });
+      expect(vm.here()).toEqual({ path: 'src/b.ts', edit: false });
+      summary.set(aSession({ state: 'waiting', reason: 'permission', tool: 'Read · src/b.ts', detail: 'Edit · /dev/meeplebox/src/a.ts' }));
+      expect(vm.here()).toEqual({ path: 'src/a.ts', edit: true });
+      summary.set(aSession({ state: 'running', tool: 'Bash · npm test' }));
+      expect(vm.here()).toBeNull();
+    });
+
+    it('sinon le dernier fichier touché pendant le tour en cours (trace), jamais celui d’un tour fini', async () => {
+      const step = (label: string, kind: 'read' | 'edit', start: number) => ({ id: label, name: 'Edit', kind, label, start, end: start, error: false, agent: null });
+      const t: SessionTrace = { now: 0, state: 'running', waiting: null, turns: [
+        { index: 1, start: 0, end: 1, prompt: '', live: false, steps: [step('README.md', 'edit', 1)] },
+        { index: 2, start: 2, end: 0, prompt: '', live: true, steps: [step('src/b.ts', 'edit', 3)] },
+      ] };
+      const { vm } = await here({ tool: 'Bash · npm test' }, t);
+      expect(vm.here()).toEqual({ path: 'src/b.ts', edit: true });
+    });
+
+    it('rien quand Claude est au repos (Lights-Out)', async () => {
+      const { vm, idle } = await here({ tool: 'Edit · src/a.ts' });
+      expect(vm.here()).not.toBeNull();
+      idle.set(true);
+      expect(vm.here()).toBeNull();
+    });
+
+    it('Suivre : ouvre en aperçu chaque nouveau fichier, sans quitter un onglet en édition ; préférence mémorisée', async () => {
+      localStorage.removeItem('vigie.files.follow');
+      const { vm, summary, idle } = await here({ tool: 'Read · src/b.ts' });
+      expect(vm.tabs()).toEqual([]); // Suivre coupé par défaut
+      vm.toggleFollow();
+      expect(localStorage.getItem('vigie.files.follow')).toBe('1');
+      TestBed.tick();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(vm.active()).toMatchObject({ path: 'src/b.ts', preview: true });
+      // Brouillon en cours : Claude passe à un autre fichier, l'onglet en édition reste devant.
+      idle.set(true);
+      await vm.open('README.md');
+      await vm.startEdit();
+      vm.edit('saisie');
+      idle.set(false);
+      summary.set(aSession({ state: 'running', tool: 'Edit · src/a.ts' }));
+      TestBed.tick();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(vm.active()?.path).toBe('README.md');
+      expect(vm.text()).toBe('saisie');
+      expect(vm.tabs().map((t) => t.path)).not.toContain('src/a.ts');
+      localStorage.removeItem('vigie.files.follow');
     });
   });
 });

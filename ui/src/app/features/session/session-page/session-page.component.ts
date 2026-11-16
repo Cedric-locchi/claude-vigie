@@ -29,8 +29,10 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
   selector: 'app-session-page',
   imports: [Icon, RouterLink, HlmBadge, HlmButton, HlmCardImports, HlmEmptyImports, HlmPopoverImports, HlmProgressImports, HlmTabsImports, HlmToggleGroupImports, HlmTooltip, TerminalComponent, AgentRowComponent, AgentPanelComponent, SessionConfigComponent, SessionCostComponent, SessionDiffComponent, SessionFilesComponent, SessionLogComponent, SessionMiseComponent, SessionXcodeComponent, TimelineComponent, WaitBarComponent],
   providers: [SessionPageVm],
+  host: { '(document:keydown)': 'vm.shortcut($event)' },
   template: `
-    <div class="page" [class.fill]="vm.view() === 'workspace' && !vm.isExternal()" [class.fill-panel]="vm.view() !== 'workspace' && vm.view() !== 'usage'">
+    @let files = vm.view() === 'files';
+    <div class="page" [class.files]="files" [class.fill]="vm.view() === 'workspace' && !vm.isExternal()" [class.fill-panel]="vm.view() !== 'workspace' && vm.view() !== 'usage'">
       @if (vm.summary(); as s) {
         <header>
           <a hlmBtn variant="ghost" size="icon" routerLink="/" class="flex-none text-muted-foreground" aria-label="Retour aux sessions"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7" /></svg></a>
@@ -51,6 +53,12 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
             </p>
           </div>
           <div class="head-actions">
+            @if (vm.canFiles()) {
+              <button hlmBtn variant="outline" class="files-btn" [attr.aria-pressed]="files" [attr.aria-keyshortcuts]="vm.filesKey.aria" (click)="vm.toggleFiles()"
+                [hlmTooltip]="(files ? 'Revenir à la vue précédente (' : 'Voir et retoucher les fichiers du projet (') + vm.filesKey.label + ')'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>Fichiers
+              </button>
+            }
             @if (vm.claudeTerminal()) {
               <button hlmBtn variant="outline" [class.compact-urgent]="vm.context()?.level === 'high'" [disabled]="!vm.canCompact()" (click)="vm.compact()"
                 [hlmTooltip]="vm.canCompact() ? 'Tape /compact : Claude résume la conversation pour libérer le contexte' : 'Indisponible pendant une demande d’autorisation ou une question'">Compacter</button>
@@ -82,7 +90,7 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
           <p class="reply-error small" role="alert">{{ err }}</p>
         }
 
-        @if (vm.isExternal()) {
+        @if (vm.isExternal() && !files) {
           <div class="external small">
             <span>Session lancée hors de Vigie : suivie par son transcript, sans terminal ici.</span>
             <button hlmBtn [disabled]="vm.resuming()" (click)="vm.resume()">{{ vm.resuming() ? 'Reprise…' : 'Reprendre dans Vigie' }}</button>
@@ -91,7 +99,7 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
         }
 
         <div hlmTabs class="views" [tab]="vm.view()" (tabActivated)="vm.showView($any($event))">
-          <div hlmTabsList variant="line" class="views-list" aria-label="Vues de la session">
+          <div hlmTabsList variant="line" class="views-list" aria-label="Vues de la session" [hidden]="files">
             <button hlmTabsTrigger="workspace">
               {{ vm.isChat() ? 'Discussion' : vm.isExternal() ? 'Agents' : 'Terminal & agents' }}@if (vm.agentStats().waiting) { <span class="dot dot-waiting" aria-hidden="true"></span><span class="sr-only">, agent en attente</span> }
             </button>
@@ -99,7 +107,6 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
               <button hlmTabsTrigger="usage">Consommation</button>
             } @else {
               <button hlmTabsTrigger="diff">Diff@if (vm.diffCount(); as n) { <span class="count mono" [attr.aria-label]="n + ' fichier' + (n > 1 ? 's' : '') + ' modifié' + (n > 1 ? 's' : '')">{{ n }}</span> }</button>
-              <button hlmTabsTrigger="files">Fichiers</button>
               @if (vm.hasMise()) {
                 <button hlmTabsTrigger="mise">Tâches mise@if (vm.miseCount(); as n) { <span class="count mono" [attr.aria-label]="n + ' tâche' + (n > 1 ? 's' : '')">{{ n }}</span> }</button>
               }
@@ -191,7 +198,8 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
           @if (vm.view() === 'diff') { <app-session-diff [sessionId]="s.id" [lastTs]="s.lastTs" [idle]="vm.idle()" [canWorktree]="vm.canCompact()" (worktree)="vm.enterWorktree($event)" /> }
         </div>
 
-        <div hlmTabsContent="files" class="panel">
+        <!-- Pas d'onglet : la vue s'ouvre par le bouton Fichiers de l'en-tête, la liste d'onglets est alors masquée. -->
+        <div hlmTabsContent="files" class="panel files-panel" aria-label="Fichiers du projet">
           @if (vm.view() === 'files') { <app-session-files [sessionId]="s.id" [idle]="vm.idle()" /> }
         </div>
 
@@ -274,29 +282,29 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
     h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .head-actions { display: flex; gap: 8px; flex: none; }
+    /* Vue Fichiers : le panneau colle aux bords et au bas de la zone de contenu, sous un filet. */
+    .page.files { padding-bottom: 0; }
+    .files-panel { margin-inline: -36px; border-top: 1px solid var(--line); }
     .views { gap: 14px; }
     .views-list { border-bottom: 1px solid var(--line); }
-    .fill .views { flex: 1; min-height: 0; }
-    /* Journal et Config : en-tête, onglets et barre d'outils restent visibles, seul le contenu défile (à toutes les largeurs). */
-    .page.fill-panel { height: calc(100dvh - var(--chrome-top)); }
-    .fill-panel .views { flex: 1; min-height: 0; }
+    /* Terminal, et Journal, Config, Fichiers… : la page tient dans la fenêtre ; en-tête, onglets et barre d'outils restent visibles, seul le contenu défile. */
+    .page:is(.fill, .fill-panel) { height: calc(100dvh - var(--chrome-top)); }
+    :is(.fill, .fill-panel) .views { flex: 1; min-height: 0; }
     .fill-panel .panel { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
     /* Le terminal est la zone principale : il prend toute la hauteur de la fenêtre. */
     .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; }
-    /* Vue terminal : la page tient dans la fenêtre, le workspace prend la hauteur restante sous l'en-tête (pas de scroll). */
-    .page.fill { height: calc(100dvh - var(--chrome-top)); }
+    /* Vue terminal : le workspace prend la hauteur restante sous l'en-tête (pas de scroll). */
     .fill .workspace { flex: 1; min-height: 360px; }
     .workspace.no-agents { grid-template-columns: minmax(0, 1fr); }
     .term { min-width: 0; min-height: 0; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--bg-deep); display: flex; flex-direction: column; overflow: hidden; }
     .term app-terminal { flex: 1; min-height: 0; }
     .tabs { display: flex; align-items: stretch; background: var(--nav); border-bottom: 1px solid var(--surface-2); }
-    .tabs button { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border: 0; border-right: 1px solid var(--surface-2); background: transparent; color: var(--text-muted); font-family: var(--mono); font-size: 12px; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+    .tabs button { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border: 0; border-right: 1px solid var(--surface-2); background: transparent; color: var(--text-muted); font-family: var(--mono); font-size: 12px; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
     .tabs button:hover { background: var(--hover); color: var(--text); }
     .tabs button:active { background: var(--press); }
     .tabs button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
-    .tabs .tab[aria-current='true'] { background: var(--bg-deep); color: var(--text); }
     /* Onglet actif : un liseré de marque, comme un onglet d'éditeur. */
-    .tabs .tab[aria-current='true'] { box-shadow: inset 0 2px 0 var(--brand); }
+    .tabs .tab[aria-current='true'] { background: var(--bg-deep); color: var(--text); box-shadow: inset 0 2px 0 var(--brand); }
     /* Croix collée à son onglet : l'onglet perd sa bordure droite au profit de celle de la croix. */
     .tabs button:has(+ .close) { border-right: 0; padding-right: 6px; }
     .tabs .close { width: 26px; padding: 0; justify-content: center; }
@@ -304,12 +312,10 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
     .tabs .close:hover { background: var(--err-bg); color: var(--err); }
     .tabs .icon { width: 36px; padding: 0; justify-content: center; border-right: 0; }
     .tabs .toggle { border-right: 0; border-left: 1px solid var(--surface-2); font-family: inherit; }
-    .tabs .toggle .mono { color: var(--faint); font-size: 11px; }
     .tabs .toggle[aria-pressed='true'] { color: var(--text); }
     .count { margin-left: 6px; font-size: 11px; color: var(--faint); }
     .menu { width: auto; padding: 4px; gap: 0; }
     .strip { flex: 1; min-width: 0; display: flex; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-    .tabs button { flex: none; }
     @media (pointer: coarse) {
       .tabs button { height: 44px; }
       .tabs .close { width: 40px; }
@@ -331,10 +337,10 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
       color: var(--text-muted); font: inherit; font-size: 12px; cursor: pointer;
       transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
     }
-    .agent-filter .mono { color: var(--faint); font-size: 11px; }
+    :is(.agent-filter, .tabs .toggle) .mono { color: var(--faint); font-size: 11px; }
     .agent-filter:hover { background: var(--hover); border-color: var(--line-strong); color: var(--text); }
     .agent-filter:active { background: var(--press); }
-    .agent-filter[aria-pressed='true'] { border-color: var(--brand); background: var(--brand-bg); color: var(--text); }
+    :is(.agent-filter, .files-btn)[aria-pressed='true'] { border-color: var(--brand); background: var(--brand-bg); color: var(--text); }
     .agent-filter[aria-pressed='true'] .mono { color: var(--brand); }
     h2 { font-size: 15px; font-weight: 600; }
     .usage { display: flex; flex-direction: column; gap: 14px; }
@@ -359,6 +365,7 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
     }
     /* Téléphone : le titre garde sa ligne, les actions passent dessous et vont à la ligne si besoin. */
     @media (max-width: 720px) {
+      .files-panel { margin-inline: -16px; }
       header { flex-wrap: wrap; align-items: flex-start; }
       .head { flex-basis: calc(100% - 50px); }
       .title-row { flex-wrap: wrap; }

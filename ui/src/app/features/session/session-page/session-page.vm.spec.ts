@@ -7,6 +7,7 @@ import { OUTDATED, VigieService } from '../../../core/vigie.service';
 import { Router, provideRouter } from '@angular/router';
 import { provideConfirmServiceMock } from '../../../core/confirm.service.mock';
 import { ConfirmService } from '../../../core/confirm.service';
+import { CLIENT_OS } from '../../../core/platform';
 import { SessionPageVm } from './session-page.vm';
 
 const term = (id: string, kind: Terminal['kind']): Terminal => ({ id, sessionId: 's1', kind, title: kind, cwd: '/x', shell: 'zsh -l', pid: 1, cols: 80, rows: 24, exited: false, startedAt: 0 });
@@ -21,7 +22,7 @@ function createVm(agents: Agent[] = [], sendKeys = vi.fn(), openShell = vi.fn(as
   const deleteSession = vi.fn(async () => ({ ok: true }));
   TestBed.configureTestingModule({
     providers: [
-      SessionPageVm, provideRouter([]), provideConfirmServiceMock(),
+      SessionPageVm, provideRouter([]), provideConfirmServiceMock(), { provide: CLIENT_OS, useValue: 'linux' },
       { provide: DOCUMENT, useValue: { defaultView: { open }, location: { protocol: 'http:', host: 'x' } } },
       provideVigieServiceMock({
         snapshot: signal(aSnapshot({ terminals: [term('t1', 'claude'), term('t2', 'shell')] })),
@@ -327,6 +328,34 @@ describe('SessionPageVm', () => {
     expect(vm.view()).toBe('history');
     vm.allow();
     expect(vm.view()).toBe('workspace');
+  });
+
+  it('bouton Fichiers et Ctrl+Shift+E : la vue Fichiers puis retour à la vue précédente ; rien pour une discussion', () => {
+    const { vm } = createVm();
+    const e = (extra: Partial<KeyboardEvent> = {}) => ({ key: 'E', ctrlKey: true, shiftKey: true, metaKey: false, altKey: false, preventDefault: vi.fn(), ...extra }) as unknown as KeyboardEvent;
+    expect(vm.canFiles()).toBe(true);
+    expect(vm.filesKey).toEqual({ label: 'Ctrl+Shift+E', aria: 'Control+Shift+E' });
+    vm.showView('history');
+    vm.toggleFiles();
+    expect(vm.view()).toBe('files');
+    vm.toggleFiles();
+    expect(vm.view()).toBe('history');
+    const key = e();
+    vm.shortcut(key);
+    expect([vm.view(), vi.mocked(key.preventDefault).mock.calls.length]).toEqual(['files', 1]);
+    vm.shortcut(e());
+    expect(vm.view()).toBe('history');
+    vm.shortcut(e({ shiftKey: false })); // Ctrl+E : pas pour nous
+    vm.shortcut(e({ ctrlKey: false, metaKey: true })); // ⌘ hors mac : ignoré
+    expect(vm.view()).toBe('history');
+    vm.showView('workspace');
+    TestBed.tick(); // remet la dernière vue du module pour les autres tests
+
+    TestBed.resetTestingModule();
+    const chat = createVm([], undefined, undefined, undefined, aSession({ cwd: '/Users/x/.vigie/chat' })).vm;
+    expect(chat.canFiles()).toBe(false);
+    chat.shortcut(e());
+    expect(chat.view()).toBe('workspace');
   });
 
   it('replie et rouvre le panneau des agents', () => {

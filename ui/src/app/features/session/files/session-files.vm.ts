@@ -9,21 +9,24 @@ import { readPref, writePref } from '../../../core/prefs';
 import { counter, keepLast } from '../../../core/signals';
 import { VigieService } from '../../../core/vigie.service';
 import { GitMark, gitMarks, lineCol, lineCount, lineOffset } from './code-editor/code-editor';
-import { Touched, autoOpen, editedDirs, touchedFiles, visibleFiles } from './touched/files-touched';
+import { Touched, autoOpen, editedDirs, pathResolver, touchedFiles, visibleFiles } from './touched/files-touched';
+import { Here, claudeFile } from './claude-here/claude-here';
 import { SessionPageVm } from '../session-page/session-page.vm';
 import { STATUS, message } from '../diff/session-diff.vm';
 
 const WRAP_KEY = 'vigie.files.wrap';
 const readWrap = (): boolean => readPref(WRAP_KEY) === '1';
-const SIDE_KEY = 'vigie.files.side';
 const WIDTH_KEY = 'vigie.files.width';
+const COLLAPSED_KEY = 'vigie.files.collapsed';
+const FOLLOW_KEY = 'vigie.files.follow';
+const SIDE_KEY = 'vigie.files.side';
 /** Largeur du panneau latéral (px), bornée. */
 export const sideWidth = (px: number): number => Math.round(Math.min(560, Math.max(180, px || 280)));
 
-/** Vue du panneau latéral, choisie dans la barre d'activité. */
-export type SideView = 'tree' | 'search' | 'claude';
-/** Une préférence inconnue (ancienne vue « changes » comprise) retombe sur l'arbre. */
-const SIDES: SideView[] = ['tree', 'search', 'claude'];
+/** Fenêtre d'outil du panneau, choisie dans la barre d'activité. */
+export type SideView = 'project' | 'search' | 'claude';
+/** Une préférence inconnue (anciennes vues comprises) retombe sur Projet. */
+const SIDES: SideView[] = ['project', 'search', 'claude'];
 
 /** Dossier de l'arbre : sous-dossiers et fichiers (chemins complets), triés. */
 export interface Dir { dirs: string[]; files: string[] }
@@ -53,9 +56,6 @@ export function buildTree(files: string[], collapsed: string[]): Map<string, Dir
   for (const d of tree.values()) { d.dirs.sort(byName); d.files.sort(byName); }
   return tree;
 }
-
-/** Au-delà, le filtre s'arrête : déplier des milliers de résultats figerait l'arbre. */
-export const MAX_MATCHES = 500;
 
 /** Déplacement clavier dans l'arbre (motif ARIA « tree ») : ligne à focaliser, dossier à plier/déplier, fichier à ouvrir. */
 export interface TreeMove { focus: number; toggle?: string; open?: string }
@@ -129,7 +129,7 @@ function subseq(s: string, q: string): number | null {
 }
 
 /**
- * Palette « Aller au fichier » : correspondance floue sur le chemin, bonus si tout tient dans le nom du fichier ;
+ * Fenêtre « Aller au fichier » : correspondance floue sur le chemin, bonus si tout tient dans le nom du fichier ;
  * le chemin le plus court départage. null : pas de correspondance.
  */
 export function fuzzy(path: string, q: string): number | null {
@@ -149,7 +149,7 @@ export function quickMatch(files: string[], query: string, max = 50): string[] {
   return hits.sort((a, b) => b.s - a.s).slice(0, max).map((h) => h.f);
 }
 
-/** Onglet Fichiers : arbre du projet, onglets de fichiers ouverts, lecture et édition (mêmes règles que l'édition du Diff). */
+/** Vue Fichiers : arbre du projet, ce que Claude touche, onglets de fichiers ouverts, lecture et édition (mêmes règles que l'édition du Diff). */
 @Injectable()
 export class SessionFilesVm {
   private readonly vigie = inject(VigieService);
@@ -158,7 +158,7 @@ export class SessionFilesVm {
   /** Libellés de raccourci selon la plateforme du client (⌘ sur mac, Ctrl ailleurs). */
   readonly keys = this.mac ? { mod: '⌘', shift: '⇧', aria: 'Meta' } : { mod: 'Ctrl+', shift: 'Shift+', aria: 'Control' };
   private readonly source = signal<{ id: Signal<string>; idle: Signal<boolean> } | null>(null);
-  /** Session affichée (lue aussi par la vue Rechercher). */
+  /** Session affichée (lue aussi par la recherche dans le contenu). */
   readonly id = computed(() => this.source()?.id() ?? null);
   /** Claude ne travaille pas : l'écriture est permise (le daemon applique la même règle, 409 sinon). */
   readonly idle = computed(() => this.source()?.idle() ?? false);
@@ -166,7 +166,7 @@ export class SessionFilesVm {
   /** Change quand Claude se met au travail ou s'arrête : arbre et trace sont relus à ces moments-là, pas à chaque événement. */
   private readonly version = counter(this.idle);
 
-  // Chargée à l'ouverture de l'onglet (le composant n'existe que quand il est affiché), puis à chaque changement d'état de la session.
+  // Chargée à l'ouverture de la vue (le composant n'existe que quand il est affiché), puis à chaque changement d'état de la session.
   private readonly list = resource({ params: () => { const id = this.id(); return id ? { id, v: this.version() } : undefined; }, loader: ({ params }) => this.vigie.files(params.id) });
   /** Garde l'arbre affiché pendant une relecture (pas de clignotement). */
   readonly project = keepLast(this.list, this.id);
@@ -190,6 +190,7 @@ export class SessionFilesVm {
     return { files, dirs };
   });
   readonly STATUS = STATUS;
+  /** Branche git du projet (barre d'état) ; null hors dépôt ou HEAD détachée. */
   readonly branch = computed(() => this.gitDiff()?.branch ?? null);
 
   private readonly tree = computed(() => {
@@ -197,78 +198,54 @@ export class SessionFilesVm {
     return p ? { dirs: buildTree(this.files(), p.collapsed), ignored: new Set(p.collapsed) } : null;
   });
 
-  readonly query = signal('');
   readonly expanded = linkedSignal<string | null, Set<string>>({ source: this.id, computation: () => new Set() });
-  /** Tiroir du panneau latéral (largeurs étroites seulement ; ignoré par le CSS au-delà). */
-  readonly drawer = signal(false);
 
-  // ── Barre d'activité et panneau latéral ──────────────────────────────────
-  readonly side = signal<SideView>(SIDES.find((v) => v === readPref(SIDE_KEY)) ?? 'tree');
+  // ── Barre d'activité et fenêtre d'outil : redimensionnable, masquable ; tiroir sur écran étroit ──
+  readonly side = signal<SideView>(SIDES.find((v) => v === readPref(SIDE_KEY)) ?? 'project');
   readonly width = signal(sideWidth(Number(readPref(WIDTH_KEY))));
+  /** Replié par l'utilisateur (largeurs confortables), mémorisé. */
+  readonly collapsed = signal(readPref(COLLAPSED_KEY) === '1');
   /** Largeurs étroites : le panneau est un tiroir posé sur l'éditeur (le composant suit la media query). */
   readonly narrow = signal(false);
-  /** Vue affichée à l'écran : sur écran étroit, seulement si le tiroir est ouvert. */
-  isShown(v: SideView): boolean { return this.side() === v && (!this.narrow() || this.drawer()); }
-  /** Clic dans la barre d'activité : affiche la vue (ouvre le tiroir sur écran étroit) ; la vue déjà affichée ne bouge pas. */
+  /** Tiroir ouvert (largeurs étroites seulement). */
+  readonly drawer = signal(false);
+  /** Panneau visible à l'écran : tiroir ouvert en étroit, non replié ailleurs. */
+  readonly panelShown = computed(() => (this.narrow() ? this.drawer() : !this.collapsed()));
+  /** Vue affichée à l'écran (bouton actif de la barre d'activité). */
+  isShown(v: SideView): boolean { return this.side() === v && this.panelShown(); }
+  /** Clic dans la barre d'activité : affiche la vue et rouvre le panneau masqué ; la vue déjà affichée ne bouge pas. */
   showSide(v: SideView): void {
+    if (this.isShown(v)) return;
     this.side.set(v);
-    this.drawer.set(true);
     writePref(SIDE_KEY, v);
+    this.showPanel(true);
   }
-  /** ⌘⇧F / Ctrl+Shift+F : montre la vue Rechercher (tiroir compris aux largeurs étroites). */
-  openSearch(): void { this.showSide('search'); }
+  showPanel(on: boolean): void {
+    if (this.narrow()) return this.drawer.set(on);
+    this.collapsed.set(!on);
+    writePref(COLLAPSED_KEY, on ? '0' : '1');
+  }
   resize(px: number): void {
     this.width.set(sideWidth(px));
     writePref(WIDTH_KEY, String(this.width()));
   }
 
-  /** Palette « Aller au fichier » : derniers touchés par Claude d'abord quand la saisie est vide. */
-  readonly quickQuery = signal('');
-  readonly quickResults = computed(() => {
-    const q = this.quickQuery();
-    if (q.trim()) return quickMatch(this.files(), q);
-    const recent = [...this.tabs().map((t) => t.path), ...this.touched().map((t) => t.path)];
-    return [...new Set([...recent, ...this.files()])].slice(0, 50);
-  });
-  readonly quickIndex = linkedSignal({ source: this.quickResults, computation: () => 0 });
-  /** Ouvre la palette sur une saisie vide. */
-  openQuick(): void { this.quickQuery.set(''); }
-  /** Flèches de la palette : sélection circulaire ; false s'il n'y a rien à sélectionner. */
-  quickStep(step: number): boolean {
-    const n = this.quickResults().length;
-    if (!n) return false;
-    this.quickIndex.set((this.quickIndex() + step + n) % n);
-    return true;
-  }
-
-  /** Lignes visibles : seuls les dossiers dépliés sont parcourus. Filtre actif : résultats et leurs dossiers, tout déplié. */
-  readonly view = computed(() => {
-    const p = this.project(), t = this.tree();
-    if (!p || !t) return { rows: [] as Row[], limited: false };
-    const q = this.query().trim().toLowerCase();
-    let shown: Set<string> | null = null, limited = false;
-    if (q) {
-      shown = new Set();
-      let n = 0;
-      for (const list of [this.files(), p.collapsed]) for (const f of list) {
-        if (limited || !f.toLowerCase().includes(q)) continue;
-        if (++n > MAX_MATCHES) { limited = true; continue; }
-        for (let x = f; x && !shown.has(x); x = parent(x)) shown.add(x);
-      }
-    }
-    const expanded = this.expanded(), rows: Row[] = [];
+  /** Lignes visibles de l'arbre : seuls les dossiers dépliés sont parcourus. */
+  readonly rows = computed(() => {
+    const t = this.tree(), rows: Row[] = [];
+    if (!t) return rows;
+    const expanded = this.expanded();
     const walk = (dir: string, depth: number): void => {
       const d = t.dirs.get(dir)!;
       for (const c of d.dirs) {
-        if (shown && !shown.has(c)) continue;
-        const ignored = t.ignored.has(c), open = !ignored && (shown ? true : expanded.has(c));
+        const ignored = t.ignored.has(c), open = !ignored && expanded.has(c);
         rows.push({ path: c, name: base(c), depth, kind: ignored ? 'ignored' : 'dir', open });
         if (open) walk(c, depth + 1);
       }
-      for (const f of d.files) if (!shown || shown.has(f)) rows.push({ path: f, name: base(f), depth, kind: 'file', open: false });
+      for (const f of d.files) rows.push({ path: f, name: base(f), depth, kind: 'file', open: false });
     };
     walk('', 0);
-    return { rows, limited };
+    return rows;
   });
 
   // ── Ce que Claude a touché (trace de la session) ─────────────────────────
@@ -282,8 +259,6 @@ export class SessionFilesVm {
   readonly touchedByPath = computed(() => new Map(this.touched().map((t) => [t.path, t])));
   /** Nombre de fichiers modifiés par Claude sous chaque dossier. */
   readonly editedDirs = computed(() => editedDirs(this.touched()));
-  /** Liste « Touchés par Claude » dépliée. */
-  readonly touchedOpen = signal(true);
   /** Horloge des âges (« 2 min ») : la trace n'est relue qu'aux changements d'état. */
   private readonly now = signal(Date.now());
   /** Âge lisible d'un fichier touché. */
@@ -294,6 +269,29 @@ export class SessionFilesVm {
   /** « Voir dans l'historique » : possible seulement dans la page session (journal filtré sur le fichier). */
   readonly canShowHistory = !!this.page;
   showInHistory(t: Touched): void { this.page?.openLog(t.label); }
+
+  // ── Claude ici : le fichier que Claude lit ou modifie en ce moment ───────
+  private readonly resolve = computed(() => { const p = this.project(); return p ? pathResolver(p.root, this.files()) : null; });
+  /** Tour en cours dans la trace (relue quand Claude se met au travail). */
+  private readonly liveTurn = computed(() => this.trace()?.turns.find((t) => t.live)?.index ?? null);
+  /**
+   * Déduit en direct du snapshot (outil en cours, ou détail de l'attente), sinon le dernier fichier touché pendant le tour en cours ;
+   * null quand Claude ne travaille pas (Lights-Out). Égalité par chemin et nature : pas de réveil à chaque snapshot.
+   * ponytail: le daemon ne donne que l'outil de l'agent principal ; un sous-agent qui écrit ne s'affiche qu'à la relecture de la trace.
+   */
+  readonly here = computed<Here | null>(() => {
+    const r = this.resolve(), s = this.page?.summary();
+    if (this.idle() || !r) return null;
+    const live = this.liveTurn(), last = live === null ? undefined : this.touched().find((t) => t.turn === live);
+    return claudeFile([s?.detail, s?.tool], r) ?? (last ? { path: last.path, edit: last.editTurn === last.turn } : null);
+  }, { equal: (a, b) => a?.path === b?.path && a?.edit === b?.edit });
+  /** « Suivre » : chaque nouveau fichier touché par Claude s'ouvre en aperçu ; mémorisé pour toutes les sessions. */
+  readonly follow = signal(readPref(FOLLOW_KEY) === '1');
+  toggleFollow(): void {
+    const v = !this.follow();
+    this.follow.set(v);
+    writePref(FOLLOW_KEY, v ? '1' : '0');
+  }
 
   /** Retour à la ligne dans l'éditeur, mémorisé pour toutes les sessions. */
   readonly wrap = signal(readWrap());
@@ -306,7 +304,7 @@ export class SessionFilesVm {
   /** Ligne de l'arbre qui porte le tabindex (roving tabindex) : la dernière focalisée, sinon la première. */
   private readonly focused = signal<string | null>(null);
   readonly focusRow = computed(() => {
-    const rows = this.view().rows, f = this.focused();
+    const rows = this.rows(), f = this.focused();
     return rows.some((r) => r.path === f) ? f : (rows[0]?.path ?? null);
   });
 
@@ -316,6 +314,25 @@ export class SessionFilesVm {
   constructor() {
     const tick = setInterval(() => this.now.set(Date.now()), 30_000);
     inject(DestroyRef).onDestroy(() => clearInterval(tick));
+    // Suivre : ouvre en aperçu, jamais par-dessus un onglet en édition ; le tiroir reste comme il était.
+    effect(() => {
+      const h = this.here();
+      if (!h || !this.follow()) return;
+      untracked(() => {
+        if (this.editing() || this.activePath() === h.path) return;
+        const drawer = this.drawer();
+        void this.open(h.path, true);
+        this.drawer.set(drawer);
+      });
+    });
+    // Claude se met au travail ou s'arrête : le fichier affiché est relu (sauf brouillon), comme l'arbre et la trace.
+    effect(() => {
+      if (!this.version()) return;
+      untracked(() => {
+        const id = this.id(), a = this.active();
+        if (id && a?.body && a.draft === null) void this.read(id, a.path);
+      });
+    });
     // Premier chargement de l'arbre et de la trace, aucun onglet : ouvre le dernier fichier modifié par Claude.
     effect(() => {
       const id = this.id();
@@ -337,9 +354,7 @@ export class SessionFilesVm {
     else this.gitVersion.update((v) => v + 1);
   }
 
-  /** Filtre actif : les dossiers sont dépliés d'office, le clic ne change rien. */
   toggle(path: string): void {
-    if (this.query().trim()) return;
     this.expanded.update((s) => {
       const next = new Set(s);
       if (!next.delete(path)) next.add(path);
@@ -356,7 +371,7 @@ export class SessionFilesVm {
 
   /** Touche dans l'arbre ; true si elle est prise en charge (le composant déplace alors le focus sur `focusRow`). */
   treeKey(key: string): boolean {
-    const rows = this.view().rows;
+    const rows = this.rows();
     const move = treeKey(rows, rows.findIndex((r) => r.path === this.focusRow()), key);
     if (!move) return false;
     if (move.toggle) this.toggle(move.toggle);
@@ -365,18 +380,30 @@ export class SessionFilesVm {
     return true;
   }
 
-  /** Fil d'Ariane : déplie le dossier (et ses parents) dans l'arbre et le désigne au clavier. */
-  reveal(dir: string): void {
-    this.query.set('');
+  /**
+   * Fil d'Ariane, « Localiser le fichier ouvert » : déplie le dossier (ou les dossiers parents d'un fichier) dans l'arbre,
+   * y désigne la ligne au clavier et affiche la vue Projet.
+   */
+  reveal(path: string): void {
+    const isDir = !!this.tree()?.dirs.has(path);
     this.expanded.update((s) => {
       const next = new Set(s);
-      for (let d = dir; d; d = parent(d)) next.add(d);
+      for (let d = isDir ? path : parent(path); d; d = parent(d)) next.add(d);
       return next;
     });
-    this.focused.set(dir);
-    this.side.set('tree');
-    this.drawer.set(true);
+    this.focused.set(path);
+    this.showSide('project');
   }
+
+  /** « Localiser le fichier ouvert » ; false sans fichier ouvert. */
+  locate(): boolean {
+    const p = this.activePath();
+    if (p) this.reveal(p);
+    return !!p;
+  }
+
+  /** « Tout replier » : l'arbre revient à la racine. */
+  collapseAll(): void { this.expanded.set(new Set()); }
 
   // ── Onglets ──────────────────────────────────────────────────────────────
   readonly tabs = linkedSignal<string | null, Tab[]>({ source: this.id, computation: () => [] });
@@ -516,24 +543,21 @@ export class SessionFilesVm {
   }
 
   /**
-   * Raccourcis de l'onglet (⌘/Ctrl + S, P, Maj+F) ; 'quick' : le composant ouvre la palette « Aller au fichier » ;
-   * 'search' : la vue Rechercher est affichée, le composant y met le focus.
+   * Raccourcis de la vue (⌘/Ctrl + S, P, Maj+F) ; 'quick' : le composant ouvre la fenêtre « Aller au fichier » ;
+   * 'search' : la vue Rechercher est affichée, le composant met le focus dans son champ.
    */
   shortcut(e: KeyboardEvent): 'quick' | 'search' | null {
-    const a = this.active();
-    // Pas de conflit : ⌘F / Ctrl+F (Historique) refuse Maj, et l'onglet n'existe que quand il est affiché.
+    // Pas de conflit : ⌘F / Ctrl+F (Historique) refuse Maj, et la vue n'existe que quand elle est affichée.
     if (isShortcut(e, 'f', this.mac, true)) {
       e.preventDefault();
-      this.openSearch();
+      this.showSide('search');
       return 'search';
     }
     if (isShortcut(e, 'p', this.mac)) {
       e.preventDefault();
-      this.openQuick();
       return 'quick';
     }
-    if (!a) return null;
-    if (isShortcut(e, 's', this.mac)) { e.preventDefault(); void this.save(); }
+    if (this.active() && isShortcut(e, 's', this.mac)) { e.preventDefault(); void this.save(); }
     // ponytail: pas de ⌘W / Ctrl+W : le navigateur et le menu par défaut d'Electron ferment la fenêtre avant la page
     // (sous Linux, l'app quitte : brouillon perdu). On ferme un onglet par × ou clic milieu ; à rouvrir avec un menu Electron.
     return null;

@@ -6,6 +6,7 @@ import { Agent, Terminal } from '../../../core/models';
 import { aSession } from '../../../core/vigie.service.mock';
 import { TerminalComponent } from '../../terminal/terminal/terminal.component';
 import { SessionCostComponent } from '../cost/session-cost.component';
+import { SessionFilesComponent } from '../files/session-files.component';
 import { SessionPageComponent } from './session-page.component';
 import { SessionPageVm } from './session-page.vm';
 
@@ -15,6 +16,13 @@ class TerminalStub {
   readonly terminalId = input.required<string>();
   readonly active = input(true);
   readonly focusTick = input(0);
+}
+
+// La vue Fichiers a ses propres VM (testés à part) : bouchon ici.
+@Component({ selector: 'app-session-files', template: 'fichiers' })
+class SessionFilesStub {
+  readonly sessionId = input.required<string>();
+  readonly idle = input(false);
 }
 
 // Le graphique de coût a son propre VM (testé à part) : bouchon ici.
@@ -37,12 +45,13 @@ function render(overrides: Partial<SessionPageVm> = {}) {
     diffCount: signal(4), hasMise: signal(false), miseCount: signal(0), hasXcode: signal(false), xcode: signal(null), historyMode: signal('timeline'), showHistory: vi.fn(),
     terminals: signal([claude]), activeTab: signal('t1'), activeTerminal: signal(claude), claudeTerminal: signal(claude),
     agents: signal([mainAgent]), context: signal({ used: 150_000, max: 200_000, pct: 0.75, level: "mid" }), canCompact: signal(true), canInterrupt: signal(false), compact: vi.fn(), isChat: signal(false), visibleAgents: signal([mainAgent]), agentFilters: signal([{ state: "waiting", label: "En attente", count: 1 }]), activeAgentFilter: signal(null), filterAgents: vi.fn(), agentStats: signal({ running: 0, waiting: 1 }), logQuery: signal(''), openLog: vi.fn(), usage: signal(null), openAgent: signal(null), showAgent: vi.fn(), resuming: signal(false), resumeError: signal(null), resume: vi.fn(), notFound: signal(false), outdated: signal(false),
+    canFiles: signal(true), filesKey: { label: 'Ctrl+Shift+E', aria: 'Control+Shift+E' }, toggleFiles: vi.fn(), shortcut: vi.fn(),
     selectTab: vi.fn(), addShell: vi.fn(), closeTab: vi.fn(), detach: vi.fn(), allow: vi.fn(), refuse: vi.fn(), interrupt: vi.fn(), remove: vi.fn(), agentsOpen: signal(true), toggleAgents: vi.fn(), isExternal: signal(false), view: signal('workspace'), showView: vi.fn(), focusTick: signal(0), goToTerminal: vi.fn(), end: vi.fn(), replyError: signal<string | null>(null),
     ...overrides,
   };
   TestBed.configureTestingModule({ providers: [provideRouter([])] })
     .overrideComponent(SessionPageComponent, { set: { providers: [{ provide: SessionPageVm, useValue: vm }] } })
-    .overrideComponent(SessionPageComponent, { remove: { imports: [TerminalComponent, SessionCostComponent] }, add: { imports: [TerminalStub, SessionCostStub] } });
+    .overrideComponent(SessionPageComponent, { remove: { imports: [TerminalComponent, SessionCostComponent, SessionFilesComponent] }, add: { imports: [TerminalStub, SessionCostStub, SessionFilesStub] } });
   const fixture = TestBed.createComponent(SessionPageComponent);
   fixture.componentRef.setInput('id', 's1');
   fixture.detectChanges();
@@ -143,6 +152,30 @@ describe('SessionPageComponent', () => {
     expect(close).toHaveLength(1);
     close[0].click();
     expect(vm.closeTab).toHaveBeenCalledWith('t2');
+  });
+
+  it('bouton Fichiers dans l’en-tête : bascule la vue, qui masque les onglets et garde la barre d’attente ; absent pour une discussion', () => {
+    const { el, vm } = render();
+    expect([...el.querySelectorAll('[hlmTabsTrigger]')].map((b) => b.textContent!.trim())).not.toContain('Fichiers');
+    const btn = () => [...el.querySelectorAll<HTMLButtonElement>('.head-actions button')].find((b) => b.textContent!.trim() === 'Fichiers');
+    expect(btn()!.getAttribute('aria-pressed')).toBe('false');
+    expect(btn()!.getAttribute('aria-keyshortcuts')).toBe('Control+Shift+E');
+    expect(btn()!.nextElementSibling!.textContent!.trim()).toBe('Compacter');
+    btn()!.click();
+    expect(vm.toggleFiles).toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'E', ctrlKey: true, shiftKey: true }));
+    expect(vm.shortcut).toHaveBeenCalled();
+
+    TestBed.resetTestingModule();
+    const files = render({ view: signal<'workspace' | 'files'>('files'), idle: signal(true) });
+    expect(files.el.querySelector('.page')!.classList).toContain('files');
+    expect([...files.el.querySelectorAll<HTMLButtonElement>('.head-actions button')].find((b) => b.textContent!.trim() === 'Fichiers')!.getAttribute('aria-pressed')).toBe('true');
+    expect(files.el.querySelector('.files-panel app-session-files')).not.toBeNull();
+    expect(files.el.querySelector('app-wait-bar')).not.toBeNull();
+
+    TestBed.resetTestingModule();
+    const chat = render({ canFiles: signal(false), isChat: signal(true) });
+    expect([...chat.el.querySelectorAll('.head-actions button')].map((b) => b.textContent!.trim())).not.toContain('Fichiers');
   });
 
   it('onglets de vue : terminal et agents, ou historique seul', () => {

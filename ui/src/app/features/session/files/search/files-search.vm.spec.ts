@@ -131,15 +131,14 @@ describe('FilesSearchVm', () => {
     expect(files.goto()).toEqual({ line: 3, offset: CONTENT.indexOf('export const b') });
   });
 
-  it('Ctrl+Shift+F affiche la vue Rechercher sans la replier ; Ctrl+F reste libre', () => {
+  it('Ctrl+Shift+F ouvre le tiroir sur Rechercher, sans le refermer ; Ctrl+F reste libre', () => {
     const { files } = setup();
     const key = (mods: KeyboardEventInit) => new KeyboardEvent('keydown', { key: mods.shiftKey ? 'F' : 'f', ...mods });
     files.narrow.set(true);
     expect(files.shortcut(key({ ctrlKey: true, shiftKey: true }))).toBe('search');
-    expect(files.side()).toBe('search');
-    expect(files.isShown('search')).toBe(true);
+    expect([files.panelShown(), files.side()]).toEqual([true, 'search']);
     expect(files.shortcut(key({ ctrlKey: true, shiftKey: true }))).toBe('search');
-    expect(files.isShown('search')).toBe(true);
+    expect(files.panelShown()).toBe(true);
     expect(files.shortcut(key({ ctrlKey: true }))).toBeNull();
   });
 });

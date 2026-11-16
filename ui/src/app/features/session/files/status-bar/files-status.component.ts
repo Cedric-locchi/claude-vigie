@@ -1,45 +1,61 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, output } from '@angular/core';
+import { Icon } from '../../../../core/icon.component';
 import { SessionFilesVm } from '../session-files.vm';
 
 /**
- * Barre d'état de l'onglet Fichiers : neutre au repos ; quand Claude travaille, elle passe au bleu « en cours »
- * et dit pourquoi l'éditeur est en lecture seule. Vue seule : l'état vient de `SessionFilesVm`.
+ * Barre d'état de la vue Fichiers, façon WebStorm : à gauche le fil d'Ariane du fichier actif (chaque segment le révèle
+ * dans l'arbre) ; à droite position, fin de ligne, langage, branche git, « Non enregistré », et le cadenas « Claude travaille »
+ * quand l'éditeur est en lecture seule. Sobre : pas de fond coloré. Vue seule : l'état vient de `SessionFilesVm`.
  */
 @Component({
   selector: 'app-files-status',
-  host: { '[class.busy]': '!vm.idle()' },
+  imports: [Icon],
   template: `
-    @if (vm.branch(); as b) {
-      <span class="mono"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9" /></svg><span class="sr-only">Branche </span>{{ b }}</span>
-    }
-    @if (!vm.idle()) { <span class="claude"><span class="pulse" aria-hidden="true"></span>Claude travaille, éditeur en lecture seule</span> }
-    @if (vm.status(); as s) {
-      <span class="mono push">Ln {{ vm.position().line }}, Col {{ vm.position().col }}</span>
-      <span class="mono">{{ s.lines }} ligne{{ s.lines > 1 ? 's' : '' }}</span>
-      <span class="mono">{{ s.eol }}</span>
-      <span>{{ s.lang ?? 'Texte brut' }}</span>
+    <nav class="crumbs" aria-label="Chemin du fichier">
+      @for (c of vm.crumbs(); track c.path; let last = $last) {
+        <button type="button" class="crumb" [class.here]="last" [attr.aria-current]="last ? 'location' : null"
+          [attr.aria-label]="'Montrer ' + c.path + ' dans l’arbre'" (click)="reveal.emit(c.path)">{{ c.name }}</button>
+        @if (!last) { <svg appIcon="chevron" class="sep"></svg> }
+      }
+    </nav>
+    <div class="right">
+      @if (!vm.idle()) {
+        <span class="busy"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3" /></svg>Claude travaille<span class="sr-only"> : éditeur en lecture seule</span></span>
+      }
       @if (vm.dirty()) { <span class="on">Non enregistré</span> }
-    }
+      @if (vm.status(); as s) {
+        @if (!vm.markdown()) { <span class="mono"><span class="sr-only">Ligne et colonne </span>{{ vm.position().line }}:{{ vm.position().col }}</span> }
+        <span class="mono opt">{{ s.eol }}</span>
+        <span class="opt">{{ s.lang ?? 'Texte brut' }}</span>
+      }
+      @if (vm.branch(); as b) {
+        <span class="mono opt"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9" /></svg><span class="sr-only">Branche </span>{{ b }}</span>
+      }
+    </div>
   `,
   styles: `
     :host {
-      grid-column: 1 / -1; display: flex; align-items: center; gap: 0 16px; min-height: 24px; padding: 0 12px; overflow: hidden; white-space: nowrap;
-      border-top: 1px solid var(--line); background: var(--bg); color: var(--faint); font-size: 11px;
-      transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+      display: flex; align-items: center; gap: 16px; height: 24px; padding: 0 8px 0 4px; overflow: hidden; white-space: nowrap;
+      border-top: 1px solid var(--line); background: var(--nav); color: var(--faint); font-size: 12px;
     }
-    :host > * { display: inline-flex; align-items: center; gap: 4px; }
-    :host(.busy) { background: var(--brand-bg); color: var(--text-2); box-shadow: inset 0 1px 0 var(--brand); }
-    .ic { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .push { margin-left: auto; }
+    .crumbs { flex: 1 1 0; min-width: 0; display: flex; align-items: center; overflow: hidden; }
+    .crumb { flex: none; height: 20px; padding: 0 4px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; cursor: pointer; transition: background-color var(--dur-fast) var(--ease); }
+    .crumb:hover { background: var(--hover); color: var(--text); }
+    .crumb.here { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+    .crumb:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+    .sep { flex: none; width: 12px; height: 12px; stroke-width: 1.6; stroke-linecap: round; color: var(--faint); }
+    .right { flex: none; display: flex; align-items: center; gap: 14px; }
+    .right > * { display: inline-flex; align-items: center; gap: 4px; }
+    .ic { flex: none; width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .mono { font-size: 11px; }
     .on { color: var(--text); }
-    .claude { color: var(--brand); font-weight: 600; }
-    .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); animation: pulse 1.6s var(--ease) infinite; }
-    @keyframes pulse { 50% { opacity: 0.3; } }
-    @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
-    /* Étroit : on garde la position du curseur et « Non enregistré ». */
-    @media (max-width: 820px) { .push ~ :not(.on) { display: none; } }
+    .busy { color: var(--brand); }
+    /* Étroit : le chemin, la position, « Non enregistré » et « Claude travaille » restent. */
+    @media (max-width: 820px) { .opt { display: none; } }
   `,
 })
 export class FilesStatusComponent {
   protected readonly vm = inject(SessionFilesVm);
+  /** Clic sur un segment : le parent le montre dans l'arbre et y met le focus. */
+  readonly reveal = output<string>();
 }
