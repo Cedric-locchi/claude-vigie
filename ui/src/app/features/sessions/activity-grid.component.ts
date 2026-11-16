@@ -4,7 +4,6 @@ import { ActivityDay, ActivityGrid } from './activity-grid';
 
 const DATE = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 const SHORT = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
-const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
 
 /** Activité de l'année façon GitHub : chiffres clés, une case par jour (plus verte = plus de sessions), détail du jour survolé. */
 @Component({
@@ -16,12 +15,8 @@ const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
         <div>
           <h2>Activité</h2>
           <p class="small">
-            @if (g.total) {
-              {{ plural(g.total, 'session') }} sur {{ plural(g.activeDays, 'jour') }} ces 12 derniers mois.
-              @if (g.streak > 1) { Tu enchaînes {{ g.streak }} jours d'affilée. }
-            } @else {
-              Aucune session ces 12 derniers mois.
-            }
+            Tes 12 derniers mois, une case par jour.
+            @if (g.streak > 1) { Tu enchaînes {{ g.streak }} jours d'affilée. } @else if (!g.total) { Aucune session pour l'instant. }
           </p>
         </div>
       </header>
@@ -33,7 +28,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
         <div><dt>Plus longue série</dt><dd><span class="mono">{{ g.longest }}</span> j</dd></div>
         <div>
           <dt>Jour record</dt>
-          <dd>@if (g.best; as b) { <span class="mono">{{ b.sessions }}</span> <span class="faint">le {{ short(b.day) }}</span> } @else { <span class="faint">—</span> }</dd>
+          <dd>@if (g.best; as b) { <span class="mono">{{ b.sessions }}</span><span class="faint">&nbsp;le {{ short(b.day) }}</span> } @else { <span class="faint">—</span> }</dd>
         </div>
         <div><dt>Coût estimé</dt><dd class="mono">{{ f.usd(g.cost) }}</dd></div>
       </dl>
@@ -116,7 +111,6 @@ export class ActivityGridComponent {
   protected readonly hover = signal<ActivityDay | null>(null);
   protected readonly levels = [0, 1, 2, 3, 4];
   protected readonly f = f;
-  protected readonly plural = plural;
   protected date = (t: number) => DATE.format(t);
   protected short = (t: number) => SHORT.format(t).replace('.', '');
 }
