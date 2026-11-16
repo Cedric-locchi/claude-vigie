@@ -36,6 +36,18 @@ describe('activityGrid', () => {
     expect(g.activeDays).toBe(2);
   });
 
+  it('séries, coût cumulé et jour record ; aujourd’hui vide ne casse pas la série', () => {
+    const rows = [
+      row(day(2026, 10, 10), 'a', 1), row(day(2026, 10, 11), 'b', 1), row(day(2026, 10, 12), 'c', 1),
+      row(day(2026, 10, 12), 'c2', 1), // 12 nov : record (2 sessions)
+      row(day(2026, 10, 16), 'd', 2), row(day(2026, 10, 17), 'e', 3), // série en cours : 16, 17, aujourd'hui (18) vide
+    ];
+    const g = activityGrid(rows, now);
+    expect(g).toMatchObject({ cost: 9, longest: 3, streak: 2, activeDays: 5 });
+    expect(g.best?.day).toBe(day(2026, 10, 12));
+    expect(activityGrid(rows, day(2026, 10, 20)).streak).toBe(0); // deux jours vides : série cassée
+  });
+
   it('un libellé par mois, sur la semaine qui contient le 1er', () => {
     const g = activityGrid([], now);
     const nov = g.months.find((m) => m.label === 'nov')!;

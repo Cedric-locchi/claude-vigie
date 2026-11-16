@@ -46,19 +46,39 @@ import { SessionsPageVm } from './sessions-page.vm';
       } @else {
         @let k = vm.kpis();
         <section class="kpis" aria-label="Indicateurs en direct">
-          <div class="kpi" [class.hot]="k.blocked"><span class="label">En attente</span><span class="num">{{ k.blocked }}</span>@if (k.turn) { <span class="sub">+ {{ k.turn }} fin de tour</span> }</div>
-          <div class="kpi"><span class="label">En cours</span><span class="num">{{ k.running }}</span></div>
-          <div class="kpi"><span class="label">Sous-agents actifs</span><span class="num">{{ k.subagents }}</span></div>
-          <a class="kpi link" routerLink="/usage"><span class="label">Coût aujourd'hui</span><span class="num">{{ f.usd(k.todayCost) }}</span><span class="sub">estimé</span></a>
-          <a class="kpi link wide" routerLink="/usage">
-            <span class="label">Fenêtre de 5 h</span>
-            @if (k.window; as w) {
-              <span class="num">{{ f.pct(w.pct) }}</span>
-              <hlm-progress [value]="w.bar" aria-label="Fenêtre de 5 h utilisée"><hlm-progress-indicator /></hlm-progress>
-              <span class="sub">@if (w.limitAt) { <span class="limit">limite vers {{ f.clock(w.limitAt) }}</span> } @else if (w.end) { reset dans {{ f.duration(w.end - vm.now()) }} }</span>
-            } @else {
-              <span class="num faint">—</span><span class="sub">aucune fenêtre ouverte</span>
-            }
+          <div class="group" aria-label="Sessions">
+            <div class="kpi" [class.hot]="k.blocked" [class.zero]="!k.blocked">
+              <span class="label">@if (k.blocked) { <i class="dot wait"></i> }En attente</span>
+              <span class="num">{{ k.blocked }}</span>
+              <span class="sub">@if (k.blocked) { à débloquer } @else { rien ne te bloque }@if (k.turn) { · {{ k.turn }} à toi }</span>
+            </div>
+            <div class="kpi" [class.zero]="!k.running">
+              <span class="label">@if (k.running) { <i class="dot run"></i> }En cours</span>
+              <span class="num">{{ k.running }}</span>
+              <span class="sub">{{ k.doneToday }} terminée{{ k.doneToday > 1 ? 's' : '' }} aujourd'hui</span>
+            </div>
+            <div class="kpi" [class.zero]="!k.subagents">
+              <span class="label">Sous-agents</span>
+              <span class="num">{{ k.subagents }}</span>
+              <span class="sub">actifs en ce moment</span>
+            </div>
+          </div>
+          <a class="group usage" routerLink="/usage" aria-label="Consommation : voir le détail">
+            <div class="kpi">
+              <span class="label">Coût aujourd'hui</span>
+              <span class="num">{{ f.usd(k.todayCost) }}</span>
+              <span class="sub">estimé</span>
+            </div>
+            <div class="kpi window">
+              <span class="label">Fenêtre de 5 h <svg appIcon="chevron" class="go" width="14" height="14"></svg></span>
+              @if (k.window; as w) {
+                <span class="num">{{ f.pct(w.pct) }}</span>
+                <hlm-progress [value]="w.bar" aria-label="Fenêtre de 5 h utilisée"><hlm-progress-indicator /></hlm-progress>
+                <span class="sub">@if (w.limitAt) { <span class="limit">limite vers {{ f.clock(w.limitAt) }}</span> } @else if (w.end) { reset dans {{ f.duration(w.end - vm.now()) }} }</span>
+              } @else {
+                <span class="num faint">—</span><span class="sub">aucune fenêtre ouverte</span>
+              }
+            </div>
           </a>
         </section>
 
@@ -129,19 +149,28 @@ import { SessionsPageVm } from './sessions-page.vm';
       .search { flex: 1; width: auto; min-width: 0; }
     }
 
-    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
-    .kpi { display: flex; flex-direction: column; gap: 4px; padding: 14px 18px; border-right: 1px solid var(--line); color: var(--text); min-width: 0; }
+    /* Bandeau : deux panneaux côte à côte, l'état des sessions à gauche, la consommation (cliquable) à droite. */
+    .kpis { display: grid; grid-template-columns: 3fr 2fr; gap: 12px; }
+    .group { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; color: var(--text); }
+    .kpi { display: flex; flex-direction: column; gap: 4px; padding: 14px 18px; border-right: 1px solid var(--line); min-width: 0; }
     .kpi:last-child { border-right: 0; }
-    .kpi.wide { grid-column: span 2; }
-    .kpi.link { transition: background-color var(--dur-fast) var(--ease); }
-    .kpi.link:hover { background: var(--hover); }
-    .kpi.link:active { background: var(--press); }
-    .kpi.link:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
-    .label { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+    .usage { grid-auto-columns: 1fr 1.4fr; transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+    .usage:hover { background: var(--hover); border-color: var(--line-strong); }
+    .usage:active { background: var(--press); }
+    .usage:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+    .go { margin-left: auto; color: var(--faint); transition: transform var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+    .usage:hover .go { color: var(--brand); transform: translateX(2px); }
     .num { font-family: var(--mono); font-size: 24px; font-weight: 500; }
-    .sub { font-size: 12px; color: var(--text-muted); }
+    .sub { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .window hlm-progress { margin: 2px 0; }
     .limit { color: var(--text); font-weight: 600; }
-    .kpi.hot { background: var(--wait-bg); }
+    /* Zéro : le chiffre s'efface pour que l'œil aille aux valeurs non nulles. */
+    .kpi.zero .num { color: var(--faint); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .dot.wait { background: var(--wait); box-shadow: 0 0 0 3px var(--wait-bg); }
+    .dot.run { background: var(--brand); }
+    .kpi.hot { background: var(--wait-bg); box-shadow: inset 3px 0 0 var(--wait); }
     .kpi.hot .num, .kpi.hot .label { color: var(--wait); }
 
     .board { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
@@ -187,6 +216,7 @@ import { SessionsPageVm } from './sessions-page.vm';
     .del:hover { background: var(--err-bg); color: var(--err); }
 
     @media (max-width: 1200px) {
+      .kpis { grid-template-columns: 1fr; }
       .row { grid-template-columns: 118px minmax(160px, 1fr) minmax(140px, 1.2fr) 64px 64px 170px; }
       .c-spark, .c-agents { display: none; }
     }
@@ -196,7 +226,10 @@ import { SessionsPageVm } from './sessions-page.vm';
       .state { grid-column: 1; } .actions { grid-column: 2; grid-row: 1; }
       .who, .doing { grid-column: 1 / -1; }
       .num-col { text-align: left; }
-      .kpi.wide { grid-column: auto; }
+      .group { grid-auto-flow: row; }
+      .usage { grid-auto-columns: auto; }
+      .kpi { border-right: 0; border-bottom: 1px solid var(--line); }
+      .kpi:last-child { border-bottom: 0; }
     }
   `,
 })
