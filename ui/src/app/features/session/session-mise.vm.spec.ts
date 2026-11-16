@@ -42,6 +42,14 @@ describe('SessionMiseVm secteurs', () => {
     expect(vm.sectors().map((s) => s.name)).toEqual(['front']);
     vm.search.set('zzz');
     expect(vm.sectors()).toEqual([]);
+    expect(vm.first()).toBeNull();
+  });
+
+  it('montre ce que la tâche exécute et cherche aussi dans la description', () => {
+    const t = { ...task('front:build'), description: 'Construit l’UI', run: ['ng build', 'echo ok'], depends: ['lint'] };
+    const { vm } = setup(aMiseTasks({ tasks: [t, task('lint')] }));
+    vm.search.set('construit');
+    expect(vm.first()).toMatchObject({ name: 'front:build', short: 'build', command: 'ng build', extra: 1, depends: ['lint'] });
   });
 });
 
