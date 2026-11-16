@@ -21,6 +21,8 @@ export function sectorOf(t: { name: string; source: string }): { sector: string;
 }
 const PROJECT = 'Projet';
 
+export interface SectorTask { name: string; short: string; aliases: string[]; description: string; command: string; extra: number; depends: string[] }
+
 /**
  * Onglet « Tâches mise » : la liste vient de la page (elle décide si l'onglet existe) ;
  * ici on lance une tâche ou `mise trust` dans un nouveau terminal, que la page affiche ensuite.
@@ -33,19 +35,24 @@ export class SessionMiseVm {
   private readonly mise = computed(() => this.source()?.mise() ?? null);
   readonly tasks = computed(() => projectTasks(this.mise()));
   readonly search = signal('');
-  /** Tâches groupées par secteur, filtrées par la recherche (nom complet ou alias). « Projet » d'abord, puis l'ordre alphabétique. */
+  /** Tâches groupées par secteur, filtrées par la recherche (nom, alias ou description). « Projet » d'abord, puis l'ordre alphabétique.
+   *  `command` : ce que la tâche exécute (première ligne de `run`, sinon son fichier), pour savoir ce qu'on lance avant de cliquer. */
   readonly sectors = computed(() => {
     const q = this.search().trim().toLowerCase();
-    const groups = new Map<string, { name: string; short: string }[]>();
+    const groups = new Map<string, SectorTask[]>();
     for (const t of this.tasks()) {
-      if (q && ![t.name, ...t.aliases].some((n) => n.toLowerCase().includes(q))) continue;
+      if (q && ![t.name, ...t.aliases, t.description].some((n) => n.toLowerCase().includes(q))) continue;
       const { sector, short } = sectorOf(t);
-      groups.set(sector, [...(groups.get(sector) ?? []), { name: t.name, short }]);
+      const command = t.run[0] ?? t.file ?? '';
+      const extra = t.run.length > 1 ? t.run.length - 1 : 0;
+      groups.set(sector, [...(groups.get(sector) ?? []), { name: t.name, short, aliases: t.aliases, description: t.description, command, extra, depends: t.depends }]);
     }
     return [...groups]
       .sort(([a], [b]) => (a === PROJECT ? -1 : b === PROJECT ? 1 : a.localeCompare(b)))
       .map(([name, tasks]) => ({ name, tasks: tasks.sort((a, b) => a.short.localeCompare(b.short)) }));
   });
+  /** Première tâche visible : « Entrée » dans la recherche la lance. */
+  readonly first = computed(() => this.sectors()[0]?.tasks[0] ?? null);
   readonly untrusted = computed(() => !!this.mise()?.untrusted);
   /** Message de mise (config non approuvée, toml invalide…), affiché tel quel. */
   readonly error = computed(() => this.mise()?.error ?? null);
