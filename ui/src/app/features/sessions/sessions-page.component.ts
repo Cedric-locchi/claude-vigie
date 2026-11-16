@@ -46,39 +46,34 @@ import { SessionsPageVm } from './sessions-page.vm';
       } @else {
         @let k = vm.kpis();
         <section class="kpis" aria-label="Indicateurs en direct">
-          <div class="group" aria-label="Sessions">
-            <div class="kpi" [class.hot]="k.blocked" [class.zero]="!k.blocked">
-              <span class="label">@if (k.blocked) { <i class="dot wait"></i> }En attente</span>
-              <span class="num">{{ k.blocked }}</span>
-              <span class="sub">@if (k.blocked) { à débloquer } @else { rien ne te bloque }@if (k.turn) { · {{ k.turn }} à toi }</span>
-            </div>
-            <div class="kpi" [class.zero]="!k.running">
-              <span class="label">@if (k.running) { <i class="dot run"></i> }En cours</span>
-              <span class="num">{{ k.running }}</span>
-              <span class="sub">{{ k.doneToday }} terminée{{ k.doneToday > 1 ? 's' : '' }} aujourd'hui</span>
-            </div>
-            <div class="kpi" [class.zero]="!k.subagents">
-              <span class="label">Sous-agents</span>
-              <span class="num">{{ k.subagents }}</span>
-              <span class="sub">actifs en ce moment</span>
-            </div>
+          <div class="now">
+            <p class="headline" [class.hot]="k.blocked" aria-live="polite">
+              @if (k.blocked) { {{ k.blocked }} session{{ k.blocked > 1 ? 's t’attendent' : ' t’attend' }}. }
+              @else if (k.turn) { À toi sur {{ k.turn }} session{{ k.turn > 1 ? 's' : '' }}. }
+              @else if (k.running) { Rien ne t’attend, {{ k.running }} session{{ k.running > 1 ? 's travaillent' : ' travaille' }}. }
+              @else { Tout est calme. }
+            </p>
+            <ul class="pills">
+              <li class="kpi" [class.hot]="k.blocked" [class.zero]="!k.blocked"><i class="dot"></i><span class="mono">{{ k.blocked }}</span> en attente</li>
+              @if (k.turn) { <li class="kpi turn"><i class="dot"></i><span class="mono">{{ k.turn }}</span> à toi</li> }
+              <li class="kpi run" [class.zero]="!k.running"><i class="dot"></i><span class="mono">{{ k.running }}</span> en cours</li>
+              <li class="kpi" [class.zero]="!k.subagents"><span class="mono">{{ k.subagents }}</span> sous-agent{{ k.subagents > 1 ? 's' : '' }} actif{{ k.subagents > 1 ? 's' : '' }}</li>
+              <li class="kpi zero"><span class="mono">{{ k.doneToday }}</span> terminée{{ k.doneToday > 1 ? 's' : '' }} aujourd’hui</li>
+            </ul>
           </div>
-          <a class="group usage" routerLink="/usage" aria-label="Consommation : voir le détail">
-            <div class="kpi">
-              <span class="label">Coût aujourd'hui</span>
-              <span class="num">{{ f.usd(k.todayCost) }}</span>
-              <span class="sub">estimé</span>
-            </div>
-            <div class="kpi window">
-              <span class="label">Fenêtre de 5 h <svg appIcon="chevron" class="go" width="14" height="14"></svg></span>
-              @if (k.window; as w) {
-                <span class="num">{{ f.pct(w.pct) }}</span>
-                <hlm-progress [value]="w.bar" aria-label="Fenêtre de 5 h utilisée"><hlm-progress-indicator /></hlm-progress>
-                <span class="sub">@if (w.limitAt) { <span class="limit">limite vers {{ f.clock(w.limitAt) }}</span> } @else if (w.end) { reset dans {{ f.duration(w.end - vm.now()) }} }</span>
-              } @else {
-                <span class="num faint">—</span><span class="sub">aucune fenêtre ouverte</span>
-              }
-            </div>
+          <a class="usage" routerLink="/usage" aria-label="Consommation : voir le détail">
+            <span class="line"><span class="label">Aujourd’hui</span><span class="mono strong">{{ f.usd(k.todayCost) }}</span></span>
+            @if (k.window; as w) {
+              <span class="line">
+                <span class="label">Fenêtre 5 h</span>
+                <hlm-progress class="gauge" [value]="w.bar" aria-label="Fenêtre de 5 h utilisée"><hlm-progress-indicator /></hlm-progress>
+                <span class="mono strong">{{ f.pct(w.pct) }}</span>
+              </span>
+              <span class="sub">@if (w.limitAt) { <span class="limit">limite vers {{ f.clock(w.limitAt) }}</span> } @else if (w.end) { reset dans {{ f.duration(w.end - vm.now()) }} }</span>
+            } @else {
+              <span class="line"><span class="label">Fenêtre 5 h</span><span class="faint">aucune ouverte</span></span>
+            }
+            <svg appIcon="chevron" class="go" width="14" height="14"></svg>
           </a>
         </section>
 
@@ -149,29 +144,37 @@ import { SessionsPageVm } from './sessions-page.vm';
       .search { flex: 1; width: auto; min-width: 0; }
     }
 
-    /* Bandeau : deux panneaux côte à côte, l'état des sessions à gauche, la consommation (cliquable) à droite. */
-    .kpis { display: grid; grid-template-columns: 3fr 2fr; gap: 12px; }
-    .group { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; color: var(--text); }
-    .kpi { display: flex; flex-direction: column; gap: 4px; padding: 14px 18px; border-right: 1px solid var(--line); min-width: 0; }
-    .kpi:last-child { border-right: 0; }
-    .usage { grid-auto-columns: 1fr 1.4fr; transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
-    .usage:hover { background: var(--hover); border-color: var(--line-strong); }
+    /* Bandeau : une ligne d'état (phrase + pastilles) à gauche, la consommation en petit à droite. */
+    .kpis { display: flex; align-items: stretch; justify-content: space-between; gap: 24px; padding: 14px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .now { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .headline { font-size: 16px; font-weight: 600; }
+    .headline.hot { color: var(--wait); }
+    .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    .kpi { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+    .kpi .mono { font-family: var(--mono); font-weight: 600; color: var(--text); }
+    .kpi.zero { color: var(--faint); }
+    .kpi.zero .mono { color: var(--faint); font-weight: 400; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); }
+    .kpi.run:not(.zero) .dot { background: var(--brand); }
+    .kpi.turn { border-color: var(--wait-line); color: var(--wait); }
+    .kpi.turn .dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--wait); }
+    .kpi.hot { background: var(--wait-bg); border-color: var(--wait-line); color: var(--wait); }
+    .kpi.hot .mono { color: var(--wait); }
+    .kpi.hot .dot { background: var(--wait); }
+
+    .usage { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 8px 32px 8px 20px; margin: -8px -10px -8px 0; border-left: 1px solid var(--line); border-radius: 0 8px 8px 0; color: var(--text-2); font-size: 12px; transition: background-color var(--dur-fast) var(--ease); }
+    .usage:hover { background: var(--hover); }
     .usage:active { background: var(--press); }
     .usage:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-    .label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
-    .go { margin-left: auto; color: var(--faint); transition: transform var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
-    .usage:hover .go { color: var(--brand); transform: translateX(2px); }
-    .num { font-family: var(--mono); font-size: 24px; font-weight: 500; }
-    .sub { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .window hlm-progress { margin: 2px 0; }
+    .line { display: flex; align-items: center; gap: 10px; }
+    .label { width: 72px; color: var(--faint); }
+    .strong { color: var(--text); font-weight: 600; margin-left: auto; }
+    .gauge { width: 120px; }
+    .sub { padding-left: 82px; color: var(--text-muted); }
     .limit { color: var(--text); font-weight: 600; }
-    /* Zéro : le chiffre s'efface pour que l'œil aille aux valeurs non nulles. */
-    .kpi.zero .num { color: var(--faint); }
-    .dot { width: 7px; height: 7px; border-radius: 50%; }
-    .dot.wait { background: var(--wait); box-shadow: 0 0 0 3px var(--wait-bg); }
-    .dot.run { background: var(--brand); }
-    .kpi.hot { background: var(--wait-bg); box-shadow: inset 3px 0 0 var(--wait); }
-    .kpi.hot .num, .kpi.hot .label { color: var(--wait); }
+    .faint { color: var(--faint); }
+    .go { position: absolute; right: 10px; top: 50%; translate: 0 -50%; color: var(--faint); transition: transform var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+    .usage:hover .go { color: var(--brand); transform: translateX(2px); }
 
     .board { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
     .row {
@@ -216,7 +219,6 @@ import { SessionsPageVm } from './sessions-page.vm';
     .del:hover { background: var(--err-bg); color: var(--err); }
 
     @media (max-width: 1200px) {
-      .kpis { grid-template-columns: 1fr; }
       .row { grid-template-columns: 118px minmax(160px, 1fr) minmax(140px, 1.2fr) 64px 64px 170px; }
       .c-spark, .c-agents { display: none; }
     }
@@ -226,10 +228,8 @@ import { SessionsPageVm } from './sessions-page.vm';
       .state { grid-column: 1; } .actions { grid-column: 2; grid-row: 1; }
       .who, .doing { grid-column: 1 / -1; }
       .num-col { text-align: left; }
-      .group { grid-auto-flow: row; }
-      .usage { grid-auto-columns: auto; }
-      .kpi { border-right: 0; border-bottom: 1px solid var(--line); }
-      .kpi:last-child { border-bottom: 0; }
+      .kpis { flex-direction: column; }
+      .usage { border-left: 0; border-top: 1px solid var(--line); margin: 0 -18px -14px; padding: 12px 18px; border-radius: 0 0 12px 12px; }
     }
   `,
 })
