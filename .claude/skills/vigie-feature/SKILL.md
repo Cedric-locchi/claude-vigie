@@ -35,6 +35,10 @@ Lance toi-même `npm test` puis le build UI (voir `CLAUDE.md`). Ne te contente p
 
 Lance `node-architect` en mode **revue** sur la liste des fichiers modifiés. Corrige les P0/P1 via `node-dev`, puis relance la vérification une fois. Les P2/P3 sont rapportés, pas corrigés d'office.
 
-## 6. Compte rendu
+## 6. Version
 
-Ce qui change pour l'utilisateur, fichiers modifiés, résultat exact des tests et du build, constats d'architecture restants, et ce qui reste à vérifier à la main (redémarrer le daemon, regarder l'écran).
+Bump de la version selon la règle de `CLAUDE.md` (majeur / mineur / patch d'après le diff avec `main`, un seul bump par branche).
+
+## 7. Compte rendu
+
+Ce qui change pour l'utilisateur, version retenue et pourquoi, fichiers modifiés, résultat exact des tests et du build, constats d'architecture restants, et ce qui reste à vérifier à la main (redémarrer le daemon, regarder l'écran).
