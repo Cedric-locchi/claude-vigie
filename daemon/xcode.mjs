@@ -59,8 +59,13 @@ export function parseSimulators(stdout) {
 export const derivedDataDir = (xcodeDir, cwd) => path.join(xcodeDir, crypto.createHash('sha256').update(cwd).digest('hex').slice(0, 12));
 
 // Lancé par `/bin/sh -c` : le PTY exécute `$SHELL -l -c`, et fish ne comprend pas `VAR=$(…)`. Pas de `set -e` : les `&&` suffisent.
-// ponytail: on suppose Debug-iphonesimulator et on prend le premier .app ; sinon passer par `-showBuildSettings -json`.
+// Le DerivedData est partagé entre les schemes du dossier : on retire d'abord les .app déjà là (ceux d'un autre scheme), sinon
+// `find` pourrait lancer l'app d'hier. Les intermédiaires restent : seuls lien et copie du produit sont refaits. DD est à nous.
+// ponytail: on suppose Debug-iphonesimulator (configuration et destination sont imposées ici, sauf SYMROOT personnalisé)
+// et un seul .app par scheme ; sinon passer par `-showBuildSettings -json`.
+export const CLEAN_APPS = 'rm -rf "$DD/Build/Products/Debug-iphonesimulator"/*.app';
 export const RUN_SCRIPT = `S=$1 U=$2 DD=$3; shift 3
+${CLEAN_APPS}
 xcodebuild "$@" -scheme "$S" -configuration Debug -destination "platform=iOS Simulator,id=$U" -derivedDataPath "$DD" build &&
 APP=$(find "$DD/Build/Products/Debug-iphonesimulator" -maxdepth 1 -name '*.app' | head -n 1) &&
 { [ -n "$APP" ] || { echo "Aucune app construite par ce scheme"; false; }; } &&

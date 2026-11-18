@@ -6,7 +6,7 @@ import { VigieService } from './vigie.service';
 export function aSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
     id: 's1', project: 'meeplebox', cwd: '/dev/meeplebox', branch: 'feat/suggestions', model: 'claude-opus-5-5',
-    title: 'Moteur de suggestions', lastText: 'Tests verts.', tool: 'Bash · xcodebuild test',
+    title: 'Moteur de suggestions', lastText: 'Tests verts.', tool: 'Bash · xcodebuild test', toolPath: null,
     state: 'running', subagents: 2, activeSubagents: 1, tokens: 312_000, cost: 4.2, activity: [0, 0, 1, 3, 2, 0, 0, 0, 4, 5, 2, 1, 0, 3, 6],
     firstTs: 1_000, lastTs: 60_000, terminalId: null, ...overrides,
   };
@@ -26,7 +26,7 @@ export function aSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
 
 export function anAgent(overrides: Partial<Agent> = {}): Agent {
   return {
-    id: 'main', name: 'Claude', sub: false, description: '', state: 'running', lastAction: null, lastText: '',
+    id: 'main', name: 'Claude', sub: false, description: '', state: 'running', lastAction: null, lastText: '', lastTextTruncated: false,
     tokens: 120_000, toolCount: 4, firstTs: 1_000, lastTs: 60_000, bars: [], cost: 1.8, ...overrides,
   };
 }

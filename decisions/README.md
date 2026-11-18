@@ -37,6 +37,8 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [029](2026-11-13-029-selecteur-projets.md) | Sélecteur de projet : GET /api/projects remplace /api/dirs | Acceptée | 2026-11-13 |
 | [030](2026-11-13-030-onglet-xcode.md) | Onglet Xcode : frontière de plateforme par l’outil, DerivedData sous ~/.vigie/xcode | Acceptée | 2026-11-13 |
 | [031](2026-11-16-031-arborescence-ui-un-dossier-par-composant.md) | Arborescence de l’UI : un dossier par composant | Acceptée | 2026-11-16 |
+| [032](2026-11-17-032-eslint.md) | ESLint sur le code Node (daemon, contract, bin, electron) | Acceptée | 2026-11-17 |
+| [033](2026-11-17-033-eslint-ui.md) | ESLint sur l'UI Angular (angular-eslint, typescript-eslint) | Acceptée | 2026-11-17 |
 
 ## En attente de ton choix
 

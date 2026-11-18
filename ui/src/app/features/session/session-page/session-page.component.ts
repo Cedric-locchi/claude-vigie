@@ -195,7 +195,7 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
         </div>
 
         <div hlmTabsContent="diff" class="panel">
-          @if (vm.view() === 'diff') { <app-session-diff [sessionId]="s.id" [lastTs]="s.lastTs" [idle]="vm.idle()" [canWorktree]="vm.canCompact()" (worktree)="vm.enterWorktree($event)" /> }
+          @if (vm.view() === 'diff' || vm.unsaved()) { <app-session-diff [(unsaved)]="vm.unsaved" [sessionId]="s.id" [lastTs]="s.lastTs" [idle]="vm.idle()" [canWorktree]="vm.canCompact()" (worktree)="vm.enterWorktree($event)" /> }
         </div>
 
         <!-- Pas d'onglet : la vue s'ouvre par le bouton Fichiers de l'en-tête, la liste d'onglets est alors masquée. -->
@@ -259,7 +259,7 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
         </div>
       </div>
 
-        <app-agent-panel [agent]="vm.openAgent()" [canAnswer]="!vm.openAgent()?.sub && !!vm.claudeTerminal()" [error]="vm.replyError()" (close)="vm.showAgent(null)" (allow)="vm.allow()" (refuse)="vm.refuse()" (focusTerminal)="vm.goToTerminal()" />
+        <app-agent-panel [agent]="vm.openAgent()" [canAnswer]="!vm.openAgent()?.sub && !!vm.claudeTerminal()" [error]="vm.replyError()" (closed)="vm.showAgent(null)" (allow)="vm.allow()" (refuse)="vm.refuse()" (focusTerminal)="vm.goToTerminal()" />
       } @else if (vm.notFound()) {
         <p class="muted">{{ vm.outdated() ? 'Session illisible : le daemon est-il à jour ? (redémarre-le après une mise à jour)' : 'Session introuvable.' }} <a routerLink="/">Retour aux sessions</a></p>
       } @else {

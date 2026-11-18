@@ -1,5 +1,7 @@
 // Statut de Claude (status.claude.com, décision 024) : seul module du daemon qui sort de la machine.
 // Un GET en dur, sans cookie ni corps ; la réponse n'est pas fiable, on n'en garde qu'une forme bornée.
+import httpModule from 'node:http';
+
 export const STATUS_URL = 'https://status.claude.com/api/v2/summary.json';
 export const STATUS_PAGE = 'https://status.claude.com';
 
@@ -27,13 +29,27 @@ export function parseStatus(json) {
   return { indicator, incidents };
 }
 
+// Le fetch de Node ignore HTTPS_PROXY (derrière un proxy d'entreprise, le statut restait « unknown ») :
+// on active le support proxy intégré, une seule fois, et seulement si l'environnement en déclare un. NO_PROXY reste honoré.
+// `http` et `env` injectés pour les tests (aucun réseau).
+let proxyDone = false;
+export function enableEnvProxy(env = process.env, http) {
+  if (proxyDone) return false;
+  if (!(env.HTTPS_PROXY || env.https_proxy) || typeof http?.setGlobalProxyFromEnv !== 'function') return false;
+  proxyDone = true;
+  http.setGlobalProxyFromEnv(env);
+  return true;
+}
+
 /** Ne rejette jamais : erreur, HTTP ≠ 2xx, timeout → parseStatus(null). */
 export async function fetchStatus(url = STATUS_URL) {
   try {
+    enableEnvProxy(process.env, httpModule);
     const res = await fetch(url, { signal: AbortSignal.timeout(10_000), redirect: 'error', headers: { accept: 'application/json' } });
     if (!res.ok) return parseStatus(null);
     // ponytail: res.json() n'est pas borné en taille ; lire le corps avec une limite si l'API grossit.
-    // ponytail: le fetch de Node ignore HTTPS_PROXY sans NODE_USE_ENV_PROXY=1 → 'unknown' derrière un proxy d'entreprise.
+    // ponytail: proxy lu dans l'environnement du daemon seulement ; lancé par launchd, systemd ou le Finder, il n'a pas HTTPS_PROXY
+    // (la suite : le relever au `vigie install`).
     return parseStatus(await res.json());
   } catch {
     return parseStatus(null);

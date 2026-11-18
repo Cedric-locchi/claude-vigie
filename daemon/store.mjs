@@ -58,11 +58,11 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
     const since = Date.now() - days * DAY;
     horizon ??= since;
     let changed = false;
-    let dirs = [];
+    let dirs;
     try { dirs = fs.readdirSync(projectsDir); } catch { return false; }
     for (const d of dirs) {
       const dir = path.join(projectsDir, d);
-      let entries = [];
+      let entries;
       try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
       for (const e of entries) {
         const files = [];
@@ -183,14 +183,22 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
     return [...last].filter(([d]) => fs.existsSync(d)).slice(0, limit).map(([dir, lastTs]) => ({ dir, lastTs }));
   }
 
+  // Un sous-agent repris (SendMessage) écrit dans son transcript après le `finished: true` de son meta :
+  // ce `finished` ne vaut plus (5 s de marge, le meta et la dernière ligne s'écrivent presque ensemble).
   function readMeta(t) {
-    try { return JSON.parse(fs.readFileSync(t.file.replace(/\.jsonl$/, '.meta.json'), 'utf8')); } catch { return {}; }
+    const f = t.file.replace(/\.jsonl$/, '.meta.json');
+    try {
+      const m = JSON.parse(fs.readFileSync(f, 'utf8'));
+      if (m.finished && t.lastTs > fs.statSync(f).mtimeMs + 5000) m.finished = false;
+      return m;
+    } catch { return {}; }
   }
 
-  // Un sous-agent terminé ne change plus : son meta est gardé en mémoire, les autres sont relus.
-  // ponytail: un meta qui repasserait de finished:true à false n'est plus relu ; invalider sur mtime si ça arrive.
+  // Un sous-agent terminé ne change plus tant que son transcript ne bouge pas : son meta est gardé en mémoire.
+  // Repris, son transcript avance : on relit.
   function metaOf(t) {
-    if (t.meta?.finished) return t.meta;
+    if (t.meta?.finished && t.metaTs === t.lastTs) return t.meta;
+    t.metaTs = t.lastTs;
     return (t.meta = readMeta(t));
   }
 
@@ -231,6 +239,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
       title: main.title ?? main.firstPrompt ?? '(sans titre)',
       lastText: main.lastText.slice(0, 280),
       tool: tool ? `${tool.name} · ${tool.label}` : null,
+      toolPath: tool?.path ?? null, // même source que TraceStep.path (ingest) : chemin complet, pas le libellé abrégé
       ...st,
       detail: st.detail ?? (st.state === 'waiting' && tool ? `${tool.name} · ${tool.label}` : undefined),
       subagents: subs.length,
@@ -264,7 +273,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
   function pendingSummary(term, now) {
     return {
       id: term.sessionId, project: projectName(term.cwd), cwd: term.cwd, branch: null, model: null,
-      title: 'Nouvelle session', lastText: '', tool: null, state: term.exited ? 'done' : 'turn',
+      title: 'Nouvelle session', lastText: '', tool: null, toolPath: null, state: term.exited ? 'done' : 'turn',
       subagents: 0, activeSubagents: 0, tokens: 0, cost: 0, activity: new Array(ACTIVITY_MIN).fill(0), firstTs: term.startedAt ?? now, lastTs: term.startedAt ?? now, terminalId: term.id,
     };
   }
@@ -377,7 +386,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
       description: meta?.description ?? parent?.label ?? t.firstPrompt?.slice(0, 120) ?? '',
       ...st,
       lastAction: last ? `${last.name} · ${last.label}` : null,
-      // ponytail: dernier message plafonné à 20 000 caractères (rapport des agents) ; endpoint dédié si des rapports plus longs arrivent.
+      // ponytail: dernier message plafonné à 20 000 caractères (rapport des agents), signalé par lastTextTruncated ; endpoint dédié si l'UI doit montrer des rapports plus longs.
       lastText: t.lastText.slice(0, 20_000),
       tokens: trackTokens(t).total,
       toolCount: t.tools.size,
@@ -385,6 +394,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
       lastTs: t.lastTs,
       bars: [...t.tools.values()].map((x) => ({ name: x.name, kind: x.kind, label: x.label, start: x.start, end: x.end || null, error: x.error })),
       cost: [...t.usage.values()].reduce((n, u) => n + costOf(u), 0), // en dernier : ordre des clés JSON inchangé
+      lastTextTruncated: t.lastText.length > 20_000,
     };
   }
 
@@ -445,7 +455,7 @@ export function contextMax(sessionId, model, dir = LIMITS_DIR, used = 0) {
  */
 export function readReadings(now, dir = LIMITS_DIR) {
   const readings = [];
-  let files = [];
+  let files;
   try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return []; }
   for (const f of files) {
     const file = path.join(dir, f);

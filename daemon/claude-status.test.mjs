@@ -2,7 +2,7 @@
 // Aucun réseau : seul parseStatus est testé.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseStatus, STATUS_PAGE } from './claude-status.mjs';
+import { enableEnvProxy, parseStatus, STATUS_PAGE } from './claude-status.mjs';
 import * as C from '../contract/index.mjs';
 
 // Sortie conforme au contrat : parse retire les clés inconnues, donc l'égalité échoue sur un champ manquant comme sur un champ en trop.
@@ -47,4 +47,17 @@ test('lien : https vers status.claude.com ou stspg.io seulement', () => {
     assert.equal(url(bad), STATUS_PAGE, String(bad));
   assert.equal(url('https://stspg.io/abc'), 'https://stspg.io/abc');
   assert.equal(url('https://status.claude.com/incidents/x'), 'https://status.claude.com/incidents/x');
+});
+
+// Module à état (une seule activation) : un seul test, dans l'ordre.
+test('proxy : activé une fois, seulement si HTTPS_PROXY est défini', () => {
+  const appels = [];
+  const http = { setGlobalProxyFromEnv: (e) => appels.push(e) };
+  assert.equal(enableEnvProxy({}, http), false);
+  assert.equal(enableEnvProxy({ HTTPS_PROXY: 'http://p:3128' }, {}), false); // Node sans la fonction : rien, sans lever
+  assert.deepEqual(appels, []);
+  const env = { https_proxy: 'http://p:3128' };
+  assert.equal(enableEnvProxy(env, http), true);
+  assert.equal(enableEnvProxy(env, http), false);
+  assert.deepEqual(appels, [env]);
 });

@@ -30,21 +30,47 @@ fs.mkdirSync(CHAT_DIR, { recursive: true });
 // Dans l'app Electron, process.execPath est le binaire Electron, lourd à démarrer à chaque fois : on préfère un vrai node
 // du PATH (l'app a repris celui du shell de connexion avant de lancer le daemon). Sinon, Electron via ELECTRON_RUN_AS_NODE ;
 // lancé par l'app dans un utilityProcess, execPath serait le binaire « Helper » : l'app passe le sien (VIGIE_NODE).
-function nodeCommand() {
-  if (!process.versions.electron) return JSON.stringify(process.execPath);
-  const isExecutable = (f) => { try { fs.accessSync(f, fs.constants.X_OK); return fs.statSync(f).isFile(); } catch { return false; } };
+const isExecutable = (f) => { try { fs.accessSync(f, fs.constants.X_OK); return fs.statSync(f).isFile(); } catch { return false; } };
+// Verdict `node --version` par binaire (chemin + date) : le recalcul périodique ne relance pas node tant qu'il n'a pas changé.
+const versionVerdict = new Map();
+function pathNodeOk() {
   const found = findOnPath('node', { env: process.env, isExecutable });
-  // ponytail: version lue une fois au démarrage ; un node du PATH changé ensuite (nvm, mise) n'est revu qu'au redémarrage du daemon.
-  try { if (found && nodeVersionOk(execFileSync(found, ['--version'], { encoding: 'utf8', timeout: 3000 }))) return JSON.stringify(found); } catch { /* node cassé : repli */ }
+  if (!found) return null;
+  let key;
+  try { key = `${found}:${fs.statSync(found).mtimeMs}`; } catch { return null; }
+  if (!versionVerdict.has(key)) {
+    let ok = false;
+    try { ok = nodeVersionOk(execFileSync(found, ['--version'], { encoding: 'utf8', timeout: 3000 })); } catch { /* node cassé : repli */ }
+    versionVerdict.set(key, ok);
+  }
+  return versionVerdict.get(key) ? found : null;
+}
+function nodeCommand() {
+  // Hors Electron, le node qui fait tourner le daemon ; si son fichier a disparu (nvm, mise, brew), celui du PATH.
+  if (!process.versions.electron) return JSON.stringify(isExecutable(process.execPath) ? process.execPath : (pathNodeOk() ?? process.execPath));
+  const found = pathNodeOk();
+  if (found) return JSON.stringify(found);
   return 'ELECTRON_RUN_AS_NODE=1 ' + JSON.stringify(process.env.VIGIE_NODE || process.execPath);
 }
-const NODE = nodeCommand();
+// Réécrit hooks.json seulement si la commande change : Claude Code le relit à chaque lancement de session, pas en cours de route.
+let NODE = null;
+function writeHooks() {
+  const node = nodeCommand();
+  if (node === NODE) return;
+  NODE = node;
+  fs.writeFileSync(HOOKS_FILE, JSON.stringify(hooksSettings(NODE, SCRIPTS, null), null, 2));
+}
 // Scripts lancés par Claude Code : pris hors de l'archive asar de l'app (asarUnpack), comme de simples fichiers.
 const SCRIPTS = path.join(ROOT.replace(/app\.asar$/, 'app.asar.unpacked'), 'daemon');
 // Hooks : un process `node hook.mjs` par événement (décision 021).
+// Tous les événements dont deriveState a besoin (UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Notification, Stop,
+// SessionEnd) sont dans hooksSettings, en commande comme en HTTP : couper le HTTP coûte un process par événement, aucun état.
 // ponytail: hooks HTTP coupés, le proxy du sandbox Claude Code (souvent imposé à distance, donc indétectable ici) les refuse en 403.
 // Suite : les réactiver quand Claude Code les sort du proxy ou qu'on sait détecter le sandbox de façon fiable (httpHooksAllowed, /api/hook restent en place).
-fs.writeFileSync(HOOKS_FILE, JSON.stringify(hooksSettings(NODE, SCRIPTS, null), null, 2));
+writeHooks();
+// Un node qui change ou disparaît (nvm, mise, brew) pendant que le daemon tourne : les sessions lancées ensuite visent le bon.
+// ponytail: les sessions déjà ouvertes gardent l'ancien chemin (Claude Code lit --settings une fois) ; PATH du daemon lu au démarrage.
+setInterval(() => { try { writeHooks(); } catch (e) { console.error(`[vigie] hooks.json non réécrit : ${e.message}`); } }, 60_000);
 
 // ── Store ─────────────────────────────────────────────────────────────────
 const store = createStore({ projectsDir: PROJECTS, hiddenFile: path.join(VIGIE_DIR, 'hidden.json'), chatDir: CHAT_DIR, limitsDir: path.join(VIGIE_DIR, 'limits'), historyFile: path.join(VIGIE_DIR, 'usage.json') });
@@ -53,11 +79,13 @@ store.scan();
 // Historique avant la purge des discussions : leur consommation y reste, sans leur texte.
 store.saveHistory();
 store.purgeChats();
-// ponytail: un transcript effacé (par Claude ou à la main) entre deux enregistrements emporte au plus 10 min de consommation.
+// Un transcript effacé pendant que le daemon tourne garde sa consommation : store.scan enregistre l'historique avant d'oublier une piste disparue.
+// ponytail: seul un transcript effacé daemon éteint, ou après un arrêt brutal, perd la consommation postérieure au dernier enregistrement (10 min au plus).
 setInterval(() => store.saveHistory(), 10 * 60_000);
 console.log(`[vigie] ${store.tracks.size} transcripts indexés en ${Date.now() - t0} ms`);
 
-// ponytail: spool lu en entier au démarrage, rotation simple au-delà de 20 Mo.
+// Le spool ne sert qu'à l'état temps réel (dernier événement par session) : le `.old` n'est jamais relu, l'écraser ne perd rien.
+// ponytail: spool lu en entier au démarrage, rotation simple au-delà de 20 Mo (au démarrage seulement : un daemon qui tourne des semaines le laisse grossir).
 try { if (fs.statSync(SPOOL).size > 20 * 1024 * 1024) fs.renameSync(SPOOL, SPOOL + '.old'); } catch { /* pas encore de spool */ }
 let spoolOffset = 0, spoolRest = '';
 function readSpool() {

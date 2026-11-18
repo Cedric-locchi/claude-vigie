@@ -1,11 +1,12 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
+import { ConfirmService } from '../../../core/confirm.service';
 import { provideConfirmServiceMock } from '../../../core/confirm.service.mock';
 import { GitDiff, GitFile } from '../../../core/models';
 import { VigieService } from '../../../core/vigie.service';
 import { provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { SessionDiffVm, parsePatch } from './session-diff.vm';
+import { DISCARD_EDIT, SessionDiffVm, parsePatch } from './session-diff.vm';
 
 describe('parsePatch', () => {
   it('numérote les lignes et saute les en-têtes', () => {
@@ -90,11 +91,11 @@ describe('SessionDiffVm', () => {
 
   describe('édition d’un fichier', () => {
     const file = (o: Partial<GitFile> = {}) => ({ path: 'a.ts', status: 'M', added: 1, removed: 0, staged: false, unstaged: true, truncated: false, patch: '@@ -1 +1 @@\n-x\n+y\n', ...o }) as GitFile;
-    function setup(files: GitFile[], extra: Partial<VigieService> = {}) {
+    function setup(files: GitFile[], extra: Partial<VigieService> = {}, answer = true) {
       const value = signal<GitDiff | undefined>({ repo: true, files, total: files.length, branch: 'main' } as unknown as GitDiff);
       const resource = { value, hasValue: () => value() !== undefined, status: signal('resolved'), reload: vi.fn() };
       TestBed.configureTestingModule({
-        providers: [SessionDiffVm, provideConfirmServiceMock(), provideVigieServiceMock({ gitResource: (() => resource) as unknown as VigieService['gitResource'], ...extra })],
+        providers: [SessionDiffVm, provideConfirmServiceMock(answer), provideVigieServiceMock({ gitResource: (() => resource) as unknown as VigieService['gitResource'], ...extra })],
       });
       const vm = TestBed.inject(SessionDiffVm);
       const idle = signal(true);
@@ -166,13 +167,40 @@ describe('SessionDiffVm', () => {
       expect(vm.editing()).not.toBeNull();
     });
 
-    it('changer de fichier quitte l’édition', async () => {
+    it('changer de fichier quitte l’édition ; sans saisie, aucune question', async () => {
+      const { vm } = setup([file(), file({ path: 'b.ts' })]);
+      const ask = TestBed.inject(ConfirmService).ask;
+      await vm.startEdit();
+      expect(vm.dirty()).toBe(false);
+      await vm.select('b.ts');
+      expect(vm.editing()).toBeNull();
+      await vm.select('a.ts');
+      expect(vm.editing()).toBeNull();
+      expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('saisie non enregistrée : changer de fichier ou recharger demande confirmation, un refus la garde', async () => {
+      const { vm, vigie } = setup([file(), file({ path: 'b.ts' })], {}, false);
+      await vm.startEdit();
+      vm.draft.set('saisie');
+      expect(vm.dirty()).toBe(true);
+      await vm.select('b.ts');
+      expect(TestBed.inject(ConfirmService).ask).toHaveBeenCalledWith(DISCARD_EDIT);
+      expect(vm.file()?.path).toBe('a.ts');
+      expect(vm.draft()).toBe('saisie');
+      await vm.load();
+      expect(vigie.gitFile).toHaveBeenCalledTimes(1);
+      expect(vm.draft()).toBe('saisie');
+    });
+
+    it('saisie non enregistrée : accepter l’abandon change de fichier', async () => {
       const { vm } = setup([file(), file({ path: 'b.ts' })]);
       await vm.startEdit();
-      vm.select('b.ts');
+      vm.draft.set('saisie');
+      await vm.select('b.ts');
+      expect(vm.file()?.path).toBe('b.ts');
       expect(vm.editing()).toBeNull();
-      vm.select('a.ts');
-      expect(vm.editing()).toBeNull();
+      expect(vm.dirty()).toBe(false);
     });
   });
 });

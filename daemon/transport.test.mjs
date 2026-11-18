@@ -15,6 +15,8 @@ const PORT = 4317;
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 const HOST = `127.0.0.1:${PORT}`;
 
+const LOCALES = 'C\nPOSIX\nen_US.UTF-8\nfr_FR.UTF-8\n'; // `locale -a` simulé : les tests ne dépendent pas de la machine
+
 function fixture({ miseBin, claudeStatus, xcodeBins } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-transport-'));
   const home = path.join(tmp, 'home');
@@ -34,7 +36,7 @@ function fixture({ miseBin, claudeStatus, xcodeBins } = {}) {
   fs.writeFileSync(path.join(dir, 'W.jsonl'), rec('W', path.join(proj, '.claude', 'worktrees', 'x')));
   const store = createStore({ projectsDir: path.join(tmp, 'projects'), hiddenFile: path.join(tmp, 'hidden.json'), chatDir, limitsDir: path.join(tmp, 'limits') });
   store.scan();
-  const { server } = createTransport({ store, port: PORT, uiDir, home, chatDir, hooksFile: path.join(tmp, 'hooks.json'), miseBin, claudeStatus, xcodeBins, xcodeDir: path.join(tmp, 'xcode') });
+  const { server } = createTransport({ store, port: PORT, uiDir, home, chatDir, hooksFile: path.join(tmp, 'hooks.json'), miseBin, claudeStatus, xcodeBins, xcodeDir: path.join(tmp, 'xcode'), listLocales: async () => LOCALES });
   return { server, dir, store, proj, tmp };
 }
 
@@ -231,6 +233,11 @@ test('réglages : locale choisie, conforme au contrat, refusée si invalide', as
   assert.equal(conforme(ok.body).locale, 'fr_FR.UTF-8');
   const bad = await send({ locale: 'fr; rm -rf /' });
   assert.deepEqual([bad.status, JSON.parse(bad.body)], [400, { error: 'Locale invalide (ex. fr_FR.UTF-8)' }]);
+  const absent = await send({ locale: 'de_DE.UTF-8' });
+  assert.equal(absent.status, 400);
+  assert.match(JSON.parse(absent.body).error, /non installée/);
+  assert.equal(conforme((await request(server, 'GET', '/api/settings')).body).locale, 'fr_FR.UTF-8'); // refus : rien d'écrit
+  assert.equal(conforme((await send({ locale: 'fr_FR.utf8' })).body).locale, 'fr_FR.utf8'); // équivalent glibc accepté
   assert.equal(conforme((await send({ locale: null })).body).locale, null);
 });
 
@@ -238,7 +245,7 @@ test('réglages : persistés dans settingsFile, fichier corrompu ou hors contrat
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-settings-'));
   const store = createStore({ projectsDir: path.join(tmp, 'projects'), hiddenFile: path.join(tmp, 'hidden.json') });
   const settingsFile = path.join(tmp, 'settings.json');
-  const make = () => createTransport({ store, port: PORT, uiDir: tmp, home: tmp, chatDir: tmp, hooksFile: path.join(tmp, 'hooks.json'), settingsFile }).server;
+  const make = () => createTransport({ store, port: PORT, uiDir: tmp, home: tmp, chatDir: tmp, hooksFile: path.join(tmp, 'hooks.json'), settingsFile, listLocales: async () => LOCALES }).server;
   const locale = async (server) => JSON.parse((await request(server, 'GET', '/api/settings')).body).locale;
   const r = await request(make(), 'POST', '/api/settings', { headers: { 'content-type': 'application/json' }, body: '{"locale":"fr_FR.UTF-8"}' });
   assert.equal(r.status, 200);
@@ -253,7 +260,7 @@ test('POST /api/hook : événement ajouté au spool (champs filtrés), charset t
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-hook-'));
   const spoolFile = path.join(tmp, 'spool.jsonl');
   const store = createStore({ projectsDir: path.join(tmp, 'projects'), hiddenFile: path.join(tmp, 'hidden.json') });
-  const { server } = createTransport({ store, port: PORT, uiDir: tmp, home: tmp, chatDir: tmp, hooksFile: path.join(tmp, 'hooks.json'), spoolFile });
+  const { server } = createTransport({ store, port: PORT, uiDir: tmp, home: tmp, chatDir: tmp, hooksFile: path.join(tmp, 'hooks.json'), spoolFile, listLocales: async () => LOCALES });
   const send = (body) => request(server, 'POST', '/api/hook', { headers: { 'content-type': 'application/json; charset=utf-8' }, body: JSON.stringify(body) });
   const ok = await send({ session_id: 's1', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls', other: 1 }, cwd: '/x' });
   assert.equal(ok.status, 200);

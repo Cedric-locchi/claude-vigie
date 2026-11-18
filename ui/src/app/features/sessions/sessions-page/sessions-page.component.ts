@@ -106,7 +106,7 @@ import { SessionsPageVm } from './sessions-page.vm';
               </span>
               <span role="cell" class="c-agents small mono" [class.faint]="!r.s.subagents">@if (r.s.subagents) { {{ r.s.activeSubagents }}/{{ r.s.subagents }} } @else { — }</span>
               <span role="cell" class="num-col small mono" [class.wait]="r.urgent" [hlmTooltip]="r.urgent || r.s.state === 'turn' ? 'Attend depuis' : 'Durée de la session'"><span class="sr-only">{{ r.urgent || r.s.state === 'turn' ? 'Attend depuis ' : 'Durée ' }}</span>{{ f.duration(r.age) }}</span>
-              <span role="cell" class="num-col small mono">{{ f.usd(r.s.cost ?? 0) }}</span>
+              <span role="cell" class="num-col small mono">{{ f.usd(r.s.cost) }}</span>
               <span role="cell" class="actions">
                 @if (r.canAllow) {
                   <button hlmBtn variant="wait" size="sm" (click)="vm.allow(r.s)">Autoriser</button>

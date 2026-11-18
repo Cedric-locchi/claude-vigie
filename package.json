@@ -9,7 +9,8 @@
     "postinstall": "[ \"$(uname)\" = Darwin ] || exit 0; chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper",
     "app": "electron .",
     "dist": "npm run build && electron-builder --mac dir",
-    "dist:linux": "npm run build && electron-builder --linux dir deb"
+    "dist:linux": "npm run build && electron-builder --linux dir deb",
+    "lint": "eslint ."
   },
   "type": "module",
   "dependencies": {
@@ -68,8 +69,13 @@
     ]
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "angular-eslint": "^22.7.0",
     "electron": "^45.2.3",
-    "electron-builder": "^26.18.0"
+    "electron-builder": "^26.18.0",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "typescript-eslint": "^8.73.0"
   },
   "volta": {
     "node": "24.18.1"

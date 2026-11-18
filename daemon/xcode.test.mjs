@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Simulator, XcodeBody, XcodeProject, XcodeTargets } from '../contract/index.mjs';
 import { shQuote } from './launch.mjs';
-import { RUN_SCRIPT, containerArgs, derivedDataDir, openInXcode, parseSchemes, parseSimulators, pickContainer, readXcodeProject, readXcodeTargets, scriptCommand, xcodeCommand } from './xcode.mjs';
+import { CLEAN_APPS, RUN_SCRIPT, containerArgs, derivedDataDir, openInXcode, parseSchemes, parseSimulators, pickContainer, readXcodeProject, readXcodeTargets, scriptCommand, xcodeCommand } from './xcode.mjs';
 
 const conforme = (schema, v) => assert.deepStrictEqual(schema.parse(v), v);
 const tmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-xcode-')));
@@ -179,4 +179,18 @@ test('openInXcode : xed reçoit le conteneur (ou le cwd pour un paquet) ; xed ab
   assert.deepEqual(JSON.parse(fs.readFileSync(out, 'utf8')), [dir]);
   const ko = await openInXcode(dir, { kind: 'package', name: 'Package.swift' }, { bins: { xed: path.join(dir, 'absent') } });
   assert.equal(ko.ok, false);
+});
+
+test("run : les .app d'un autre scheme sont retirés avant la construction, le reste du DerivedData est gardé", () => {
+  const dd = tmp();
+  const products = path.join(dd, 'Build', 'Products', 'Debug-iphonesimulator');
+  fs.mkdirSync(path.join(products, 'Autre.app'), { recursive: true });
+  fs.mkdirSync(path.join(products, 'Framework.framework'));
+  fs.mkdirSync(path.join(dd, 'Build', 'Intermediates.noindex'));
+  execFileSync('/bin/sh', ['-c', CLEAN_APPS, 'vigie'], { env: { ...process.env, DD: dd } });
+  assert.deepEqual(fs.readdirSync(products), ['Framework.framework']);
+  assert.ok(fs.existsSync(path.join(dd, 'Build', 'Intermediates.noindex')));
+  // Avant xcodebuild, sinon on effacerait l'app qu'on vient de construire.
+  assert.ok(RUN_SCRIPT.indexOf(CLEAN_APPS) > 0 && RUN_SCRIPT.indexOf(CLEAN_APPS) < RUN_SCRIPT.indexOf('xcodebuild'));
+  fs.rmSync(dd, { recursive: true, force: true });
 });

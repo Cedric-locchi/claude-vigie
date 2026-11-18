@@ -1,6 +1,7 @@
 {
   "compileOnSave": false,
   "compilerOptions": {
+    "strict": true,
     "noImplicitOverride": true,
     "allowJs": true,
     "noPropertyAccessFromIndexSignature": true,
@@ -43,6 +44,7 @@
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,
     "strictInjectionParameters": true,
+    "strictTemplates": true,
     "strictInputAccessModifiers": true
   },
   "files": [],

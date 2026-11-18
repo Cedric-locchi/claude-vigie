@@ -84,7 +84,30 @@ export function splitPatch(out) {
   return map;
 }
 
-/** Patch « tout ajouté » d'un fichier non suivi, au format de `git diff --no-index /dev/null f`, lu sans process. */
+/** Inverse de `unquote` : guillemets et échappements C comme git (core.quotePath=false : seuls contrôles, `"` et `\\` comptent). */
+function quote(s) {
+  const esc = { 7: 'a', 8: 'b', 9: 't', 10: 'n', 11: 'v', 12: 'f', 13: 'r', 34: '"', 92: '\\' };
+  const out = [...s].map((c) => {
+    const n = c.codePointAt(0);
+    return n < 32 || n === 127 || c === '"' || c === '\\' ? '\\' + (esc[n] ?? n.toString(8).padStart(3, '0')) : c;
+  }).join('');
+  return out === s ? s : `"${out}"`;
+}
+
+/** Lignes d'un fichier entier, comptées comme `git diff` (dernière ligne sans fin de ligne comprise), en flux. */
+async function countFileLines(full) {
+  let n = 0, last = 10;
+  for await (const c of fs.createReadStream(full)) {
+    for (let i = c.indexOf(10); i !== -1; i = c.indexOf(10, i + 1)) n++;
+    if (c.length) last = c[c.length - 1];
+  }
+  return n + (last === 10 ? 0 : 1);
+}
+
+/**
+ * Patch « tout ajouté » d'un fichier non suivi, au format de `git diff --no-index /dev/null f`, lu sans process.
+ * Au-delà de MAX_PATCH, seul le début entre dans le patch ; `added` (rendu alors seulement) compte tout le fichier.
+ */
 export async function untrackedPatch(root, file) {
   const full = path.join(root, file);
   const st = await fs.promises.lstat(full);
@@ -93,27 +116,29 @@ export async function untrackedPatch(root, file) {
   let buf;
   if (link) buf = Buffer.from(await fs.promises.readlink(full));
   else {
-    // ponytail: au-delà de MAX_PATCH on ne lit que le début ; `added` compte alors les lignes lues, pas tout le fichier.
     const fh = await fs.promises.open(full, 'r');
     try { const { bytesRead, buffer } = await fh.read(Buffer.alloc(Math.min(st.size, MAX_PATCH)), 0, Math.min(st.size, MAX_PATCH), 0); buf = buffer.subarray(0, bytesRead); }
     finally { await fh.close(); }
   }
   const cut = st.size > buf.length;
   if (cut && buf.includes(10)) buf = buf.subarray(0, buf.lastIndexOf(10) + 1); // pas de caractère UTF-8 coupé en deux
-  // ponytail: chemin écrit tel quel ; git le mettrait entre guillemets s'il contenait un caractère de contrôle, `"` ou `\\`.
-  const tab = file.includes(' ') ? '\t' : ''; // git ajoute une tabulation après un chemin contenant un espace
-  let patch = `diff --git a/${file} b/${file}\nnew file mode ${link ? '120000' : st.mode & 0o111 ? '100755' : '100644'}\n`;
+  const a = quote(`a/${file}`), b = quote(`b/${file}`);
+  const tab = file.includes(' ') ? '\t' : ''; // git ajoute une tabulation après un chemin contenant un espace (`+++` seulement)
+  let patch = `diff --git ${a} ${b}\nnew file mode ${link ? '120000' : st.mode & 0o111 ? '100755' : '100644'}\n`;
+  let added;
   if (buf.length || cut) {
-    if (buf.subarray(0, 8000).includes(0)) patch += `Binary files /dev/null and b/${file}${tab} differ\n`; // même heuristique que git
+    if (buf.subarray(0, 8000).includes(0)) patch += `Binary files /dev/null and ${b} differ\n`; // même heuristique que git
     else {
       const text = buf.toString('utf8');
       const lines = text.split('\n');
       if (text.endsWith('\n')) lines.pop();
-      patch += `--- /dev/null\n+++ b/${file}${tab}\n@@ -0,0 +1${lines.length === 1 ? '' : ',' + lines.length} @@\n`
+      patch += `--- /dev/null\n+++ ${b}${tab}\n@@ -0,0 +1${lines.length === 1 ? '' : ',' + lines.length} @@\n`
         + lines.map((l) => '+' + l).join('\n') + (text.endsWith('\n') || cut ? '\n' : '\n\\ No newline at end of file\n');
+      // ponytail: relit tout le fichier à chaque calcul du diff (cache 1,5 s) ; cache par (taille, mtime) si un énorme non suivi pèse.
+      if (cut) added = await countFileLines(full);
     }
   }
-  return { patch, truncated: cut || patch.length > MAX_PATCH };
+  return { patch, truncated: cut || patch.length > MAX_PATCH, ...(added !== undefined && { added }) };
 }
 
 // Cache par cwd : l'UI redemande le diff à chaque activité (~400 ms) ; on sert le même résultat 1,5 s et une requête
@@ -143,15 +168,22 @@ async function computeGitDiff(cwd) {
   const all = parseStatus(status);
   // Un seul `git diff` pour tous les fichiers suivis ; préfixes forcés et diff externe coupé, quelle que soit la config.
   // ponytail: on diffe tout le dépôt même au-delà de MAX_FILES (borné par maxBuffer) ; pathspec des MAX_FILES premiers si ça pèse.
+  // Échec (maxBuffer dépassé, git en erreur) : on le journalise et les fichiers suivis sont marqués `truncated` plutôt que vides en silence.
+  let diffFailed = false;
   const patches = all.some((f) => f.status !== '?')
-    ? splitPatch(await git(root, ['diff', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/', '-M', base]).catch(() => ''))
+    ? splitPatch(await git(root, ['diff', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/', '-M', base]).catch((e) => {
+      diffFailed = true;
+      console.error(`git diff de ${root} : ${e.code ?? e.message}`);
+      return '';
+    }))
     : new Map();
   const files = await Promise.all(all.slice(0, MAX_FILES).map(async (f) => {
     // Renommage non détecté par -M (trop modifié) : suppression de l'ancien + ajout du nouveau, comme le diff à deux chemins d'avant.
-    const { patch, truncated } = f.status === '?'
+    const { patch, truncated, added } = f.status === '?'
       ? await untrackedPatch(root, f.path).catch(() => ({ patch: '', truncated: false }))
-      : { patch: [f.from, f.path].map((p) => (p && patches.get(p)) || '').join(''), truncated: false };
-    return { ...f, ...countLines(patch), patch: patch.slice(0, MAX_PATCH), truncated: truncated || patch.length > MAX_PATCH };
+      : { patch: [f.from, f.path].map((p) => (p && patches.get(p)) || '').join(''), truncated: diffFailed };
+    const counts = countLines(patch);
+    return { ...f, ...counts, added: added ?? counts.added, patch: patch.slice(0, MAX_PATCH), truncated: truncated || patch.length > MAX_PATCH };
   }));
   return { cwd, repo: true, root, branch, files, total: all.length };
 }
@@ -239,9 +271,10 @@ async function underClaudeConfig(full, home) {
 }
 
 /**
- * Remplace le fichier rendu par `check()` (garde rejouée juste avant le rename) par `content`, seulement s'il n'a pas
- * changé depuis la lecture (`hash`, sinon 412) et s'il n'est pas sous `<home>/.claude` (403).
- * Écriture atomique : fichier temporaire dans le même dossier puis rename, mode d'origine conservé.
+ * Remplace le fichier rendu par `check()` (garde rejouée juste avant l'écriture) par `content`, seulement s'il n'a pas
+ * changé depuis la lecture (`hash`, sinon 412), s'il est accessible en écriture et s'il n'est pas sous `<home>/.claude` (403).
+ * Écriture atomique (fichier temporaire dans le même dossier puis rename, mode d'origine conservé), sauf pour un
+ * fichier à liens physiques ou d'un autre propriétaire : un rename créerait un nouvel inode, on écrit alors en place.
  */
 export async function replaceFile(check, content, hash, home) {
   const data = Buffer.from(content, 'utf8');
@@ -249,18 +282,40 @@ export async function replaceFile(check, content, hash, home) {
   const { full, st, buf } = await check();
   if (await underClaudeConfig(full, home)) throw fail('config Claude en lecture seule', 403);
   if (sha256(buf) !== hash) throw fail('Fichier modifié entre-temps', 412);
-  const tmp = path.join(path.dirname(full), `.${path.basename(full)}.vigie-${process.pid}-${randomUUID()}.tmp`);
+  // Le rename ne demande que le droit sur le dossier : sans ce contrôle, un fichier en lecture seule serait remplacé.
+  await fs.promises.access(full, fs.constants.W_OK).catch(() => { throw fail('fichier en lecture seule', 403); });
+  // ponytail: une écriture de Claude qui tombe entre la dernière lecture (check rejoué ou lecture du descripteur) et le
+  // rename / l'écriture en place est perdue (fenêtre de l'ordre de la milliseconde). POSIX n'a pas de comparer-échanger
+  // sur un fichier et Claude ne prend aucun verrou : rien de mieux sans verrou coopératif.
   try {
-    await fs.promises.writeFile(tmp, data, { flag: 'wx', mode: 0o600 });
-    await fs.promises.chmod(tmp, st.mode & 0o7777);
-    // ponytail: fenêtre de course entre cette vérification et le rename (quelques ms) ; un verrou n'existe pas côté Claude, on s'en tient là.
-    if (sha256((await check()).buf) !== hash) throw fail('Fichier modifié entre-temps', 412);
-    // ponytail: rename = nouvel inode ; un lien physique vers ce fichier garde l'ancien contenu (propriétaire et xattrs non recopiés). Écrire en place si ça gêne.
-    await fs.promises.rename(tmp, full);
-  } catch (e) {
-    await fs.promises.rm(tmp, { force: true });
-    throw e;
+    if (st.nlink > 1 || st.uid !== process.getuid()) return await writeInPlace(full, st, data, hash);
+    const tmp = path.join(path.dirname(full), `.${path.basename(full)}.vigie-${process.pid}-${randomUUID()}.tmp`);
+    try {
+      await fs.promises.writeFile(tmp, data, { flag: 'wx', mode: 0o600 });
+      await fs.promises.chmod(tmp, st.mode & 0o7777);
+      if (sha256((await check()).buf) !== hash) throw fail('Fichier modifié entre-temps', 412);
+      // ponytail: rename = nouvel inode ; attributs étendus et ACL ne suivent pas (pas d'API xattr dans la stdlib).
+      await fs.promises.rename(tmp, full);
+    } catch (e) {
+      await fs.promises.rm(tmp, { force: true });
+      throw e;
+    }
   } finally { invalidate(); }
+}
+
+/**
+ * Écriture en place sur l'inode vérifié par `check()` : liens physiques, propriétaire, xattrs et mode suivent.
+ * O_NOFOLLOW + même (dev, ino) : un fichier substitué entre-temps (lien, rename de Claude) donne 412, rien n'est écrit.
+ */
+async function writeInPlace(full, st, data, hash) {
+  const fh = await fs.promises.open(full, fs.constants.O_RDWR | fs.constants.O_NOFOLLOW).catch(() => { throw fail('Fichier modifié entre-temps', 412); });
+  try {
+    const cur = await fh.stat();
+    if (cur.ino !== st.ino || cur.dev !== st.dev || sha256(await fh.readFile()) !== hash) throw fail('Fichier modifié entre-temps', 412);
+    // ponytail: pas atomique ; un lecteur (ou un arrêt brutal) entre l'écriture et le truncate voit le début neuf suivi de la fin ancienne.
+    for (let off = 0; off < data.length;) off += (await fh.write(data, off, data.length - off, off)).bytesWritten;
+    await fh.truncate(data.length);
+  } finally { await fh.close(); }
 }
 
 /** Remplace un fichier modifié (onglet Diff) : garde `editable`, puis `replaceFile`. `home` : dossier dont `.claude` est protégé. */

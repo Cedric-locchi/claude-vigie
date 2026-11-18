@@ -97,8 +97,9 @@ Le snapshot reste léger et poussé ; tout ce qui est lourd ou propre à une ses
   ignorée ; fichiers ignorés par git acceptés, `.env` compris) ; `checkFile` : `lstat` = fichier ordinaire (ni lien, ni dossier, ni
   sous-module), `realpath` du fichier sous `realpath` de la racine (dépôt, sinon cwd), texte UTF-8 sans octet nul, ≤ 100 Ko ; `realpath`
   hors de `realpath(<home>/.claude)` (sinon 403 « config Claude en lecture seule », pour les deux routes) ; empreinte sha256 lue par
-  `GET …/git/file` ou `…/files/read` égale à celle du disque, vérifiée avant l'écriture et juste avant le `rename` (sinon 412).
-  Écriture atomique (temporaire `wx` dans le même dossier, mode conservé, `rename`).
+  `GET …/git/file` ou `…/files/read` égale à celle du disque, vérifiée avant l'écriture puis rejouée juste avant (`rename` ou écriture) (sinon 412) ; fichier en lecture seule (`access` W_OK) : 403.
+  Écriture atomique par défaut (temporaire `wx` dans le même dossier, mode conservé, `rename`) ; fichier à plusieurs liens physiques ou
+  d'un autre propriétaire : `writeInPlace` (même inode, `O_NOFOLLOW`, empreinte relue sur le descripteur, non atomique).
 - Réseau sortant (décision 024) : seul `claude-status.mjs`, un GET en dur vers `status.claude.com`, sans cookie ni corps, `redirect: 'error'`, timeout 10 s ;
   réponse non fiable, réduite par `parseStatus` à une forme bornée (enum, 5 incidents, 200 caractères, liens https vers un hôte connu). L'IP de la machine est visible de Statuspage.
 - `~/.claude` : lecture seule, sauf effacement d'une discussion (`cwd` = `~/.vigie/chat`) : `store.isChat` garde la route, `store.purge` efface,

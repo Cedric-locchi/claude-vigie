@@ -46,7 +46,8 @@ export function fiveHourWindow(events, now) {
   const blocks = blocksOf(events);
   const last = blocks.at(-1);
   const active = last && now < last.start + H5 ? last : null;
-  // ponytail: la vraie limite n'est pas dans les transcripts ; on prend le plus gros bloc passé comme plafond estimé.
+  // ponytail: la vraie limite n'est pas dans les transcripts ; on prend le plus gros bloc passé comme plafond estimé (faux s'il n'est pas représentatif).
+  // Pas corrigible sans donnée externe : dès qu'un relevé de la statusline existe, `quotaWindow` le remplace.
   const ceiling = Math.max(1, ...blocks.filter((b) => b !== active).map((b) => b.weight));
   if (!active) return { active: false, pct: 0, tokens: 0, start: null, end: null, projectedPct: 0, limitAt: null };
   const end = active.start + H5;
@@ -174,12 +175,19 @@ export function groupRows(groups, archive = false) {
  * `readings` : relevés `{ end, pct }` (fenêtres ouvertes ou closes).
  */
 export function quotaBlocks(events, readings, now) {
-  return blocksOf(events).filter((b) => b.start + H5 <= now).map((b) => {
-    // ponytail: rattachement par la date de début (fenêtre réelle = fin - 5 h, à 1 h près) ; nos blocs estimés peuvent
-    // décaler d'une heure ou plus du vrai découpage d'Anthropic, auquel cas pct reste null. Rattacher par chevauchement si ça se voit.
-    const pcts = readings.filter((r) => Math.abs(r.end - H5 - b.start) <= 60 * MIN).map((r) => r.pct);
-    return { start: b.start, end: b.start + H5, tokens: b.tokens, cost: b.cost, pct: pcts.length ? Math.max(...pcts) : null };
-  });
+  const blocks = blocksOf(events).filter((b) => b.start + H5 <= now).map((b) => ({ start: b.start, end: b.start + H5, tokens: b.tokens, cost: b.cost, pct: null }));
+  // Chaque relevé (fenêtre réelle = [fin - 5 h, fin]) va au bloc qu'il recouvre le plus, s'il le recouvre de plus de la moitié :
+  // nos blocs démarrent à l'heure pleine de la première activité visible, la vraie fenêtre peut être décalée de plusieurs heures.
+  // ponytail: un relevé qui ne recouvre aucun bloc à plus de 2 h 30 est ignoré (fenêtre sans activité visible dans les transcripts).
+  for (const r of readings) {
+    let best = null, bestOverlap = H5 / 2;
+    for (const b of blocks) {
+      const overlap = Math.min(b.end, r.end) - Math.max(b.start, r.end - H5);
+      if (overlap > bestOverlap) { best = b; bestOverlap = overlap; }
+    }
+    if (best && (best.pct === null || r.pct > best.pct)) best.pct = r.pct;
+  }
+  return blocks;
 }
 
 /**
@@ -188,7 +196,8 @@ export function quotaBlocks(events, readings, now) {
  * qu'il recouvre le plus ; sinon il est ajouté. Jamais deux fenêtres qui se chevauchent, donc jamais de double compte ; idempotent.
  * `since` : début des événements en mémoire ; un bloc calculé qui commence dans les 5 h qui suivent peut être tronqué ou mal
  * aligné (son début réel est avant), il est ignoré.
- * ponytail: une fenêtre archivée tronquée le reste (tokens, coût) ; on préfère sous-compter que compter deux fois.
+ * Si le bloc calculé a plus de tokens que l'archive (transcripts manquants à l'archivage, relus depuis), il la remplace
+ * (tokens et coût, jamais d'addition) : l'archive ne fait que croître, donc pas de double compte.
  */
 export function mergeWindows(archived, live, since) {
   const out = archived.map((w) => ({ ...w }));
@@ -199,6 +208,7 @@ export function mergeWindows(archived, live, since) {
     let best = null;
     for (const a of out.slice(0, frozen)) if (overlap(a) > 0 && (!best || overlap(a) > overlap(best))) best = a;
     if (!best) { out.push({ ...w }); continue; }
+    if (w.tokens > best.tokens) { best.tokens = w.tokens; best.cost = w.cost; }
     if (w.pct !== null && (best.pct === null || w.pct > best.pct)) best.pct = w.pct;
   }
   return out.sort((a, b) => a.start - b.start);

@@ -152,6 +152,28 @@ test('untrackedPatch : fichier trop gros tronqué, vide sans hunk', async () => 
   assert.deepEqual(await untrackedPatch(dir, 'vide'), { patch: 'diff --git a/vide b/vide\nnew file mode 100644\n', truncated: false });
 });
 
+test('untrackedPatch : au-delà de MAX_PATCH, added compte tout le fichier', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-git-'));
+  fs.writeFileSync(path.join(dir, 'gros.txt'), 'abcdefghi\n'.repeat(20_000));
+  fs.writeFileSync(path.join(dir, 'sans-fin.txt'), 'abcdefghi\n'.repeat(20_000) + 'fin');
+  assert.equal((await untrackedPatch(dir, 'gros.txt')).added, 20_000);
+  assert.equal((await untrackedPatch(dir, 'sans-fin.txt')).added, 20_001);
+  execFileSync('git', ['init', '-q'], { cwd: dir });
+  assert.equal((await readGitDiff(dir)).files.find((f) => f.path === 'gros.txt').added, 20_000);
+});
+
+test('untrackedPatch : chemin avec guillemet, antislash, contrôle mis entre guillemets comme git', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-git-'));
+  const names = ['a"b\\c\nd e.txt', 'b\x01in\tx y'];
+  fs.writeFileSync(path.join(dir, names[0]), 'x\n+faux\n');
+  fs.writeFileSync(path.join(dir, names[1]), Buffer.from([0, 1]));
+  for (const f of names) {
+    let ref;
+    try { execFileSync('git', ['diff', '--no-color', '--no-index', '--', '/dev/null', f], { cwd: dir }); } catch (e) { ref = e.stdout.toString(); }
+    assert.equal((await untrackedPatch(dir, f)).patch, ref.replace(/^index .*\n/m, ''), JSON.stringify(f));
+  }
+});
+
 /** Dépôt avec a.txt commité puis modifié ; renvoie le dossier et un raccourci git. */
 function repo() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-edit-'));
@@ -223,6 +245,29 @@ test('writeWorktreeFile : contenu, mode, CRLF + BOM à l’octet près, vide ; e
   assert.equal(fs.readFileSync(file('run.sh'), 'utf8'), 'changé par Claude\n');
   await assert.rejects(writeWorktreeFile(dir, 'run.sh', 'x'.repeat(100_001), stale), /volumineux/);
   assert.deepEqual(fs.readdirSync(dir).filter((n) => n.endsWith('.tmp')), []);
+});
+
+test('writeWorktreeFile : lien physique écrit en place (même inode, l’autre nom suit) ; lecture seule refusée (403)', async () => {
+  const { dir } = repo();
+  const file = (p) => path.join(dir, p);
+  fs.linkSync(file('a.txt'), file('jumeau.txt'));
+  const ino = fs.statSync(file('a.txt')).ino;
+  let { hash } = await readWorktreeFile(dir, 'a.txt');
+  await writeWorktreeFile(dir, 'a.txt', 'v3\n', hash);
+  assert.equal(fs.statSync(file('a.txt')).ino, ino);
+  assert.equal(fs.readFileSync(file('jumeau.txt'), 'utf8'), 'v3\n');
+  ({ hash } = await readWorktreeFile(dir, 'a.txt'));
+  await writeWorktreeFile(dir, 'a.txt', 'v', hash); // plus court : la fin ancienne est coupée
+  assert.equal(fs.readFileSync(file('jumeau.txt'), 'utf8'), 'v');
+  fs.writeFileSync(file('jumeau.txt'), 'changé par Claude\n');
+  await assert.rejects(writeWorktreeFile(dir, 'a.txt', 'écrasé', hash), (e) => e.status === 412);
+  assert.equal(fs.readFileSync(file('a.txt'), 'utf8'), 'changé par Claude\n');
+
+  if (process.getuid() === 0) return; // root écrit partout : le contrôle de droit ne s'applique pas
+  fs.writeFileSync(file('run.sh'), 'protégé\n'); fs.chmodSync(file('run.sh'), 0o444);
+  ({ hash } = await readWorktreeFile(dir, 'run.sh'));
+  await assert.rejects(writeWorktreeFile(dir, 'run.sh', 'écrasé', hash), (e) => e.status === 403 && /lecture seule/.test(e.message));
+  assert.equal(fs.readFileSync(file('run.sh'), 'utf8'), 'protégé\n');
 });
 
 test('writeWorktreeFile : refuse d’écrire sous <home>/.claude (403), lien compris', async () => {

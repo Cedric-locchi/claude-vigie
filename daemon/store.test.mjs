@@ -116,6 +116,25 @@ test('détail : consommation de la session, contexte = dernier appel', () => {
   assert.deepEqual(store.detail('S', []).usage, { input: 15, output: 150, cacheCreate: 1200, cacheRead: 1000, calls: 2, context: 1205, contextMax: 200_000 });
 });
 
+test('détail : un dernier message coupé à 20 000 caractères est signalé (lastTextTruncated)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-trunc-'));
+  fs.mkdirSync(path.join(tmp, 'p'), { recursive: true });
+  const now = Date.now();
+  const say = (n, id) => JSON.stringify({
+    type: 'assistant', timestamp: new Date(now - 1000).toISOString(), sessionId: id, cwd: '/dev/revu',
+    message: { id: 'a', stop_reason: 'end_turn', content: [{ type: 'text', text: 'x'.repeat(n) }], usage: { input_tokens: 1, output_tokens: 1 } },
+  }) + '\n';
+  const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), limitsDir: path.join(tmp, 'limits') });
+  for (const [n, id, truncated] of [[20_000, 'A', false], [20_001, 'B', true]]) {
+    fs.writeFileSync(path.join(tmp, 'p', `${id}.jsonl`), say(n, id));
+    store.scan();
+    const d = store.detail(id, []);
+    conforme(C.SessionDetail, d);
+    assert.equal(d.agents[0].lastText.length, 20_000);
+    assert.equal(d.agents[0].lastTextTruncated, truncated);
+  }
+});
+
 test('coût par modèle et lignes de consommation par jour × session × modèle', async () => {
   const { costOf, family } = await import('./pricing.mjs');
   // Opus 5.5 : 4 $ / 20 $ par M ; cache écrit 1,25 × entrée, lu 0,1 × entrée.
@@ -192,7 +211,7 @@ test('trace : tours délimités par les messages, sous-agents rattachés à leur
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-trace-'));
   const dir = path.join(tmp, 'p');
   fs.mkdirSync(path.join(dir, 'S', 'subagents'), { recursive: true });
-  const t0 = Date.now() - 3_600_000;
+  const t0 = Date.now() - 3 * 3_600_000; // tout dans le passé, sous-agent compris (7206 s)
   const rec = (s, o) => JSON.stringify({ timestamp: new Date(t0 + s * 1000).toISOString(), sessionId: 'S', cwd: '/dev/revu', ...o }) + '\n';
   const tool = (s, id, name, input) => rec(s, { type: 'assistant', message: { id: `m${s}`, content: [{ type: 'tool_use', id, name, input }] } });
   const result = (s, id, isError = false) => rec(s, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: 'ok' }] } });
@@ -214,6 +233,8 @@ test('trace : tours délimités par les messages, sous-agents rattachés à leur
   const trace = store.sessionTrace('S', []);
   conforme(C.SessionTrace, trace);
   conforme(C.SessionDetail, store.detail('S', []));
+  conforme(C.Snapshot, store.snapshot([]));
+  assert.equal(store.snapshot([]).sessions.find((s) => s.id === 'S').toolPath, null); // dernier outil = Task, sans fichier
   assert.deepEqual(trace.turns.map((t) => [t.index, t.prompt, t.steps.map((x) => x.name)]), [[1, 'Corrige le test', ['Read', 'Bash']], [2, '/review', ['Task']]]);
   // Le premier tour s'arrête à la réponse de Claude (42 s), pas au message suivant (2 h plus tard).
   assert.equal(trace.turns[0].end - trace.turns[0].start, 42_000);
@@ -302,6 +323,12 @@ test('sous-agent en cours : meta relu tant qu’il n’est pas terminé', () => 
   assert.equal(store.snapshot([]).sessions[0].activeSubagents, 1);
   fs.writeFileSync(meta, JSON.stringify({ agentType: 'Explore', finished: true }));
   assert.equal(store.snapshot([]).sessions[0].activeSubagents, 0);
+  // Repris après coup (SendMessage) : le transcript avance après le meta, il repasse en cours.
+  const old = (now - 120_000) / 1000;
+  fs.utimesSync(meta, old, old);
+  fs.appendFileSync(path.join(dir, 'S', 'subagents', 'agent-a.jsonl'), rec('S', now - 1000, { pending: true }));
+  store.scan();
+  assert.equal(store.snapshot([]).sessions[0].activeSubagents, 1);
 });
 
 // Transcript minimal d'une session `sid` lancée dans `cwd`.
@@ -549,4 +576,22 @@ test('historique : plus de la moitié des lignes illisibles → mis de côté, p
   make().saveHistory();
   const aside = fs.readdirSync(path.dirname(historyFile)).find((n) => n.startsWith('usage.json.corrupt-'));
   assert.equal(fs.readFileSync(path.join(path.dirname(historyFile), aside), 'utf8'), bad);
+});
+
+test('toolPath : chemin complet du fichier de l’outil en cours, null pour un outil sans fichier', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-toolpath-'));
+  const dir = path.join(tmp, 'p');
+  fs.mkdirSync(dir, { recursive: true });
+  const t0 = Date.now() - 60_000;
+  const rec = (s, o) => JSON.stringify({ timestamp: new Date(t0 + s * 1000).toISOString(), sessionId: 'S', cwd: '/dev/revu', ...o }) + '\n';
+  const tool = (s, id, name, input) => rec(s, { type: 'assistant', message: { id: `m${s}`, content: [{ type: 'tool_use', id, name, input }] } });
+  const file = path.join(dir, 'S.jsonl');
+  fs.writeFileSync(file, rec(0, { type: 'user', message: { content: 'go' } }) + tool(1, 'r1', 'Edit', { file_path: '/dev/revu/src/deep/a.ts' }));
+  const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), limitsDir: path.join(tmp, 'limits') });
+  store.scan();
+  const get = () => { const snap = store.snapshot([]); conforme(C.Snapshot, snap); return snap.sessions.find((s) => s.id === 'S'); };
+  assert.deepEqual([get().tool, get().toolPath], ['Edit · deep/a.ts','/dev/revu/src/deep/a.ts']);
+  fs.appendFileSync(file, tool(2, 'b1', 'Bash', { command: 'npm test' }));
+  store.scan();
+  assert.equal(get().toolPath, null);
 });

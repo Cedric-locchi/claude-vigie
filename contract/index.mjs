@@ -10,7 +10,6 @@ const num = z.number();
 const bool = z.boolean();
 const nstr = z.nullable(str);
 const nnum = z.nullable(num);
-const nonEmpty = z.string().check(z.minLength(1));
 
 // ── Base ──────────────────────────────────────────────────────────────────
 export const SessionState = z.enum(['waiting', 'turn', 'running', 'done']);
@@ -26,6 +25,7 @@ export const SessionSummary = z.object({
   title: str,
   lastText: str,
   tool: nstr,
+  toolPath: z.optional(nstr), // chemin complet du fichier visé par l'outil en cours, null hors outil à fichier ; absent sur un daemon plus ancien
   state: SessionState,
   reason: z.optional(Reason),
   detail: z.optional(str),
@@ -107,6 +107,7 @@ export const Agent = z.object({
   issue: z.optional(str),
   lastAction: nstr,
   lastText: str,
+  lastTextTruncated: z.optional(bool), // vrai si lastText est coupé à 20 000 caractères ; absent sur un daemon plus ancien
   tokens: num,
   toolCount: num,
   firstTs: num,
@@ -361,6 +362,7 @@ const UDID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A
 export const XcodeBody = z.object({
   action: XcodeAction,
   // Ni `\` ni `'` : sous fish, `\'` sortirait des guillemets simples de shQuote.
+  // eslint-disable-next-line no-control-regex -- refuser les caractères de contrôle est le but
   scheme: text('Choisis un scheme').check(z.regex(/^(?!-)[^\x00-\x1f\x7f\\']{1,200}$/, 'Scheme invalide')),
   udid: z.optional(text('Choisis un simulateur').check(z.regex(UDID, 'Simulateur invalide'))),
 }, body).check(z.refine((b) => b.action === 'clean' || b.udid !== undefined, 'Choisis un simulateur'));

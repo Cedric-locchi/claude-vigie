@@ -1,4 +1,4 @@
-# Tests et build de l'UI sur chaque PR et chaque push sur main, sur les deux plateformes supportées.
+# Lint, tests et build de l'UI sur chaque PR et chaque push sur main, sur les deux plateformes supportées.
 name: CI
 
 on:
@@ -32,5 +32,6 @@ jobs:
           node-version-file: package.json # lit volta.node
           cache: npm
       - run: npm ci
+      - run: npm run lint
       - run: npm test
       - run: npm run build

@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, model, output, signal } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
 import { HlmButton } from '@spartan-ng/helm/button';
 import { HlmInput } from '@spartan-ng/helm/input';
@@ -66,7 +66,7 @@ import { SessionDiffVm, STATUS } from './session-diff.vm';
         <div class="body">
           <nav class="files" aria-label="Fichiers modifiés">
             @for (f of d!.files; track f.path) {
-              <button type="button" class="file" [attr.aria-current]="vm.file()?.path === f.path ? 'page' : null" (click)="vm.select(f.path)" [hlmTooltip]="(f.from ? f.from + ' → ' : '') + f.path" [showDelay]="500">
+              <button type="button" class="file" [attr.aria-current]="vm.file().path === f.path ? 'page' : null" (click)="vm.select(f.path)" [hlmTooltip]="(f.from ? f.from + ' → ' : '') + f.path" [showDelay]="500">
                 <span class="st mono" [attr.data-st]="f.status"><span aria-hidden="true">{{ STATUS[f.status].label }}</span><span class="sr-only">{{ STATUS[f.status].hint }}</span></span>
                 <span class="name"><span class="base">{{ base(f.path) }}</span><span class="dir mono">{{ dir(f.path) }}</span></span>
                 <span class="nums mono"><span class="add">+{{ f.added }}</span> <span class="del">−{{ f.removed }}</span></span>
@@ -200,6 +200,8 @@ export class SessionDiffComponent {
   readonly lastTs = input.required<number>();
   /** Claude ne travaille pas : l'édition d'un fichier est permise (le daemon applique la même règle). */
   readonly idle = input(false);
+  /** Saisie non enregistrée : la page garde cet onglet monté et demande confirmation avant de quitter. */
+  readonly unsaved = model(false);
   /** Claude tourne dans un terminal Vigie et n'attend pas de réponse : on peut lui taper la demande de worktree. */
   readonly canWorktree = input(false);
   /** Nom du worktree (vide : choisi par Claude) ; la page le tape dans le terminal claude. */
@@ -213,6 +215,7 @@ export class SessionDiffComponent {
 
   constructor() {
     this.vm.connect(this.sessionId, this.lastTs, this.idle);
+    effect(() => this.unsaved.set(this.vm.dirty()));
   }
 
   protected readonly copied = signal(false);

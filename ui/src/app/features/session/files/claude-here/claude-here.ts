@@ -7,6 +7,12 @@ const EDIT = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 /** Fichier touché en ce moment ; `edit` : modification (lilas), sinon lecture (ardoise). */
 export interface Here { path: string; edit: boolean }
 
+/** Remplace la cible abrégée de `SessionSummary.tool` par le chemin complet `toolPath` quand le daemon le donne (sinon le libellé tel quel). */
+export function withFullPath(tool: string | null | undefined, toolPath: string | null | undefined): string | null | undefined {
+  const i = tool?.indexOf(' · ') ?? -1;
+  return tool && toolPath && i >= 0 ? `${tool.slice(0, i)} · ${toolPath}` : tool;
+}
+
 /**
  * Première source qui désigne un fichier du projet. Le daemon écrit `« Outil · cible »` :
  * - `SessionSummary.tool` : dernier outil de l'agent principal, cible abrégée à deux segments (`daemon/usage.mjs`) ;

@@ -52,10 +52,21 @@ export function startupMethod({ platform, hasSystemd }) {
  */
 export function localeEnv({ platform, env = {}, locale = null }) {
   // Choix fait dans Vigie : prime sur l'environnement hérité.
-  // ponytail: locale non installée → le shell râle (setlocale) et retombe en C ; vérifier via `locale -a` (ici, par OS) si ça arrive.
+  // La locale choisie est vérifiée à l'enregistrement (`localeInstalled`, transport.mjs) ; une locale désinstallée depuis ferait
+  // retomber le shell en C. ponytail: `C.UTF-8` par défaut : absent des glibc < 2.35 sans paquet.
   if (locale) return { LANG: locale, LC_ALL: locale };
   if (env.LC_ALL || env.LC_CTYPE || env.LANG) return {};
   return { LANG: platform === 'darwin' ? 'en_US.UTF-8' : 'C.UTF-8' };
+}
+
+/**
+ * `name` figure-t-elle dans la sortie de `locale -a` ? Casse et tirets du codeset ignorés : macOS écrit `fr_FR.UTF-8`,
+ * glibc `fr_FR.utf8`, et les deux se comparent égaux. Le modificateur (`@euro`) reste significatif.
+ */
+export function localeInstalled(name, listing) {
+  const norm = (s) => s.trim().toLowerCase().replace(/-/g, '');
+  const want = norm(name);
+  return String(listing).split('\n').some((l) => l.trim() && norm(l) === want);
 }
 
 /** Locale effective des terminaux sans choix dans Vigie (affichée dans les réglages). */
