@@ -10,7 +10,7 @@ import { counter, keepLast } from '../../../core/signals';
 import { VigieService } from '../../../core/vigie.service';
 import { GitMark, gitMarks, lineCol, lineCount, lineOffset } from './code-editor/code-editor';
 import { Touched, autoOpen, editedDirs, pathResolver, touchedFiles, visibleFiles } from './touched/files-touched';
-import { Here, claudeFile } from './claude-here/claude-here';
+import { Here, claudeFile, withFullPath } from './claude-here/claude-here';
 import { SessionPageVm } from '../session-page/session-page.vm';
 import { STATUS, message } from '../diff/session-diff.vm';
 
@@ -249,7 +249,10 @@ export class SessionFilesVm {
   });
 
   // ── Ce que Claude a touché (trace de la session) ─────────────────────────
-  private readonly traceRes = this.vigie.traceResource(this.id, this.version);
+  /** Un sous-agent travaille : la trace est relue toutes les 5 s (le daemon ne donne en direct que l'outil de l'agent principal). */
+  private readonly subTick = signal(0);
+  private readonly subActive = computed(() => (this.page?.summary()?.activeSubagents ?? 0) > 0 && !this.idle());
+  private readonly traceRes = this.vigie.traceResource(this.id, computed(() => this.version() + this.subTick()));
   private readonly trace = linkedSignal<{ id: string | null; value: SessionTrace | undefined }, SessionTrace | null>({
     source: () => ({ id: this.id(), value: this.traceRes.hasValue() ? this.traceRes.value() : undefined }),
     computation: (s, prev) => s.value ?? (prev?.source.id === s.id ? prev.value : null),
@@ -277,13 +280,13 @@ export class SessionFilesVm {
   /**
    * Déduit en direct du snapshot (outil en cours, ou détail de l'attente), sinon le dernier fichier touché pendant le tour en cours ;
    * null quand Claude ne travaille pas (Lights-Out). Égalité par chemin et nature : pas de réveil à chaque snapshot.
-   * ponytail: le daemon ne donne que l'outil de l'agent principal ; un sous-agent qui écrit ne s'affiche qu'à la relecture de la trace.
+   * ponytail: un sous-agent qui écrit apparaît au prochain relevé de la trace (5 s) ; une cible live dans le résumé du daemon éviterait la relecture.
    */
   readonly here = computed<Here | null>(() => {
     const r = this.resolve(), s = this.page?.summary();
     if (this.idle() || !r) return null;
     const live = this.liveTurn(), last = live === null ? undefined : this.touched().find((t) => t.turn === live);
-    return claudeFile([s?.detail, s?.tool], r) ?? (last ? { path: last.path, edit: last.editTurn === last.turn } : null);
+    return claudeFile([s?.detail, withFullPath(s?.tool, s?.toolPath)], r) ?? (last ? { path: last.path, edit: last.editTurn === last.turn } : null);
   }, { equal: (a, b) => a?.path === b?.path && a?.edit === b?.edit });
   /** « Suivre » : chaque nouveau fichier touché par Claude s'ouvre en aperçu ; mémorisé pour toutes les sessions. */
   readonly follow = signal(readPref(FOLLOW_KEY) === '1');
@@ -312,6 +315,11 @@ export class SessionFilesVm {
   private autoOpened: string | null = null;
 
   constructor() {
+    effect((onCleanup) => {
+      if (!this.subActive()) return;
+      const t = setInterval(() => this.subTick.update((n) => n + 1), 5_000);
+      onCleanup(() => clearInterval(t));
+    });
     const tick = setInterval(() => this.now.set(Date.now()), 30_000);
     inject(DestroyRef).onDestroy(() => clearInterval(tick));
     // Suivre : ouvre en aperçu, jamais par-dessus un onglet en édition ; le tiroir reste comme il était.
@@ -580,7 +588,7 @@ export class SessionFilesVm {
   private async read(id: string, path: string): Promise<FileBody | null> {
     const still = () => this.id() === id && this.tabs().some((t) => t.path === path);
     this.loadingFile.set(true);
-    let body: FileBody | null = null;
+    let body: FileBody | null;
     try {
       body = await this.vigie.readProjectFile(id, path);
       if (still()) this.setTab(path, { body, error: null });

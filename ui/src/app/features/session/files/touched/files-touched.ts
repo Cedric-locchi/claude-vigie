@@ -29,7 +29,9 @@ export const visibleFiles = (files: string[]): string[] => files.filter((f) => !
  * Résout le libellé d'une étape en chemin relatif à `root`, ou null (hors racine, ambigu, inconnu).
  * Le daemon abrège un chemin absolu en ses deux derniers segments (`/…/daemon/usage.mjs` → `daemon/usage.mjs`) :
  * on retrouve le fichier par ce suffixe dans la liste du projet, seulement s'il est unique.
- * ponytail: un fichier hors racine au suffixe identique serait pris pour celui du projet ; il faudrait le chemin complet dans la trace (daemon).
+ * La trace donne le chemin complet (`TraceStep.path`) : un fichier hors racine y est écarté. Seul un libellé abrégé (daemon ancien, ou `SessionSummary.tool` en direct)
+ * passe par le suffixe.
+ * ponytail: « Claude ici » prend `SessionSummary.toolPath` (chemin complet) quand le daemon l'envoie ; sur un daemon plus ancien, un fichier hors racine au suffixe identique à un fichier du projet est pris pour lui via le libellé abrégé. Disparaît avec le repli.
  */
 export function pathResolver(root: string, files: string[]): (label: string) => string | null {
   const known = new Set(files), bySuffix = new Map<string, string | null>();

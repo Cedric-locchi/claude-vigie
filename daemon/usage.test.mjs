@@ -155,8 +155,10 @@ test('quotaBlocks : fenêtres closes seulement, % réel rattaché à 1 h près, 
   const readings = [{ end: T0 + 5 * H + 30 * 60_000, pct: 0.4 }, { end: T0 + 5 * H, pct: 0.6 }, { end: T0 + 9 * H, pct: 0.9 }];
   assert.deepEqual(quotaBlocks(events, readings, now), [
     { start: T0, end: T0 + 5 * H, tokens: 2e6, cost: 4, pct: 0.6 },
-    { start: T0 + 6 * H, end: T0 + 11 * H, tokens: 1e6, cost: 2, pct: null }, // relevé à 2 h de décalage : non rattaché
+    { start: T0 + 6 * H, end: T0 + 11 * H, tokens: 1e6, cost: 2, pct: 0.9 }, // relevé décalé de 2 h : rattaché par chevauchement (3 h sur 5)
   ]);
+  // Relevé qui ne recouvre aucun bloc à plus de la moitié : ignoré.
+  assert.equal(quotaBlocks(events, [{ end: T0 + 15 * H, pct: 0.9 }], now)[1].pct, null);
 });
 
 test('mergeWindows : archive figée (seul pct remonte), bloc qui chevauche jamais ajouté, bord des événements ignoré, idempotent', () => {
@@ -165,7 +167,7 @@ test('mergeWindows : archive figée (seul pct remonte), bloc qui chevauche jamai
   const archived = [w(0, 100, 0.5), w(10 * H, 50, null)];
   const live = [w(2 * H, 999, null), w(10 * H, 80, 0.3), w(20 * H, 10, null)];
   const m = mergeWindows(archived, live, 0); // bloc à 2 h : moins de 5 h après le début des événements, ignoré
-  assert.deepEqual(m, [w(0, 100, 0.5), { ...w(10 * H, 50, 0.3) }, w(20 * H, 10, null)]);
+  assert.deepEqual(m, [w(0, 100, 0.5), { ...w(10 * H, 80, 0.3) }, w(20 * H, 10, null)]); // archive tronquée (50) : remplacée par le bloc relu (80)
   assert.deepEqual(mergeWindows(m, live, 0), m);
   assert.deepEqual(mergeWindows([w(0, 100, 0.5)], [w(0, 10, null)], -10 * H), [w(0, 100, 0.5)]); // un bloc relu en partie ne fait pas baisser l'archive
   // Bloc recalculé décalé d'1 h (transcript effacé entre-temps) : une seule fenêtre, pas de double compte.

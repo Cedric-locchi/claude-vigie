@@ -54,13 +54,32 @@ export interface Rule {
 const SEVERITY: Record<Kind, number> = { deny: 0, ask: 1, allow: 2, mode: 0 };
 
 /**
- * Conflits entre règles au texte identique.
+ * `a` couvre `b` (textes différents) : `Outil` seul couvre toutes ses formes, `Outil(p:*)` couvre `Outil(q)` et `Outil(q:*)`
+ * quand `q` est `p` ou commence par `p` suivi d'une espace ; `mcp__serveur` couvre `mcp__serveur__outil`.
+ */
+function covers(a: string, b: string): boolean {
+  if (a === b) return false;
+  if (b.startsWith(a + '__')) return a.startsWith('mcp__');
+  const [, ta, pa] = /^([\w.-]+)(?:\((.*)\))?$/s.exec(a) ?? [];
+  const [, tb, pb] = /^([\w.-]+)(?:\((.*)\))?$/s.exec(b) ?? [];
+  if (!ta || ta !== tb || a.startsWith('mcp__')) return false;
+  if (pa === undefined) return true;
+  if (pb === undefined || !pa.endsWith(':*')) return false;
+  const p = pa.slice(0, -2), q = pb.endsWith(':*') ? pb.slice(0, -2) : pb;
+  return q === p || q.startsWith(p + ' ');
+}
+
+/**
+ * Conflits entre règles : au texte identique, puis par recouvrement de préfixe.
  * - allow / ask / deny : Claude Code fusionne les listes de toutes les portées et évalue deny, puis ask, puis allow ;
  *   la première qui correspond décide. Une même règle refusée quelque part l'emporte donc quelle que soit la portée.
  *   À décision égale, la copie de la portée la plus prioritaire est gardée, les autres sont « en double ».
  * - mode (defaultMode) : valeur simple, la portée la plus prioritaire remplace les autres.
- * ponytail: seul le texte exact est comparé ; le recouvrement de motifs (Bash(git:*) contre Bash(git push:*))
- * n'est pas tranché, faute de connaître exactement l'algorithme de correspondance de Claude Code.
+ * - recouvrement : une règle plus large (`Bash(git:*)`) de décision au moins aussi stricte rend la plus étroite
+ *   (`Bash(git push:*)`) « remplacée » (autre décision) ou « en double » (même décision). Une règle étroite plus stricte
+ *   que la large (deny étroit, allow large) n'est pas signalée : elle décide d'abord, la large reste utile ailleurs.
+ * ponytail: recouvrement par préfixe seulement (`Outil`, `Outil(préfixe:*)`, `mcp__serveur`) ; les motifs de chemin
+ *   (`Read(src/**)`), les jokers au milieu et `*` ne sont pas comparés. Un vrai analyseur de motifs si le besoin se confirme.
  */
 export function annotate(perms: ClaudeConfig['permissions']): Rule[] {
   const byKey = new Map<string, ClaudeConfig['permissions']>();
@@ -72,8 +91,15 @@ export function annotate(perms: ClaudeConfig['permissions']): Rule[] {
   for (const [key, list] of byKey) {
     if (list.length > 1) winnerOf.set(key, [...list].sort((a, b) => SEVERITY[a.kind] - SEVERITY[b.kind] || rank(a.scope) - rank(b.scope))[0]);
   }
+  const wide = (p: ClaudeConfig['permissions'][number]) => perms
+    .filter((c) => c.kind !== 'mode' && p.kind !== 'mode' && SEVERITY[c.kind] <= SEVERITY[p.kind] && covers(c.rule, p.rule))
+    .sort((a, b) => SEVERITY[a.kind] - SEVERITY[b.kind] || rank(a.scope) - rank(b.scope))[0];
   return perms.map((p) => {
     const w = winnerOf.get(p.kind === 'mode' ? 'mode' : 'r:' + p.rule);
+    if (!w || w === p) {
+      const c = wide(p);
+      if (c) return { ...p, status: c.kind === p.kind ? 'duplicate' : 'overridden', by: { scope: c.scope, kind: c.kind } };
+    }
     if (!w) return { ...p, status: null };
     if (w === p) return { ...p, status: 'wins' };
     const status: RuleStatus = w.kind === p.kind && (p.kind !== 'mode' || w.rule === p.rule) ? 'duplicate' : 'overridden';

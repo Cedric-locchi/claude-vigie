@@ -325,6 +325,25 @@ describe('SessionFilesVm', () => {
       expect(vm.project()?.files).toEqual(files); // garde l'arbre pendant la relecture
     });
 
+    it('relit la trace toutes les 5 s tant qu’un sous-agent travaille, pas autrement', async () => {
+      try {
+        const summary = signal(aSession({ state: 'running', activeSubagents: 1 }));
+        TestBed.configureTestingModule({ providers: [{ provide: SessionPageVm, useValue: { summary, openLog: vi.fn() } }] });
+        const { extra, versions } = traced(trace([]));
+        const { idle } = await setup(extra);
+        vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }); // seuls les intervalles : whenStable repose sur setTimeout
+        idle.set(false);
+        await TestBed.inject(ApplicationRef).whenStable();
+        const v = versions[0]();
+        vi.advanceTimersByTime(5_000);
+        expect(versions[0]()).toBe(v + 1);
+        summary.set(aSession({ state: 'running', activeSubagents: 0 }));
+        await TestBed.inject(ApplicationRef).whenStable();
+        vi.advanceTimersByTime(15_000);
+        expect(versions[0]()).toBe(v + 1);
+      } finally { vi.useRealTimers(); }
+    });
+
     it('« Voir dans l’historique » ouvre le journal de la page sur le fichier', async () => {
       const openLog = vi.fn();
       const { extra } = traced(trace([['edit', 'src/a.ts', 1]]));
@@ -429,6 +448,13 @@ describe('SessionFilesVm', () => {
       await TestBed.inject(ApplicationRef).whenStable();
       return { ...r, summary };
     }
+
+    it('toolPath hors du projet : pas de « Claude ici » malgré un suffixe identique', async () => {
+      const { vm, summary } = await here({ tool: 'Edit · src/a.ts', toolPath: '/dev/ailleurs/src/a.ts' });
+      expect(vm.here()).toBeNull();
+      summary.set(aSession({ state: 'running', tool: 'Edit · src/a.ts', toolPath: '/dev/meeplebox/src/a.ts' }));
+      expect(vm.here()).toEqual({ path: 'src/a.ts', edit: true });
+    });
 
     it('déduit le fichier de l’outil en cours, puis du détail de l’attente (chemin complet)', async () => {
       const { vm, summary } = await here({ tool: 'Read · src/b.ts' });

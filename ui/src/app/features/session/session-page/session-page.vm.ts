@@ -1,6 +1,7 @@
 import { DOCUMENT, Injectable, Signal, computed, effect, inject, linkedSignal, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ConfirmService } from '../../../core/confirm.service';
+import { DISCARD_EDIT } from '../diff/session-diff.vm';
 import { SessionDetail, SessionState } from '../../../core/models';
 import { KEYS, OUTDATED, VigieService, isChat, sendReply } from '../../../core/vigie.service';
 import { stateLabel } from '../../../core/session-view';
@@ -307,13 +308,23 @@ export class SessionPageVm {
     await this.router.navigate(['/']);
   }
 
+  /** Saisie non enregistrée dans l'onglet Diff (publiée par l'onglet, qui reste monté tant qu'elle existe). */
+  readonly unsaved = signal(false);
+
   /** Garde de sortie : quitter une discussion l'efface (après confirmation). Les autres sessions passent. */
   async leave(): Promise<boolean> {
+    if (this.unsaved() && !(await this.confirm.ask(DISCARD_EDIT))) return false;
     const id = this.id();
     if (!id || !this.isChat()) return true;
     if (!(await this.confirm.leaveChat())) return false;
-    // ponytail: échec réseau ignoré, le daemon efface les discussions restantes à son prochain démarrage.
-    await this.vigie.purgeChat(id).catch(() => undefined);
+    try {
+      await this.vigie.purgeChat(id);
+    } catch {
+      // On reste sur la page : partir maintenant ferait croire la discussion effacée alors qu'elle est encore sur le disque.
+      // ponytail: pas d'échappatoire si le daemon reste injoignable (la navigation est bloquée) ; le daemon efface les discussions au démarrage.
+      this.replyError.set('La discussion n’a pas pu être supprimée : le daemon répond-il ? Réessaie de quitter.');
+      return false;
+    }
     return true;
   }
 

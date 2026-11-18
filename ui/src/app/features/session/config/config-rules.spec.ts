@@ -46,6 +46,31 @@ describe('config-rules', () => {
     ]);
   });
 
+  it('conflits par recouvrement de préfixe : la règle étroite est remplacée ou en double, la large jamais', () => {
+    const rules = annotate([
+      { scope: 'projet', kind: 'deny', rule: 'Bash(git:*)' },
+      { scope: 'projet', kind: 'allow', rule: 'Bash(git push:*)' },
+      { scope: 'projet', kind: 'allow', rule: 'Bash(gitk)' },
+      { scope: 'projet', kind: 'allow', rule: 'Bash(npm:*)' },
+      { scope: 'utilisateur', kind: 'allow', rule: 'Bash(npm test)' },
+      { scope: 'projet', kind: 'allow', rule: 'Edit' },
+      { scope: 'projet', kind: 'ask', rule: 'Edit(src/a.ts)' },
+      { scope: 'projet', kind: 'allow', rule: 'Read(src/**)' },
+      { scope: 'projet', kind: 'allow', rule: 'Read(src/a.ts)' },
+    ]);
+    expect(rules.map((r) => [r.rule, r.status, r.by ? `${r.by.kind}/${r.by.scope}` : null])).toEqual([
+      ['Bash(git:*)', null, null],
+      ['Bash(git push:*)', 'overridden', 'deny/projet'],
+      ['Bash(gitk)', null, null], // « git » ne recouvre pas « gitk »
+      ['Bash(npm:*)', null, null],
+      ['Bash(npm test)', 'duplicate', 'allow/projet'],
+      ['Edit', null, null],
+      ['Edit(src/a.ts)', null, null], // ask étroit plus strict que allow large
+      ['Read(src/**)', null, null],
+      ['Read(src/a.ts)', null, null], // motifs de chemin non comparés
+    ]);
+  });
+
   it('regroupe (mode, conflits, puis taille), factorise portée et décision homogènes, filtre', () => {
     const rules = annotate([
       { scope: 'organisation', kind: 'allow', rule: 'mcp__k__a' },

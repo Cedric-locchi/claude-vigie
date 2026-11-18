@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
 import pty from 'node-pty';
 import { WebSocketServer } from 'ws';
 // Chemin relatif, pas `@vigie/contract` : la copie des liens de workspace par electron-builder n'est pas garantie.
@@ -19,7 +20,7 @@ import { readMiseTasks } from './mise.mjs';
 import { childDirs, describeDirs } from './projects.mjs';
 import { claudeCommand, shQuote, spoolLine } from './launch.mjs';
 import { derivedDataDir, openInXcode, readXcodeProject, readXcodeTargets, scriptCommand, xcodeCommand } from './xcode.mjs';
-import { defaultLocale, localeEnv } from './platform.mjs';
+import { defaultLocale, localeEnv, localeInstalled } from './platform.mjs';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.ico': 'image/x-icon', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.woff2': 'font/woff2' };
 const SCROLLBACK = 512 * 1024;
@@ -27,12 +28,12 @@ const SCROLLBACK = 512 * 1024;
 /**
  * `store` : createStore(…) ; `uiDir` : UI construite ; `home` : remplacé par `~` dans /api/projects ;
  * `chatDir` : dossier des discussions ; `hooksFile` : réglages passés à claude --settings ; `dev` : accepte ng serve (4200) ;
- * `settingsFile` : réglages du daemon (~/.vigie/settings.json), gardés en mémoire seulement s'il est absent ;
+ * `listLocales` : sortie de `locale -a` (promesse de texte, null = indisponible) ; `settingsFile` : réglages du daemon (~/.vigie/settings.json), gardés en mémoire seulement s'il est absent ;
  * `spoolFile` : spool des hooks (~/.vigie/spool.jsonl), où POST /api/hook ajoute ce que Claude Code poste ;
  * `miseBin` : exécutable mise pour lister les tâches (injecté par les tests) ;
  * `xcodeBins` : exécutables xcodebuild / xcrun / xed ; `xcodeDir` : DerivedData de Vigie (~/.vigie/xcode).
  */
-export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, settingsFile = null, spoolFile = null, dev = false, miseBin = 'mise', xcodeBins = { xcodebuild: 'xcodebuild', xcrun: 'xcrun', xed: 'xed' }, xcodeDir = path.join(home, '.vigie', 'xcode'), claudeStatus = () => undefined }) {
+export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, settingsFile = null, spoolFile = null, dev = false, miseBin = 'mise', xcodeBins = { xcodebuild: 'xcodebuild', xcrun: 'xcrun', xed: 'xed' }, xcodeDir = path.join(home, '.vigie', 'xcode'), claudeStatus = () => undefined, listLocales = null }) {
   const ORIGINS = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...(dev ? ['http://localhost:4200'] : [])]);
   const originOk = (req) => !req.headers.origin || ORIGINS.has(req.headers.origin);
 
@@ -46,6 +47,9 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
     alerts: settings.alerts ?? { dailyCost: null, windowPct: null },
   });
   /** Écrit puis applique : un échec d'écriture ne laisse pas une locale active mais oubliée au redémarrage ; tmp + rename, jamais de fichier tronqué. */
+  // `locale -a` sans shell, timeout court ; introuvable ou en échec : on ne bloque pas l'enregistrement.
+  const defaultListLocales = () => new Promise((resolve) => execFile('locale', ['-a'], { timeout: 3000, maxBuffer: 4e6 }, (err, out) => resolve(err ? null : out)));
+  const localeKnown = async (name) => { const l = await (listLocales ?? defaultListLocales)(); return l === null || localeInstalled(name, l); };
   function saveSettings(next) {
     if (settingsFile) {
       fs.writeFileSync(settingsFile + '.tmp', JSON.stringify(next, null, 2));
@@ -261,6 +265,7 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
     if (url.pathname === '/api/settings') {
       const b = valid(SettingsBody, body, res);
       if (!b) return;
+      if (b.locale && !(await localeKnown(b.locale))) return json(res, 400, { error: `Locale « ${b.locale} » non installée sur ce système (voir \`locale -a\`) : le terminal retomberait en C et les accents seraient cassés.` });
       try { saveSettings({ ...settings, ...b }); } catch (e) { return json(res, 500, { error: `Réglages non enregistrés : ${e.message}` }); }
       return json(res, 200, settingsView());
     }

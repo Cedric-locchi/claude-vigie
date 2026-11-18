@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pathResolver } from '../touched/files-touched';
-import { claudeFile } from './claude-here';
+import { claudeFile, withFullPath } from './claude-here';
 
 describe('claudeFile', () => {
   const resolve = pathResolver('/dev/meeplebox', ['src/a.ts', 'daemon/usage.mjs', 'README.md']);
@@ -17,5 +17,13 @@ describe('claudeFile', () => {
     expect(claudeFile([undefined, 'Bash · npm test'], resolve)).toBeNull();
     expect(claudeFile([undefined, 'Grep · src/a.ts'], resolve)).toBeNull();
     expect(claudeFile(['Edit · /etc/hosts', null], resolve)).toBeNull();
+  });
+
+  it('toolPath remplace la cible abrégée : un autre arbre au même suffixe n\'est plus confondu', () => {
+    const tool = 'Edit · src/a.ts';
+    expect(claudeFile([undefined, withFullPath(tool, '/dev/ailleurs/src/a.ts')], resolve)).toBeNull();
+    expect(claudeFile([undefined, withFullPath(tool, '/dev/meeplebox/src/a.ts')], resolve)).toEqual({ path: 'src/a.ts', edit: true });
+    expect(withFullPath(tool, null)).toBe(tool); // daemon plus ancien : libellé abrégé
+    expect(withFullPath(undefined, '/x')).toBeUndefined();
   });
 });

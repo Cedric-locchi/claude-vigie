@@ -20,4 +20,14 @@ describe('AgentPanelComponent', () => {
     expect(md.querySelector('td code')?.textContent).toBe('a.spec.ts');
     expect(md.innerHTML).not.toContain('onerror');
   });
+
+  it('signale un message coupé par le daemon, et seulement alors', async () => {
+    const fixture = TestBed.createComponent(AgentPanelComponent);
+    fixture.componentRef.setInput('agent', agent({ lastText: 'Début du rapport', lastTextTruncated: true }));
+    await fixture.whenStable();
+    expect(document.body.querySelector('.truncated')?.textContent).toContain('coupé à 20 000 caractères');
+    fixture.componentRef.setInput('agent', agent({ lastText: 'Court', lastTextTruncated: false }));
+    await fixture.whenStable();
+    expect(document.body.querySelector('.truncated')).toBeNull();
+  });
 });

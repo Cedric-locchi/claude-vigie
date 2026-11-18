@@ -1,7 +1,7 @@
 import { Injectable, Signal, computed, inject, signal } from '@angular/core';
 import { form, submit, validateStandardSchema } from '@angular/forms/signals';
 import { BranchName, CommitBody } from '@vigie/contract';
-import { ConfirmService } from '../../../core/confirm.service';
+import { ConfirmRequest, ConfirmService } from '../../../core/confirm.service';
 import { GitFile } from '../../../core/models';
 import { VigieService } from '../../../core/vigie.service';
 import { keepLast } from '../../../core/signals';
@@ -39,6 +39,14 @@ export const STATUS: Record<GitFile['status'], { label: string; hint: string }> 
   '?': { label: 'U', hint: 'Non suivi' },
 };
 
+/** Saisie non enregistrée sur le point d'être remplacée ou abandonnée (partagée avec la garde de sortie de la page). */
+export const DISCARD_EDIT: ConfirmRequest = {
+  title: 'Abandonner la saisie ?',
+  message: 'Tu as modifié ce fichier sans l’enregistrer : ces modifications seront perdues.',
+  action: 'Abandonner',
+  danger: true,
+};
+
 @Injectable()
 export class SessionDiffVm {
   private readonly vigie = inject(VigieService);
@@ -69,7 +77,9 @@ export class SessionDiffVm {
     this.source.set({ id, lastTs, idle });
   }
 
-  select(path: string): void {
+  async select(path: string): Promise<void> {
+    if (path === this.file()?.path) return;
+    if (this.dirty() && !(await this.confirm.ask(DISCARD_EDIT))) return;
     this.chosen.set(path);
     this.cancelEdit();
   }
@@ -150,13 +160,17 @@ export class SessionDiffVm {
   // ponytail: <textarea> plutôt qu'un éditeur riche (CodeMirror, Monaco : coloration, recherche) ; à revoir si l'édition devient un usage courant.
   /** Fichier ouvert en édition, avec l'empreinte lue (le daemon refuse l'écriture si le fichier a changé depuis). */
   // `eol` : une <textarea> normalise CRLF en LF ; on remet la fin de ligne du fichier à l'écriture.
-  private readonly edit = signal<{ id: string; path: string; hash: string; eol: string } | null>(null);
-  // ponytail: changer de fichier, de session ou quitter l'onglet abandonne la saisie sans confirmation ; une garde si ça fait perdre du travail.
+  private readonly edit = signal<{ id: string; path: string; hash: string; eol: string; content: string } | null>(null);
   readonly editing = computed(() => {
     const e = this.edit();
     return e && e.id === this.id() && e.path === this.file()?.path ? e : null;
   });
   readonly draft = signal('');
+  /** Saisie différente du fichier lu : changer de fichier ou recharger la perdrait (la page garde l'onglet monté et garde sa sortie). */
+  readonly dirty = computed(() => {
+    const e = this.editing();
+    return !!e && this.draft() !== e.content;
+  });
   readonly loadingFile = signal(false);
   readonly saving = signal(false);
   /** Le fichier a changé sur le disque depuis sa lecture : l'écriture a été refusée. */
@@ -175,11 +189,12 @@ export class SessionDiffVm {
   async load(): Promise<void> {
     const id = this.id(), f = this.file();
     if (!id || !f) return;
+    if (this.dirty() && !(await this.confirm.ask(DISCARD_EDIT))) return;
     this.loadingFile.set(true);
     await this.run(async () => {
       const r = await this.vigie.gitFile(id, f.path);
       this.draft.set(r.content);
-      this.edit.set({ id, path: f.path, hash: r.hash, eol: r.content.includes('\r\n') ? '\r\n' : '\n' });
+      this.edit.set({ id, path: f.path, hash: r.hash, eol: r.content.includes('\r\n') ? '\r\n' : '\n', content: r.content });
       this.conflict.set(false);
     });
     this.loadingFile.set(false);

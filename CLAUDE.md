@@ -35,3 +35,8 @@ Tour de contrôle locale des sessions Claude Code. Produit : `PRODUCT.md`. Syst�
 - UI en français, tutoiement. Commentaires de code en français.
 - Pas de nouvelle dépendance sans raison écrite ; stdlib et plateforme d'abord.
 - Raccourci assumé = commentaire `ponytail:` qui nomme la limite et la suite.
+- Toute session qui modifie le code se termine par un bump de version : `npm version <niveau> --no-git-tag-version` à la racine (met à jour `package.json` et `package-lock.json`, sans tag). Un seul bump par branche : si `git diff main -- package.json` montre déjà un bump, on ne le remonte que si le niveau requis est plus haut.
+  - **majeur** : rupture : champ du contrat retiré ou renommé, nouvelle valeur d'enum qu'une UI plus ancienne rejette, route supprimée, format de `~/.vigie` incompatible, commande CLI changée.
+  - **mineur** : nouvelle fonctionnalité visible ou champ ajouté au contrat (additif).
+  - **patch** : correction, refactor, tests, docs, tooling, sans changement visible.
+  - Le niveau retenu et sa raison figurent dans le compte rendu.

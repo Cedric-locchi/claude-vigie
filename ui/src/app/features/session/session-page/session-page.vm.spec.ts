@@ -314,6 +314,24 @@ describe('SessionPageVm', () => {
     expect(TestBed.inject(VigieService).purgeChat).not.toHaveBeenCalled();
   });
 
+  it("reste sur la page et signale l'erreur quand la purge d'une discussion échoue", async () => {
+    const { vm } = createVm([], undefined, undefined, undefined, aSession({ cwd: '/Users/x/.vigie/chat' }));
+    vi.mocked(TestBed.inject(VigieService).purgeChat).mockRejectedValueOnce(new Error('réseau'));
+    expect(await vm.leave()).toBe(false);
+    expect(vm.replyError()).toContain('n’a pas pu être supprimée');
+    expect(await vm.leave()).toBe(true);
+  });
+
+  it("quitter la page avec une saisie non enregistrée demande confirmation", async () => {
+    const { vm } = createVm();
+    vm.unsaved.set(true);
+    const ask = vi.mocked(TestBed.inject(ConfirmService).ask);
+    ask.mockResolvedValueOnce(false);
+    expect(await vm.leave()).toBe(false);
+    expect(await vm.leave()).toBe(true);
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
+
   it("« Voir dans le journal » : onglet Historique en mode Journal, recherche pré-remplie", () => {
     const { vm } = createVm();
     expect(vm.historyMode()).toBe('timeline');

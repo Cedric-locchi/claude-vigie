@@ -97,7 +97,7 @@ ipcMain.handle('vigie:pick-folder', async (e, from) => {
 async function startDaemon() {
   if (await alive()) return true;
   await pathReady; // les terminaux du daemon doivent trouver `claude`
-  // ponytail: le daemon embarqué meurt avec l'app (et ses PTY). Pour qu'ils survivent, `vigie install` (launchd / systemd --user).
+  // ponytail: le daemon embarqué meurt avec l'app (et ses PTY) ; on prévient avant de quitter (confirmQuit). Pour qu'ils survivent, `vigie install` (launchd / systemd --user).
   daemon = utilityProcess.fork(DAEMON, [], {
     serviceName: 'Vigie daemon',
     stdio: 'inherit',
@@ -116,13 +116,36 @@ async function startDaemon() {
   return false;
 }
 
+// Quitter tue le daemon embarqué et donc ses terminaux (claude, scripts, builds) : on demande confirmation s'il en reste de vivants.
+// Daemon injoignable ou réponse illisible : on ne bloque pas la sortie.
+async function confirmQuit() {
+  const terms = await fetch(`${URL}/api/snapshot`, { signal: AbortSignal.timeout(1500) }).then((r) => r.json()).then((j) => j.terminals, () => []);
+  const n = Array.isArray(terms) ? terms.filter((t) => t && t.exited === false).length : 0;
+  if (!n) return true;
+  const { response } = await dialog.showMessageBox({
+    type: 'warning', buttons: ['Annuler', 'Quitter'], defaultId: 0, cancelId: 0, title: 'Quitter Vigie ?',
+    message: n === 1 ? 'Un terminal est encore en cours.' : `${n} terminaux sont encore en cours.`,
+    detail: 'Quitter Vigie les arrête, claude compris. Pour qu\'ils survivent à l\'app, installe le service avec `vigie install`.',
+  });
+  return response === 1;
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) open(); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-  app.on('before-quit', () => { quitting = true; daemon?.kill(); });
+  let confirmed = false;
+  let asking = false;
+  app.on('before-quit', (e) => {
+    // Pas de daemon à nous (celui d'un service) : rien ne meurt avec l'app, pas de question.
+    if (!daemon || confirmed) { quitting = true; daemon?.kill(); return; }
+    e.preventDefault();
+    if (asking) return;
+    asking = true;
+    confirmQuit().then((ok) => { asking = false; if (ok) { confirmed = true; app.quit(); } });
+  });
 
   // Pas de top-level await : avec une entrée ESM, Electron n'émet `ready` qu'une fois le module évalué → deadlock.
   app.whenReady().then(async () => {

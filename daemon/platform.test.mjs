@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { defaultLocale, findOnPath, isWsl, nodeVersionOk, launchdPlist, localeEnv, managedSettingsFile, openUrlCommands, startupMethod, systemdUnit, systemdUserDir } from './platform.mjs';
+import { localeInstalled, defaultLocale, findOnPath, isWsl, nodeVersionOk, launchdPlist, localeEnv, managedSettingsFile, openUrlCommands, startupMethod, systemdUnit, systemdUserDir } from './platform.mjs';
 
 test('isWsl : noyau Microsoft ou WSL_DISTRO_NAME, sous Linux seulement', () => {
   assert.equal(isWsl({ platform: 'darwin', release: '25.0.0' }), false);
@@ -106,4 +106,11 @@ test('nodeVersionOk : node 18 ou plus', () => {
   assert.equal(nodeVersionOk('v16.20.2'), false);
   assert.equal(nodeVersionOk(''), false);
   assert.equal(nodeVersionOk('bash: node: not found'), false);
+});
+
+test('localeInstalled : UTF-8 / utf8 et casse équivalents, absente refusée', () => {
+  const mac = 'C\nPOSIX\nen_US.UTF-8\nfr_FR.UTF-8\nfr_FR.ISO8859-1\n';
+  const linux = 'C\nC.utf8\nPOSIX\nen_US.utf8\nfr_FR.utf8\n';
+  for (const [name, list] of [['fr_FR.UTF-8', mac], ['fr_FR.utf8', mac], ['fr_FR.UTF-8', linux], ['FR_fr.UTF8', linux], ['C.UTF-8', linux]]) assert.equal(localeInstalled(name, list), true, name);
+  for (const [name, list] of [['de_DE.UTF-8', mac], ['fr_FR', linux], ['fr_FR.utf8@euro', linux], ['x', '']]) assert.equal(localeInstalled(name, list), false, name);
 });

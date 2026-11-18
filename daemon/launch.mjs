@@ -1,9 +1,9 @@
 // Lancement d'une session claude par Vigie (commande, réglages injectés), en fonctions pures testables sans PTY.
 import path from 'node:path';
 
-// ponytail: quotage POSIX ; sous fish (le PTY lance `$SHELL -l -c`), `\'` sort des guillemets et shQuote ne protège plus.
-// Le scheme Xcode et les noms de conteneur l'évitent par leur regex, mais `mise run <tâche>` y reste exposé ;
-// la suite : lancer les commandes via `/bin/sh -c` plutôt que `$SHELL -c`.
+// ponytail: quotage POSIX ; sous fish (le PTY lance `$SHELL -l -c`) l'apostrophe passe (`'\''` y est valide) mais pas l'antislash :
+// fish lit `\\` et `\'` comme des échappements même entre guillemets simples. Le scheme Xcode et les noms de conteneur l'évitent
+// par leur regex ; seul un nom de tâche mise avec un antislash y est exposé (jamais vu) ; la suite : `/bin/sh -c` plutôt que `$SHELL -c`.
 export const shQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 // `claude` en tête, ou après un `&&` (ex. `git switch -c x && claude …`).
@@ -47,7 +47,8 @@ export function spoolLine(e, ts = Date.now()) {
 
 /**
  * Hooks HTTP permis ? Non si des réglages gérés posent `allowedHttpHookUrls` sans motif qui couvre `url` (`*` = joker).
- * ponytail: seul le fichier géré local est lu ; une politique distante qui bloque les hooks HTTP couperait l'état temps réel.
+ * ponytail: seul le fichier géré local est lu. Sans effet aujourd'hui : les hooks HTTP sont coupés (server.mjs), les hooks sont des
+ * commandes ; à revoir (politique distante) le jour où on les réactive.
  */
 export function httpHooksAllowed(managed, url) {
   const list = managed?.allowedHttpHookUrls;

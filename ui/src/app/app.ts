@@ -111,7 +111,7 @@ import { ThemeService } from './core/theme.service';
                           @if (r.s.state === 'running') {
                             <span class="spark" [class.stale]="r.stale" aria-hidden="true">@for (h of r.spark; track $index) { <i [style.--h]="h / 12"></i> }</span>
                           } @else if (r.s.state === 'done') {
-                            <span class="mono">{{ f.usd(r.s.cost ?? 0) }}</span>
+                            <span class="mono">{{ f.usd(r.s.cost) }}</span>
                           } @else {
                             <span class="mono">{{ f.duration(r.age) }}</span>
                           }
@@ -259,13 +259,13 @@ import { ThemeService } from './core/theme.service';
     main:has(> .incompat) { --chrome-top: 36px; }
     @media (max-width: 767px) { main:has(> .incompat) { --chrome-top: 88px; } }
     /* Daemon injoignable : même bandeau corail, sur deux lignes au plus (la commande ne se coupe pas). */
-    .offline-bar { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 9px 16px; border-bottom: 1px solid var(--err-line); background: var(--err-bg); color: var(--err); font-size: 12px; line-height: 1.5; }
+    .offline-bar { display: flex; align-items: flex-start; gap: 8px; height: var(--offline-h); margin: 0; padding: 9px 16px; overflow-y: auto; border-bottom: 1px solid var(--err-line); background: var(--err-bg); color: var(--err); font-size: 12px; line-height: 1.5; }
     .offline-bar svg { flex: none; margin-top: 2px; }
     .offline-bar p { min-width: 0; overflow-wrap: anywhere; }
     .offline-bar strong { font-weight: 600; }
-    /* ponytail: hauteur estimée (2 lignes bureau, 4 sur téléphone) ; mesurer le bandeau si une vue pleine hauteur déborde encore. */
-    main:has(> .offline-bar) { --chrome-top: 56px; }
-    @media (max-width: 767px) { main:has(> .offline-bar) { --chrome-top: 140px; } }
+    /* Hauteur du bandeau fixée (2 lignes bureau, 4 sur téléphone) et reprise dans --chrome-top : un message plus long défile dans le bandeau au lieu de pousser la page. */
+    main:has(> .offline-bar) { --offline-h: 56px; --chrome-top: var(--offline-h); }
+    @media (max-width: 767px) { main:has(> .offline-bar) { --offline-h: 88px; --chrome-top: calc(52px + var(--offline-h)); } }
     /* État figé : sessions et page passent en gris, l'ambre et le bleu ne font plus croire à un état vivant. */
     /* ::ng-deep : la page routée n'hérite pas de l'attribut de style du shell. */
     .offline [hlmSidebarContent], :host ::ng-deep .offline main > :not(.mobile-bar, .incompat, .offline-bar, router-outlet) { filter: grayscale(0.85); transition: filter var(--dur) var(--ease); }

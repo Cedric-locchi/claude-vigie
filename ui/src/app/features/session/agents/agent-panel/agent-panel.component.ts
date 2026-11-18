@@ -15,7 +15,7 @@ const RECENT_TOOLS = 30;
   template: `
     <!-- Toujours monté : l'état ouvert/fermé suit agent() ; le contenu (shown) reste affiché pendant l'animation de fermeture.
          autoFocus sur le titre : le premier élément focusable serait « Autoriser », un Entrée de trop autoriserait la commande. -->
-    <hlm-sheet side="right" autoFocus="first-heading" [state]="agent() ? 'open' : 'closed'" (stateChanged)="$event === 'closed' && close.emit()">
+    <hlm-sheet side="right" autoFocus="first-heading" [state]="agent() ? 'open' : 'closed'" (stateChanged)="$event === 'closed' && closed.emit()">
       <hlm-sheet-content *hlmSheetPortal class="panel" closeLabel="Fermer le détail de l'agent">
         @if (shown(); as a) {
           <hlm-sheet-header class="head">
@@ -37,6 +37,9 @@ const RECENT_TOOLS = 30;
                 </div>
                 <!-- Markdown rendu ; [innerHTML] passe par le sanitizer d'Angular (scripts et handlers retirés). -->
                 <div class="markdown" [innerHTML]="html()"></div>
+                @if (a.lastTextTruncated) {
+                  <p class="small faint truncated">Message coupé à 20 000 caractères</p>
+                }
               </section>
             }
 
@@ -85,7 +88,7 @@ export class AgentPanelComponent {
   readonly agent = input<Agent | null>(null);
   readonly canAnswer = input(false);
   readonly error = input<string | null>(null);
-  readonly close = output();
+  readonly closed = output();
   readonly allow = output();
   readonly refuse = output();
   readonly focusTerminal = output();
