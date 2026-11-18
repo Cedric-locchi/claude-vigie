@@ -168,6 +168,8 @@
 @layer base {
   * { @apply border-border outline-ring/50; }
   html, body { min-height: 100%; }
+  /* Une liste qui arrive au bout de son défilement ne le passe pas à la fenêtre (rebond élastique de macOS compris) ; la page défile toujours quand elle déborde. */
+  html, body { overscroll-behavior: none; }
   /* Surfaces navigateur : sélection, curseur, barres de défilement et cases natives aux couleurs Vigie. */
   html { scrollbar-color: var(--line-strong) transparent; accent-color: var(--brand); caret-color: var(--brand); }
   ::selection { background: color-mix(in oklch, var(--brand) 32%, transparent); color: var(--text); }
