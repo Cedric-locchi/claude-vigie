@@ -1,6 +1,6 @@
 # 014 — Nouvelle palette OKLCH et cartes spartan plates
 
-- **Statut :** Acceptée
+- **Statut :** Remplacée par 040
 - **Date :** 2026-11-11
 - **Décidé par :** Toi
 

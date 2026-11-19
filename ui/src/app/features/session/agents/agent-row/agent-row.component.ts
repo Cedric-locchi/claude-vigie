@@ -45,7 +45,7 @@ import { agentLabel } from '../../../../core/session-view';
     /* Barre d'état à gauche (DESIGN.md « State bar », 3px dans les listes). Rien pour « à toi » et « terminé ». */
     .row[data-state='waiting'] { box-shadow: inset 3px 0 0 var(--wait); }
     .row[data-state='issue'] { box-shadow: inset 3px 0 0 var(--err); }
-    .row[data-state='running'] { box-shadow: inset 3px 0 0 var(--brand); }
+    .row[data-state='running'] { box-shadow: inset 3px 0 0 var(--run); }
     .row[data-state='done'] .name { color: var(--text-muted); }
     .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     /* Marge plutôt qu'espace : le compilateur retire les blancs en tête d'un bloc @if. */

@@ -1,59 +1,84 @@
 import { UsageRow } from '../../../core/models';
-import { addDays, startOfDay } from '../../usage/usage-series';
+import { addDays, startOfDay, tokensOf } from '../../usage/usage-series';
 
-/** Case d'un jour : sessions distinctes et coût ; `level` 0 (rien) à 4 (le plus actif) ; `future` : après aujourd'hui (non affiché). */
-export interface ActivityDay { day: number; sessions: number; cost: number; level: 0 | 1 | 2 | 3 | 4; future: boolean }
+/** Case d'un jour : tokens, sessions distinctes et coût ; `level` 0 (rien) à 4 (le plus chargé) ; `future` : après aujourd'hui (non affiché). */
+export interface ActivityDay { day: number; tokens: number; sessions: number; cost: number; level: 0 | 1 | 2 | 3 | 4; future: boolean }
 export interface ActivityGrid {
-  weeks: ActivityDay[][]; months: { col: number; label: string }[]; total: number; activeDays: number;
-  /** Coût cumulé de la période. */
-  cost: number;
+  weeks: ActivityDay[][]; months: { col: number; label: string }[];
+  /** Tokens cumulés de la période. */
+  tokens: number;
+  activeDays: number;
   /** Jours actifs d'affilée jusqu'à aujourd'hui (hier compte encore si aujourd'hui est vide). */
   streak: number;
-  /** Plus longue suite de jours actifs de la période. */
-  longest: number;
-  /** Jour le plus chargé, null si aucune activité. */
-  best: ActivityDay | null;
+  /** Jour le plus chargé en tokens, null si aucune activité. */
+  peak: ActivityDay | null;
 }
 
-export const WEEKS = 53;
+/** Semaines affichées avant la première mesure de largeur (~6 mois). */
+export const WEEKS = 26;
+/** Bornes de la grille : un trimestre en étroit, un an (53 semaines) au plus large. */
+export const MIN_WEEKS = 13;
+export const MAX_WEEKS = 53;
+/** Historique qui couvre toujours MAX_WEEKS (lundi de la 1re colonne inclus). */
+export const ACTIVITY_DAYS = MAX_WEEKS * 7;
+/** Géométrie partagée avec le CSS du composant : colonne des jours, case visée, écart. */
+export const LABEL_W = 28;
+export const CELL = 15;
+export const GAP = 3;
+
+/** Semaines qui remplissent `width` px avec des cases de CELL px (bornées à [MIN_WEEKS, MAX_WEEKS]) ; le CSS absorbe le reste. */
+export function weeksFor(width: number): number {
+  const n = Math.floor((width - LABEL_W) / (CELL + GAP));
+  return Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, n));
+}
 const MONTH = new Intl.DateTimeFormat('fr-FR', { month: 'short' });
 
 /**
- * Grille façon GitHub : une colonne par semaine (lundi en haut), la dernière contient aujourd'hui.
- * Intensité = nombre de sessions du jour, rapporté au jour le plus chargé de la période.
+ * Niveau d'un jour selon son rang parmi les jours actifs (quartiles) : un gros jour isolé n'écrase pas les autres
+ * au niveau 1 (les tokens, cache compris, varient d'un facteur 100 d'un jour à l'autre). Le plus chargé est au niveau 4.
+ */
+function leveler(values: number[]): (v: number) => ActivityDay['level'] {
+  const active = values.filter((v) => v > 0);
+  // ponytail: rang par filtre, O(n²) sur ≤ 371 jours ; tri + recherche dichotomique si la période s'allonge.
+  return (v) => (v > 0 ? (Math.ceil((active.filter((x) => x <= v).length / active.length) * 4) as ActivityDay['level']) : 0);
+}
+
+/**
+ * Heatmap façon GitHub : une colonne par semaine (lundi en haut), la dernière contient aujourd'hui.
+ * Intensité = tokens du jour (entrée, sortie, cache), en quartiles des jours actifs de la période.
  */
 export function activityGrid(rows: UsageRow[], now: number, weeks = WEEKS): ActivityGrid {
   const today = startOfDay(now);
   const monday = addDays(today, -((new Date(today).getDay() + 6) % 7));
   const first = addDays(monday, -7 * (weeks - 1));
 
-  const byDay = new Map<number, { ids: Set<string>; cost: number }>();
+  const byDay = new Map<number, { ids: Set<string>; tokens: number; cost: number }>();
   for (const r of rows) {
-    if (r.day < first) continue;
-    let d = byDay.get(r.day);
-    if (!d) byDay.set(r.day, (d = { ids: new Set(), cost: 0 }));
+    const day = startOfDay(r.day);
+    if (day < first || day > today) continue;
+    let d = byDay.get(day);
+    if (!d) byDay.set(day, (d = { ids: new Set(), tokens: 0, cost: 0 }));
     d.ids.add(r.sessionId);
+    d.tokens += tokensOf(r);
     d.cost += r.cost;
   }
-  const max = Math.max(0, ...[...byDay.values()].map((d) => d.ids.size));
+  const level = leveler([...byDay.values()].map((d) => d.tokens));
 
-  const out: ActivityGrid = { weeks: [], months: [], total: 0, activeDays: 0, cost: 0, streak: 0, longest: 0, best: null };
+  const out: ActivityGrid = { weeks: [], months: [], tokens: 0, activeDays: 0, streak: 0, peak: null };
   let run = 0;
   for (let w = 0; w < weeks; w++) {
     const col: ActivityDay[] = [];
     for (let i = 0; i < 7; i++) {
       const day = addDays(first, w * 7 + i);
       const d = byDay.get(day);
-      const sessions = d?.ids.size ?? 0;
-      const level = (sessions && max ? Math.min(4, Math.ceil((sessions / max) * 4)) : 0) as ActivityDay['level'];
-      col.push({ day, sessions, cost: d?.cost ?? 0, level, future: day > today });
+      const tokens = d?.tokens ?? 0;
+      col.push({ day, tokens, sessions: d?.ids.size ?? 0, cost: d?.cost ?? 0, level: level(tokens), future: day > today });
       if (day > today) continue;
-      out.total += sessions;
-      out.cost += d?.cost ?? 0;
-      if (sessions) {
+      out.tokens += tokens;
+      if (tokens) {
         out.activeDays++;
-        out.longest = Math.max(out.longest, ++run);
-        if (!out.best || sessions > out.best.sessions) out.best = col[i];
+        run++;
+        if (!out.peak || tokens > out.peak.tokens) out.peak = col[i];
       } else if (day < today) run = 0; // aujourd'hui encore vide ne casse pas la série
     }
     out.streak = run;

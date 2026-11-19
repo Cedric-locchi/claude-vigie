@@ -23,21 +23,31 @@ function render(sessions: SessionSummary[] | null = [
 }
 
 describe('SessionsPageComponent', () => {
-  it('indicateurs en direct : en attente, coût du jour, fenêtre', () => {
-    const kpis = render().el.querySelector('.kpis')!;
-    expect(kpis.querySelector('.kpi.hot')!.textContent).toContain('1');
+  it('Dashboard : indicateurs (fenêtre, coût du jour), puis une seule liste où l’attente reste à sa place', () => {
+    const el = render().el;
+    expect(el.querySelector('h1')!.textContent).toBe('Dashboard');
+    const list = el.querySelector('[aria-labelledby="list-title"]')!;
+    expect(list.textContent).toContain('Suggestions');
+    expect(el.querySelector('app-dashboard-kpis')!.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const kpis = el.querySelector('.kpis')!;
     expect(kpis.textContent).toContain('62 %');
     expect(kpis.textContent).toMatch(/48,50\s\$/);
   });
 
-  it('une ligne par session, la plus urgente en haut, avec ce qu’elle fait', () => {
+  it('pas de section d’attente en tête : une session qui attend est une ligne de la liste, avec ses actions', () => {
+    const el = render().el;
+    expect(el.querySelectorAll('[role="table"]')).toHaveLength(1);
+    expect(el.querySelector('[aria-labelledby="list-title"] .row.urgent button[variant=wait]')).not.toBeNull();
+  });
+
+  it('une ligne par session à sa place (date de création), l’attente marquée sur sa ligne, avec ce qu’elle fait', () => {
     const rows = [...render().el.querySelectorAll('.board .row:not(.head)')];
-    expect(rows.map((r) => r.querySelector('.title')!.textContent)).toEqual(['Suggestions', 'Historique des parties']);
-    expect(rows[0].classList).toContain('urgent');
-    expect(rows[0].textContent).toContain('Veut lancer Bash · npm test');
-    expect(rows[0].textContent).toContain('2 min'); // attend depuis
-    expect(rows[1].querySelectorAll('.spark i')).toHaveLength(15);
-    expect(rows[1].textContent).toContain('1/2'); // sous-agents actifs / total
+    expect(rows.map((r) => r.querySelector('.title')!.textContent)).toEqual(['Historique des parties', 'Suggestions']);
+    expect(rows[1].classList).toContain('urgent');
+    expect(rows[1].textContent).toContain('Veut lancer Bash · npm test');
+    expect(rows[1].textContent).toContain('2 min'); // attend depuis
+    expect(rows[0].querySelectorAll('.spark i')).toHaveLength(15);
+    expect(rows[0].textContent).toContain('1/2'); // sous-agents actifs / total
   });
 
   it('autorise directement depuis la ligne', () => {

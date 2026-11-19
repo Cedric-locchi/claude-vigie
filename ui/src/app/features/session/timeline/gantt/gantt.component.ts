@@ -78,9 +78,9 @@ import { TimelineVm } from '../timeline.vm';
     }
   `,
   styles: `
-    :host { flex: none; display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; --head: 148px; --lane-h: 20px; }
-    .k-read { background: var(--read); } .k-edit { background: var(--brand); } .k-command { background: var(--cmd); }
-    .k-agent { background: var(--ok); } .k-other { background: var(--neutral); } .k-wait { background: var(--wait); }
+    :host { flex: none; display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--edge); border-radius: 10px; box-shadow: var(--elev-1); background: var(--surface); overflow: hidden; --head: 148px; --lane-h: 20px; }
+    .k-read { background: var(--read); } .k-edit { background: var(--brand); } .k-command { background: var(--text-2); }
+    .k-agent { background: var(--data); } .k-other { background: var(--neutral); } .k-wait { background: var(--wait); }
     .top { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 8px; border-bottom: 1px solid var(--line); }
     .zoom { flex: none; display: flex; align-items: center; gap: 2px; }
     .readout { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
@@ -89,7 +89,7 @@ import { TimelineVm } from '../timeline.vm';
     .legend .x { color: var(--err); }
     .sw { width: 8px; height: 8px; border-radius: 2px; }
 
-    .view { max-height: min(38dvh, 232px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+    .view { max-height: min(38dvh, 232px, 30cqh); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
     .grid { position: relative; display: grid; width: calc(var(--head) + var(--canvas, 0px)); min-width: 100%; grid-template-columns: var(--head) var(--canvas, minmax(0, 1fr)); grid-template-rows: 28px repeat(var(--rows), var(--lane-h)); }
     .corner, .axis { position: sticky; top: 0; z-index: 2; grid-row: 1; background: var(--surface); border-bottom: 1px solid var(--line); }
     .corner { left: 0; z-index: 4; grid-column: 1; }
@@ -109,7 +109,7 @@ import { TimelineVm } from '../timeline.vm';
 
     .head { position: sticky; left: 0; z-index: 3; grid-column: 1; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 8px; background: var(--surface); border-right: 1px solid var(--line); font-size: 12px; color: var(--text-2); }
     .head .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+    .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--data); }
     .dot.main { background: var(--text-muted); }
     .lane { position: relative; grid-column: 2; z-index: 1; border-bottom: 1px solid color-mix(in oklch, var(--line) 40%, transparent); }
 

@@ -11,6 +11,8 @@
 @import '@fontsource/inter/700.css';
 @import '@fontsource/jetbrains-mono/400.css';
 @import '@fontsource/jetbrains-mono/500.css';
+/* Fronts des plugins (décision 037) : hors de ui/, Tailwind ne les scanne pas seul. Glob de fichiers, pas de dossier. */
+@source "../../plugins/*/ui/**/*.ts";
 
 /* `dark:` des composants spartan : suit data-theme (posé par ThemeService), pas la classe .dark. */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
@@ -18,82 +20,131 @@
 
 /* Palette Vigie : sombre par défaut, claire via data-theme="light" (ThemeService). */
 :root {
-  --bg: #0d1116;
-  --bg-deep: #070a0f;
-  --nav: #11151b;
-  --surface: #191f26;
-  --surface-2: #232932;
-  --line: #2f363f;
-  --control: #6d7580; /* bordure des champs et contrôles : 3:1 sur le fond */
-  --line-strong: #414853;
-  --text: #e8ebef;
-  --text-2: #cdd1d8;
-  --text-muted: #abb2ba;
-  --faint: #9299a2;
-  --brand: #79b1f9;
-  --brand-hover: #98c7ff;
-  --wait: #ffbb49;
-  --wait-line: #664610;
-  --wait-bg: #33230a;
-  --ok: #78c89e;
-  --ok-bg: #13281d;
+  /* Neutres de nuit retintés vers la secondaire bleu-vert (OKLCH h ≈ 210, C ≤ 0,02) ; seuils de DESIGN.md vérifiés par script (décisions 040, 042). */
+  --bg: #0b1214;
+  --bg-deep: #050b0d;
+  --nav: #0d1618;
+  --surface: #162123;
+  --surface-2: #1e2b2e;
+  --line: #2b383a;
+  --control: #69777a; /* bordure des champs et contrôles : 3:1 sur le fond */
+  --line-strong: #3c4b4d;
+  --text: #e6eced;
+  --text-2: #cad3d4;
+  --text-muted: #a8b3b6;
+  --faint: #8e9b9d;
+  /* Palette à trois couleurs (décision 042), variantes éclaircies (même teinte OKLCH) pour la nuit. */
+  /* Principale (violet, h 281) : identité, actions principales, focus, navigation active, liens, sélection. */
+  --brand: #9b9eff;
+  --brand-hover: #b7bcff;
+  /* Secondaire (bleu-vert, h 207) : données (graphiques, heatmap, jauges, sparklines) ; --run = état « en cours ». */
+  --data: #69c8d6;
+  --data-bg: #022c32;
+  --run: var(--data);
+  /* Tertiaire (orange, h 66) : ce qui attend l'utilisateur, seul signal d'attention. --wait-fill = aplat (bouton, compteur). */
+  --wait: #ffb864;
+  --wait-fill: var(--wait);
+  --wait-line: #6a4316;
+  --wait-bg: #321c04;
+  /* « Terminé » / positif : vert éteint, moins clair et moins saturé que l'état « en cours » (il s'éteint). */
+  --ok: #8aa88a;
+  --ok-bg: #1c261c;
   --err: #fc7a79;
   --err-line: #6c3434;
   --err-bg: #361919;
-  --cmd: #bb99e3;
-  --read: #7488a1;
+  /* « Lecture » : gris neutre, nettement plus clair que --neutral (barres « autre »). */
+  --read: #8a9496;
   /* Texte posé sur un aplat de couleur (boutons, barres de chronologie). */
-  --on-brand: #091018;
-  --on-wait: #201301;
-  --on-cmd: #150e1c;
-  --on-ok: #05160d;
-  --wait-hover: #ffcc79;
-  --brand-bg: #162537;
-  --dim-bg: #13181e;
-  --neutral: #6f757d;
-  --projected: #314968;
-  --backdrop: #040609;
+  --on-brand: #0f0f23;
+  --on-wait: #221202;
+  --on-ok: #0a120a;
+  --wait-hover: #ffce93;
+  --brand-bg: #212147;
+  --dim-bg: #10191b;
+  --neutral: #6c7779;
+  --projected: #155158;
+  --backdrop: #030708;
   --shadow: rgb(0 0 0 / 0.45);
+  /* Filet des cartes et panneaux : visible en sombre, où l'ombre ne se voit pas. */
+  --edge: var(--line);
+  /* Points du fond de la zone de contenu (gabarit app-page). */
+  --dot: color-mix(in oklch, var(--text) 7%, transparent);
+  /* Relief (décision 040, teinte 042) : reflet haut + halo de la principale très doux ; une ombre noire ne se voit pas sur la nuit. */
+  --elev-1: inset 0 1px 0 color-mix(in oklch, var(--text) 6%, transparent), 0 0 0 1px color-mix(in oklch, var(--brand) 8%, transparent),
+    0 4px 12px -2px rgb(0 0 0 / 0.5), 0 10px 24px -8px color-mix(in oklch, var(--brand) 24%, transparent);
+  --elev-2: inset 0 1px 0 color-mix(in oklch, var(--text) 8%, transparent), 0 0 0 1px color-mix(in oklch, var(--brand) 14%, transparent),
+    0 6px 16px -2px rgb(0 0 0 / 0.55), 0 14px 32px -10px color-mix(in oklch, var(--brand) 30%, transparent);
+  /* Icônes de types de fichiers (décision 043) : couleur de l'écosystème, exception à la règle des trois couleurs ; ≥ 3:1 sur --surface et --nav (vérifié). */
+  --ft-ts: #3178c6; --ft-react: #61dafb; --ft-js: #f7df1e; --ft-json: #f5b83d; --ft-html: #e34f26; --ft-css: #3d97dd; --ft-scss: #cc6699;
+  --ft-md: #8fa3ad; --ft-yaml: #f0565c; --ft-toml: #d08a6b; --ft-py: #5a9fd4; --ft-go: #00add8; --ft-rust: #dea584; --ft-swift: #f05138;
+  --ft-sh: #89e051; --ft-docker: #2496ed; --ft-image: #26a69a; --ft-env: #ecd53f; --ft-git: #f05032; --ft-lock: var(--faint); --ft-file: var(--faint);
+  /* Dossiers : palette Vigie (principale, secondaire, tertiaire, vert, neutres), ≥ 3:1 sur --surface. */
+  --fd-default: #9aa9ad; --fd-docs: var(--ft-md); --fd-config: #71838a;
+  /* Couleurs de dossiers communes aux deux thèmes (jetons déjà vérifiés). */
+  --fd-src: var(--brand); --fd-components: var(--data); --fd-scripts: var(--data); --fd-assets: var(--wait); --fd-tests: var(--ok); --fd-build: var(--neutral);
+  /* Fond pointillé (gabarit app-page et marge autour de la barre latérale) : attaché à la fenêtre, les deux trames coïncident. */
+  --dots: radial-gradient(circle, var(--dot) 1px, transparent 1.5px) 0 0 / 18px 18px fixed var(--bg);
   --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
   color-scheme: dark;
 }
 
 :root[data-theme='light'] {
-  --bg: #f1f4f7;
+  /* Clair façon Codex : fond quasi blanc, cartes blanches, barre latérale grise ; couleurs de l'utilisateur (décision 042). */
+  --bg: #fcfcfc;
   --bg-deep: #ffffff;
-  --nav: #eaedf2;
+  --nav: #f0f0f0;
   --surface: #ffffff;
-  --surface-2: #e8ebf1;
-  --line: #dce0e5;
-  --control: #868d95;
-  --line-strong: #cdd1d8;
-  --text: #161b22;
-  --text-2: #333840;
-  --text-muted: #4f565e;
-  --faint: #60676f; /* 4,5:1 minimum aussi sur --nav et --surface-2 (vérifié) */
-  --brand: #145ec1;
-  --brand-hover: #004aa5;
-  --wait: #9c5400;
-  --wait-line: #eccb9e;
-  --wait-bg: #fff1de;
-  --ok: #0b7643;
-  --ok-bg: #e6f9ee;
-  --err: #ba2b2e;
+  --surface-2: #ecf1f2;
+  --line: #d9ddde;
+  --control: #838f91;
+  --line-strong: #cbd3d4;
+  --text: #0c0c0c;
+  --text-2: #303a3c;
+  --text-muted: #4c585a;
+  --faint: #5b6769; /* 4,5:1 minimum aussi sur --nav et --surface-2 (vérifié) */
+  --brand: #635bdb;
+  --brand-hover: #4f41c0;
+  --data: #087f8c;
+  --data-bg: #d8f5f9;
+  /* #087f8c tombe à 4,2:1 sur --surface-2 : variante texte plus sombre, même teinte (et plus sombre que « terminé »). */
+  --run: #006570;
+  /* L'orange #e69a45 ne tient pas 4,5:1 en texte (2,3:1 sur blanc) : il reste l'aplat, --wait est sa variante sombre. */
+  --wait: #a25b00;
+  --wait-fill: #e69a45;
+  --wait-line: #f1c9a1;
+  --wait-bg: #fff0df;
+  --ok: #4a714b;
+  --ok-bg: #e7f4e7;
+  /* Plus sombre que l'attente (même famille chaude) : les deux se distinguent aussi en clarté. */
+  --err: #a51e23;
   --err-line: #f6c2bf;
   --err-bg: #ffefed;
-  --cmd: #7945ab;
-  --read: #708298;
+  --read: #616b6d;
   --on-brand: #ffffff;
-  --on-wait: #ffffff;
-  --on-cmd: #ffffff;
+  /* Texte sombre sur l'aplat orange : le blanc n'y tient pas 4,5:1. */
+  --on-wait: #221202;
   --on-ok: #ffffff;
-  --wait-hover: #864500;
-  --brand-bg: #e5f1ff;
-  --dim-bg: #f5f7f9;
-  --neutral: #878d94;
-  --projected: #aac7eb;
-  --backdrop: #e3e6eb;
+  --wait-hover: #d88a2c;
+  --brand-bg: #f1f2ff;
+  --dim-bg: #f5f7f8;
+  --neutral: #858f90;
+  --projected: #9fced5;
+  --backdrop: #e1e7e8;
   --shadow: rgb(15 20 30 / 0.14);
+  /* Cartes sans filet : le halo porte la séparation (blanc sur #fcfcfc ne se voit pas par le ton seul). */
+  --edge: transparent;
+  /* 10 % et non 12 : --faint posé sur le cœur d'un point garde 4,5:1. */
+  --dot: color-mix(in oklch, var(--text) 10%, transparent);
+  /* Variantes claires des couleurs de types qui ne tiennent pas 3:1 sur blanc (jaune JS, cyan React…), même teinte. */
+  --ft-react: #087ea4; --ft-js: #8a7500; --ft-json: #a16000; --ft-html: #d03e14; --ft-css: #1572b6; --ft-scss: #b84d82; --ft-md: #5a717d;
+  --ft-yaml: #cb171e; --ft-toml: #9c4121; --ft-py: #3776ab; --ft-go: #007d9c; --ft-rust: #a0532d; --ft-swift: #d63a1f; --ft-sh: #3d7f1f;
+  --ft-docker: #1a73b8; --ft-image: #1b7f75; --ft-env: #8a7500; --ft-git: #d63a1f;
+  --fd-default: #7f8b8d; --fd-config: #4c585a;
+  /* Ombre de contact courte + grand halo diffus, neutres, même densité que la 040 (décision 042) : un halo violet teinterait les cartes blanches ; jamais d'une couleur d'état. */
+  --elev-1: 0 1px 2px color-mix(in oklch, var(--text) 11%, transparent), 0 4px 10px -2px color-mix(in oklch, var(--text) 13%, transparent),
+    0 10px 20px -8px color-mix(in oklch, var(--text) 17%, transparent);
+  --elev-2: 0 2px 4px color-mix(in oklch, var(--text) 13%, transparent), 0 8px 18px -4px color-mix(in oklch, var(--text) 19%, transparent),
+    0 16px 32px -10px color-mix(in oklch, var(--text) 21%, transparent);
   color-scheme: light;
 }
 
@@ -132,11 +183,12 @@
   --input: var(--control);
   --ring: var(--brand);
   --chart-1: var(--brand);
-  --chart-2: var(--cmd);
+  --chart-2: var(--data);
   --chart-3: var(--ok);
   --chart-4: var(--wait);
   --chart-5: var(--read);
-  --sidebar: var(--nav);
+  /* Barre latérale = panneau détaché sur le fond pointillé (décision 043) : fond surface, comme les autres panneaux. */
+  --sidebar: var(--surface);
   --sidebar-foreground: var(--text-2);
   --sidebar-primary: var(--brand);
   --sidebar-primary-foreground: var(--on-brand);
@@ -149,6 +201,8 @@
 /* Couleurs d'état Vigie exposées à Tailwind : bg-wait, text-ok, border-err-line… */
 @theme inline {
   --color-brand: var(--brand);
+  --color-data: var(--data);
+  --color-run: var(--run);
   --color-wait: var(--wait);
   --color-wait-bg: var(--wait-bg);
   --color-wait-line: var(--wait-line);
@@ -162,8 +216,12 @@
   --font-mono: var(--mono);
 }
 
-/* Cartes spartan : plates (pas d'ombre au repos, DESIGN.md), filet --line ; les états recolorent la bordure. */
-[data-slot='card'] { box-shadow: none; border: 1px solid var(--line); }
+/* Relief (DESIGN.md, Elevation) : cartes spartan au repos en --elev-1, filet --edge ; les états recolorent la bordure. */
+[data-slot='card'] { box-shadow: var(--elev-1); border: 1px solid var(--edge); }
+/* Flottants spartan (popovers, menus, listes de choix, dialogues) : --elev-2, filet gardé (ils passent sur du contenu). */
+:is([data-slot='popover-content'], [data-slot='alert-dialog-content'], hlm-select-content, [hlmAutocompleteContent], hlm-autocomplete-content) {
+  box-shadow: 0 0 0 1px var(--line), var(--elev-2);
+}
 
 @layer base {
   * { @apply border-border outline-ring/50; }
@@ -198,17 +256,15 @@
   .dot-waiting { background: var(--wait); }
   /* « À toi » : anneau sans fond, le point plein reste réservé à « Attend ». */
   .dot-turn { background: transparent; border: 1.5px solid var(--wait); }
-  .dot-running { background: var(--brand); }
+  .dot-running { background: var(--run); }
   .dot-done { background: var(--ok); }
 
   /* Jauge (fenêtre 5 h) : nom spécifique, pour ne pas entrer en collision avec les classes des composants. */
   .meter { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; position: relative; }
-  .meter > span { display: block; height: 100%; border-radius: 4px; background: var(--brand); transition: width var(--dur) var(--ease); }
+  .meter > span { display: block; height: 100%; border-radius: 4px; background: var(--data); transition: width var(--dur) var(--ease); }
 
-  .page { padding: 28px 36px 40px; display: flex; flex-direction: column; gap: 24px; min-width: 0; }
-  @media (max-width: 720px) { .page { padding: 20px 16px 32px; } }
-
-  /* Hauteur de la barre mobile (app.ts) : les vues en pleine hauteur la retranchent. */
+  /* Gabarit des pages et règle de défilement : shell/page (app-page). --sticky-top y est défini. */
+  /* Hauteur de la barre mobile et des bandeaux (app.ts) : retranchée par les vues à hauteur propre sur téléphone (terminal, éditeur). */
   :root { --chrome-top: 0px; }
   @media (max-width: 767px) { :root { --chrome-top: 52px; } }
   /* Raccourcis clavier (⌘N, ⌘↵) : sans objet au doigt. */
@@ -217,7 +273,7 @@
 }
 
 /*
- * Moment signature : une session ou un agent se met à attendre ta réponse. L'ambre arrive plus fort puis se pose sur
+ * Moment signature : une session ou un agent se met à attendre ta réponse. L'orange arrive plus fort puis se pose sur
  * son fond lavé (une seule fois, pas de boucle : le point qui pulse porte la persistance).
  */
 .wait-arrive { animation: wait-arrive var(--dur-arrive) var(--ease-out); }

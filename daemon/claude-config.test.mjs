@@ -2,10 +2,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { frontmatter, mask, readClaudeConfig } from './claude-config.mjs';
 import { ClaudeConfig } from '../contract/index.mjs';
+import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
 
 // Sortie conforme au contrat : parse retire les clés inconnues, donc l'égalité échoue sur un champ manquant comme sur un champ en trop.
 const conforme = (S, v) => { const j = JSON.parse(JSON.stringify(v)); assert.deepStrictEqual(S.parse(j), j); };
@@ -14,7 +14,7 @@ const conforme = (S, v) => { const j = JSON.parse(JSON.stringify(v)); assert.dee
 delete process.env.CLAUDE_CONFIG_DIR;
 
 function setup(files) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-cfg-'));
+  const root = tempDir('vigie-cfg-');
   for (const [rel, content] of Object.entries(files)) {
     const p = path.join(root, rel);
     fs.mkdirSync(path.dirname(p), { recursive: true });

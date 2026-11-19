@@ -1,11 +1,11 @@
 {
   "name": "vigie",
-  "version": "0.5.1",
+  "version": "1.0.0",
   "description": "Monitoring des sessions Claude Code",
   "scripts": {
     "start": "node daemon/server.mjs",
     "build": "npm run build -w ui",
-    "test": "node --test daemon/*.test.mjs && npm test -w ui -- --no-watch",
+    "test": "node scripts/plugin-uis.mjs --check && node --test daemon/*.test.mjs plugins/*/*.test.mjs scripts/*.test.mjs && npm test -w ui -- --no-watch",
     "postinstall": "[ \"$(uname)\" = Darwin ] || exit 0; chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper",
     "app": "electron .",
     "dist": "npm run build && electron-builder --mac dir",
@@ -38,6 +38,9 @@
       "daemon/**",
       "!daemon/*.test.mjs",
       "contract/**",
+      "plugins/**",
+      "!plugins/**/*.test.mjs",
+      "!plugins/*/ui/**",
       "bin/**",
       "ui/dist/**",
       "node_modules/**",

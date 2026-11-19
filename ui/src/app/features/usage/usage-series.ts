@@ -17,7 +17,7 @@ const FAMILY_ORDER = ['fable', 'opus', 'sonnet', 'haiku'];
 export const byFamily = (a: string, b: string) => (FAMILY_ORDER.indexOf(a) + 1 || 99) - (FAMILY_ORDER.indexOf(b) + 1 || 99);
 /** Couleurs de données (3:1 sur --surface, deux thèmes). Pas d'ambre : il est réservé à ce qui attend. */
 // ponytail: fable sur --text-2 faute de jeton dédié ; ajouter un --data-* dans styles.css si une 5e famille arrive.
-const FAMILY_COLOR: Record<string, string> = { fable: 'var(--text-2)', opus: 'var(--brand)', sonnet: 'var(--cmd)', haiku: 'var(--ok)' };
+const FAMILY_COLOR: Record<string, string> = { fable: 'var(--text-2)', opus: 'var(--brand)', sonnet: 'var(--data)', haiku: 'var(--read)' };
 export const colorOf = (family: string) => FAMILY_COLOR[family] ?? 'var(--neutral)';
 
 const usdInt = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', maximumFractionDigits: 0 });
@@ -41,6 +41,14 @@ export function groupBy<K>(rows: UsageRow[], key: (r: UsageRow) => K): Map<K, Us
   const m = new Map<K, UsageRow[]>();
   for (const r of rows) { const k = key(r); m.set(k, [...(m.get(k) ?? []), r]); }
   return m;
+}
+
+/** Par modèle exact : sommes et part du coût, du plus coûteux au moins coûteux. */
+export function byModel(rows: UsageRow[]) {
+  const total = Math.max(1e-9, sum(rows).cost);
+  return [...groupBy(rows, (r) => r.model)]
+    .map(([model, rs]) => { const s = sum(rs); return { model, family: familyOf(model), ...s, share: s.cost / total }; })
+    .sort((a, b) => b.cost - a.cost);
 }
 
 const measure = (rows: UsageRow[], metric: Metric) => (metric === 'cost' ? sum(rows).cost : sum(rows).tokens);

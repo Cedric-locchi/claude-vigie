@@ -4,9 +4,10 @@ import { SessionSummary } from '../../../core/models';
 import { ConfirmService } from '../../../core/confirm.service';
 import { CLIENT_OS } from '../../../core/platform';
 import { KEYS, VigieService, sendReply } from '../../../core/vigie.service';
-import { activityMax, describeSession, rank } from '../../../core/session-view';
+import { activityMax, describeSession } from '../../../core/session-view';
 import { keepLast } from '../../../core/signals';
-import { WEEKS, activityGrid } from '../activity-grid/activity-grid';
+import { ACTIVITY_DAYS, WEEKS, activityGrid } from '../activity-grid/activity-grid';
+import { dailyAverage, segments, sessionSegments, trend } from './dashboard';
 
 const SPARK_H = 22;
 
@@ -36,12 +37,27 @@ export class SessionsPageVm {
   readonly now = computed(() => this.snapshot()?.now ?? 0);
   readonly usage = computed(() => this.snapshot()?.usage ?? null);
 
-  /** Activité des 12 derniers mois (grille façon GitHub) ; null tant que l'historique n'est pas arrivé. */
-  private readonly history = keepLast(this.vigie.usageResource(signal(WEEKS * 7)));
+  // --- Historique de consommation : une seule requête pour la heatmap et la moyenne des indicateurs ---
+  /**
+   * ponytail: toujours 53 semaines (ACTIVITY_DAYS = 371 j), quelle que soit la largeur de la heatmap : une requête qui
+   * suivrait la largeur repartirait à chaque redimensionnement (et deux fois au démarrage). À revoir si l'historique pèse trop.
+   * Les dernières lignes restent affichées pendant un rechargement (chaque minute) : pas de clignotement.
+   */
+  private readonly history = keepLast(this.vigie.usageResource(signal(ACTIVITY_DAYS)));
+  private readonly usageRows = computed(() => this.history()?.rows ?? []);
+  readonly historyLoaded = computed(() => this.history() !== null);
+
+  /** Semaines de la heatmap, fixées par sa largeur (le composant la mesure). */
+  readonly activityWeeks = signal(WEEKS);
+  /** Heatmap des tokens par jour sur `activityWeeks` semaines ; null tant que l'historique n'est pas arrivé. */
   readonly activity = computed(() => {
     const h = this.history();
-    return h ? activityGrid(h.rows, h.now) : null;
+    return h ? activityGrid(h.rows, h.now, this.activityWeeks()) : null;
   });
+
+  /** Seuil du coût du jour (Réglages), null sans seuil. */
+  private readonly settings = this.vigie.settingsResource();
+  private readonly dailyCost = computed(() => (this.settings.hasValue() ? this.settings.value()?.alerts?.dailyCost ?? null : null));
 
   private readonly sessions = computed(() => {
     const q = this.search().trim().toLowerCase();
@@ -57,24 +73,46 @@ export class SessionsPageVm {
   });
   readonly activeCount = computed(() => this.waiting().length + this.running().length);
 
-  /** Bandeau d'indicateurs en direct. */
+  /** Cartes d'indicateurs. */
   readonly kpis = computed(() => {
     const active = [...this.waiting(), ...this.running()];
-    const w = this.usage()?.window;
+    const usage = this.usage();
+    const w = usage?.window;
+    const threshold = this.dailyCost();
+    const cost = usage?.today.cost ?? 0;
+    const tokens = usage?.today.tokens ?? 0;
+    const avg = this.historyLoaded() ? dailyAverage(this.usageRows(), this.now()) : null;
     return {
       blocked: this.waiting().filter((s) => s.state === 'waiting').length,
       turn: this.waiting().filter((s) => s.state === 'turn').length,
       running: this.running().length,
       doneToday: this.done().length,
       subagents: active.reduce((n, s) => n + s.activeSubagents, 0),
-      todayCost: this.usage()?.today.cost ?? 0,
-      window: w?.active ? { pct: w.pct, end: w.end, limitAt: w.limitAt, bar: Math.min(100, w.pct * 100) } : null,
+      todayCost: cost,
+      todayTokens: tokens,
+      cacheRate: usage?.today.cacheRate ?? 0,
+      /** Moyenne des 7 jours précédents ; null tant que l'historique n'est pas arrivé. */
+      avg,
+      /** Flèches de tendance du jour face à la moyenne 7 j. */
+      costTrend: trend(cost, avg?.cost),
+      tokensTrend: trend(tokens, avg?.tokens),
+      threshold,
+      // Au-delà du seuil, toute la barre passe en rouge (comme le liseré du graphique de Consommation).
+      costBar: threshold ? segments(cost / threshold, 20, cost > threshold ? 0 : 1) : null,
+      cacheBar: segments(usage?.today.cacheRate ?? 0, 20),
+      sessionBar: sessionSegments(this.rows().map((r) => r.s)),
+      // Fenêtre : rouge au-delà de 80 % (la limite approche), secondaire avant.
+      window: w?.active ? { pct: w.pct, end: w.end, limitAt: w.limitAt, bar: segments(w.pct, 20, 0.8) } : null,
     };
   });
 
-  /** Une ligne par session, la plus urgente en haut puis par ordre de démarrage (stable : une session qui bouge garde sa place) ; l'activité est à la même échelle pour toutes. */
+  /**
+   * Une seule liste, par date de création, la plus récente en haut : une session ne change jamais de place selon son état
+   * (l'attente se voit au badge et aux actions de la ligne). L'activité est à la même échelle pour toutes.
+   */
   readonly rows = computed(() => {
-    const list = [...this.waiting(), ...this.running(), ...this.done()].sort((a, b) => rank(a) - rank(b) || b.firstTs - a.firstTs);
+    const today = new Set(this.done());
+    const list = this.sessions().filter((s) => s.state !== 'done' || today.has(s)).sort((a, b) => b.firstTs - a.firstTs);
     const max = activityMax(list);
     return list.map((s) => describeSession(s, this.now(), max, SPARK_H));
   });

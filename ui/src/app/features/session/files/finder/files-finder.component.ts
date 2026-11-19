@@ -1,6 +1,6 @@
 import { Component, ElementRef, Injector, afterNextRender, inject, output, viewChild } from '@angular/core';
 import { Icon } from '../../../../core/icon.component';
-import { FileIconComponent } from '../file-icon/file-icon.component';
+import { FileIconComponent } from '../../../../core/file-icon.component';
 import { SessionFilesVm, base } from '../session-files.vm';
 import { FilesFinderVm, FinderMove } from './files-finder.vm';
 
@@ -25,7 +25,7 @@ import { FilesFinderVm, FinderMove } from './files-finder.vm';
         @for (f of hits; track f; let i = $index) {
           @let tc = files.touchedByPath().get(f);
           <li role="option" class="opt" [id]="'finder-opt-' + i" [attr.aria-selected]="i === vm.index()" (click)="pick(i)" (mousemove)="vm.index.set(i)">
-            <app-file-icon [path]="f" />
+            <app-file-icon [name]="f" />
             <span class="name">{{ name(f) }}</span><span class="dir">{{ dir(f) }}</span>
             @if (tc) { <span class="mark" [class.edit]="tc.edited" aria-hidden="true"></span><span class="sr-only">, {{ tc.edited ? 'modifié' : 'lu' }} par Claude</span> }
           </li>
@@ -44,7 +44,7 @@ import { FilesFinderVm, FinderMove } from './files-finder.vm';
     .quick {
       position: fixed; inset: 12vh auto auto 50%; translate: -50% 0; width: min(620px, calc(100vw - 32px)); max-height: 60vh; margin: 0; padding: 0;
       display: none; flex-direction: column; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--nav); color: var(--text);
-      box-shadow: 0 8px 24px var(--shadow); overflow: hidden;
+      box-shadow: var(--elev-2); overflow: hidden;
     }
     .quick[open] { display: flex; }
     @starting-style { .quick[open] { opacity: 0; translate: -50% -6px; } }
@@ -61,7 +61,7 @@ import { FilesFinderVm, FinderMove } from './files-finder.vm';
     .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
     .dir { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: 4px; font-size: 12px; color: var(--faint); }
     .mark { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--read); }
-    .mark.edit { background: var(--cmd); }
+    .mark.edit { background: var(--brand); }
     .action { margin-top: 4px; color: var(--text-muted); box-shadow: 0 -1px 0 var(--line); border-radius: 0 0 4px 4px; }
     .action .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .ic { flex: none; width: 15px; height: 15px; margin-inline: 1px 2px; stroke-linecap: round; color: var(--faint); }

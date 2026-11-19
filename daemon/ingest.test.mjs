@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { applyRecord, deriveState, newTrack, readTrack, trackTokens } from './ingest.mjs';
+import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
 
 const T0 = Date.parse('2026-11-07T10:00:00Z');
 const at = (s) => new Date(T0 + s * 1000).toISOString();
@@ -67,7 +68,7 @@ test("les hooks priment sur le transcript : demande d'autorisation", () => {
 });
 
 test('lecture incrémentale : une ligne coupée est reprise au passage suivant', () => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-')), 's.jsonl');
+  const file = path.join(tempDir('vigie-'), 's.jsonl');
   const text = LINES.map((l) => JSON.stringify(l)).join('\n') + '\n';
   const cut = text.length - 30;
   fs.writeFileSync(file, text.slice(0, cut));

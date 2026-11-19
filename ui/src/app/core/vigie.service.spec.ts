@@ -198,4 +198,70 @@ describe('VigieService', () => {
     req.flush({ ok: true });
     await expect(done).resolves.toEqual({ ok: true });
   });
+
+  it('plugins : méthode (corps { params }, JSON tel quel), action (corps tel quel, terminal validé), bascule', async () => {
+    const service = TestBed.inject(VigieService);
+    const http = TestBed.inject(HttpTestingController);
+    const called = service.pluginCall('s1', 'xcode', 'targets', { fresh: true });
+    const c = http.expectOne('/api/sessions/s1/plugins/xcode/call/targets');
+    expect(c.request.method).toBe('POST');
+    expect(c.request.body).toEqual({ params: { fresh: true } });
+    c.flush({ schemes: ['App'] });
+    await expect(called).resolves.toEqual({ schemes: ['App'] }); // validé par le schéma du plugin, pas ici
+
+    const bare = service.pluginCall('s1', 'xcode', 'open');
+    const o = http.expectOne('/api/sessions/s1/plugins/xcode/call/open');
+    expect(o.request.body).toEqual({});
+    o.flush(null);
+    await expect(bare).resolves.toBeNull();
+
+    const body = { params: { task: 'test' } };
+    const done = service.pluginAction('s1', 'mise', 'run', body);
+    const req = http.expectOne('/api/sessions/s1/plugins/mise/actions/run');
+    expect(req.request.body).toEqual(body);
+    req.flush({ terminal: aTerminal() }, { status: 201, statusText: 'Created' });
+    await expect(done).resolves.toEqual({ terminal: aTerminal() });
+
+    const outdated = service.pluginAction('s1', 'mise', 'run', body);
+    http.expectOne('/api/sessions/s1/plugins/mise/actions/run').flush({ view: { nodes: [] } }, { status: 201, statusText: 'Created' });
+    await expect(outdated).rejects.toThrow(OUTDATED);
+
+    const toggled = service.togglePlugin('mise', true);
+    const t = http.expectOne('/api/plugins/mise');
+    expect(t.request.body).toEqual({ enabled: true });
+    t.flush({ id: 'mise', name: 'Tâches mise', description: '', enabled: true, error: null });
+    await expect(toggled).resolves.toMatchObject({ enabled: true });
+  });
+
+  it('pluginCall abandonné : requête HTTP annulée, rejet AbortError', async () => {
+    const service = TestBed.inject(VigieService);
+    const http = TestBed.inject(HttpTestingController);
+    const ctrl = new AbortController();
+    const called = service.pluginCall('s1', 'nx', 'graph', undefined, ctrl.signal);
+    const req = http.expectOne('/api/sessions/s1/plugins/nx/call/graph');
+    ctrl.abort();
+    expect(req.cancelled).toBe(true);
+    await expect(called).rejects.toMatchObject({ name: 'AbortError' });
+    // Déjà abandonné : aucune requête.
+    await expect(service.pluginCall('s1', 'nx', 'graph', undefined, ctrl.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    http.expectNone('/api/sessions/s1/plugins/nx/call/graph');
+  });
+
+  it('onglets de plugin : aucune requête sans plugin actif, relus seulement quand la liste des actifs change', async () => {
+    const service = TestBed.inject(VigieService);
+    const http = TestBed.inject(HttpTestingController);
+    const push = (plugins?: string[]) => FakeSocket.last.onmessage?.({ data: JSON.stringify({ type: 'snapshot', ...aSnapshot(plugins ? { plugins } : {}) }) });
+    const res = runInInjectionContext(TestBed.inject(Injector), () => service.sessionPluginsResource(signal('s1')));
+    push();
+    TestBed.tick();
+    http.expectNone((r) => r.url.startsWith('/api/sessions/s1/plugins'));
+    push(['mise']);
+    TestBed.tick();
+    http.expectOne('/api/sessions/s1/plugins?p=mise').flush([{ id: 'mise', name: 'Tâches mise', badge: '2' }]);
+    await vi.waitFor(() => expect(res.hasValue()).toBe(true));
+    push(['mise']); // même liste : pas de nouvelle détection
+    TestBed.tick();
+    http.expectNone((r) => r.url.startsWith('/api/sessions/s1/plugins'));
+    expect(res.value()).toEqual([{ id: 'mise', name: 'Tâches mise', badge: '2' }]);
+  });
 });

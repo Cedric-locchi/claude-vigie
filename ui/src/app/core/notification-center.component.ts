@@ -69,7 +69,7 @@ import * as f from './format';
   styles: `
     :host { display: contents; }
     .bell { position: relative; }
-    .count { position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; display: grid; place-items: center; border-radius: 8px; background: var(--wait); color: var(--on-wait); font-size: 10px; font-weight: 600; line-height: 1; }
+    .count { position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; display: grid; place-items: center; border-radius: 8px; background: var(--wait-fill); color: var(--on-wait); font-size: 10px; font-weight: 600; line-height: 1; }
     .pip { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 4px; background: var(--text-muted); box-shadow: 0 0 0 2px var(--nav); }
     .panel { width: min(560px, 100vw); max-width: none; padding: 0; gap: 0; }
     .head { padding: 16px 48px 12px 18px; border-bottom: 1px solid var(--line); }

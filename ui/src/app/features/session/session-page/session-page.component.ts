@@ -18,24 +18,27 @@ import { SessionFilesComponent } from '../files/session-files.component';
 import { SessionConfigComponent } from '../config/session-config.component';
 import { SessionCostComponent } from '../cost/session-cost.component';
 import { SessionLogComponent } from '../log/session-log.component';
-import { SessionMiseComponent } from '../mise/session-mise.component';
 import { SessionPageVm } from './session-page.vm';
-import { SessionXcodeComponent } from '../xcode/session-xcode.component';
+import { PluginTabComponent } from '../plugin-tab/plugin-tab.component';
 import { TimelineComponent } from '../timeline/timeline.component';
 import { Icon } from '../../../core/icon.component';
 import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
+import { PageComponent } from '../../../shell/page/page.component';
 
 @Component({
   selector: 'app-session-page',
-  imports: [Icon, RouterLink, HlmBadge, HlmButton, HlmCardImports, HlmEmptyImports, HlmPopoverImports, HlmProgressImports, HlmTabsImports, HlmToggleGroupImports, HlmTooltip, TerminalComponent, AgentRowComponent, AgentPanelComponent, SessionConfigComponent, SessionCostComponent, SessionDiffComponent, SessionFilesComponent, SessionLogComponent, SessionMiseComponent, SessionXcodeComponent, TimelineComponent, WaitBarComponent],
+  imports: [PageComponent, Icon, RouterLink, HlmBadge, HlmButton, HlmCardImports, HlmEmptyImports, HlmPopoverImports, HlmProgressImports, HlmTabsImports, HlmToggleGroupImports, HlmTooltip, TerminalComponent, AgentRowComponent, AgentPanelComponent, SessionConfigComponent, SessionCostComponent, SessionDiffComponent, SessionFilesComponent, SessionLogComponent, PluginTabComponent, TimelineComponent, WaitBarComponent],
   providers: [SessionPageVm],
   host: { '(document:keydown)': 'vm.shortcut($event)' },
   template: `
     @let files = vm.view() === 'files';
-    <div class="page" [class.files]="files" [class.fill]="vm.view() === 'workspace' && !vm.isExternal()" [class.fill-panel]="vm.view() !== 'workspace' && vm.view() !== 'usage'">
-      @if (vm.summary(); as s) {
+    @if (vm.summary(); as s) {
+      <!-- hlmTabs enveloppe le gabarit (display: contents) : la barre d'onglets et les panneaux, projetés, restent sous sa coupe. -->
+      <div hlmTabs [tab]="vm.view()" (tabActivated)="vm.showView($any($event))">
+      <app-page [mode]="vm.pageMode()" [class.files]="files">
+      <div pageHeader class="flex flex-col gap-3.5">
         <header>
-          <a hlmBtn variant="ghost" size="icon" routerLink="/" class="flex-none text-muted-foreground" aria-label="Retour aux sessions"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7" /></svg></a>
+          <a hlmBtn variant="ghost" size="icon" routerLink="/" class="flex-none text-muted-foreground" aria-label="Retour au Dashboard"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7" /></svg></a>
           <div class="head">
             <div class="title-row">
               <h1 [hlmTooltip]="s.title" [showDelay]="600">{{ s.title }}</h1>
@@ -97,9 +100,9 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
             @if (vm.resumeError(); as err) { <span class="err">{{ err }}</span> }
           </div>
         }
+      </div>
 
-        <div hlmTabs class="views" [tab]="vm.view()" (tabActivated)="vm.showView($any($event))">
-          <div hlmTabsList variant="line" class="views-list" aria-label="Vues de la session" [hidden]="files">
+          <div hlmTabsList pageTabs variant="line" class="views-list" aria-label="Vues de la session" [hidden]="files">
             <button hlmTabsTrigger="workspace">
               {{ vm.isChat() ? 'Discussion' : vm.isExternal() ? 'Agents' : 'Terminal & agents' }}@if (vm.agentStats().waiting) { <span class="dot dot-waiting" aria-hidden="true"></span><span class="sr-only">, agent en attente</span> }
             </button>
@@ -107,11 +110,8 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
               <button hlmTabsTrigger="usage">Consommation</button>
             } @else {
               <button hlmTabsTrigger="diff">Diff@if (vm.diffCount(); as n) { <span class="count mono" [attr.aria-label]="n + ' fichier' + (n > 1 ? 's' : '') + ' modifié' + (n > 1 ? 's' : '')">{{ n }}</span> }</button>
-              @if (vm.hasMise()) {
-                <button hlmTabsTrigger="mise">Tâches mise@if (vm.miseCount(); as n) { <span class="count mono" [attr.aria-label]="n + ' tâche' + (n > 1 ? 's' : '')">{{ n }}</span> }</button>
-              }
-              @if (vm.hasXcode()) {
-                <button hlmTabsTrigger="xcode">Xcode</button>
+              @for (p of vm.plugins(); track p.id) {
+                <button [hlmTabsTrigger]="'plugin:' + p.id">{{ p.name }}@if (p.badge) { <span class="count mono">{{ p.badge }}</span> }</button>
               }
               <button hlmTabsTrigger="history">Historique</button>
               <button hlmTabsTrigger="usage">Consommation</button>
@@ -151,8 +151,10 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
           </section>
           }
 
-          <section class="agents" aria-label="Agents de la session" [hidden]="!vm.agentsOpen() && !vm.isExternal()">
-            <h2>Agents</h2>
+          <!-- Une seule carte : l'en-tête (titre, filtres) et la liste, sous le même relief. -->
+          <section class="agents" aria-labelledby="agents-title" [hidden]="!vm.agentsOpen() && !vm.isExternal()">
+            <div class="agents-head">
+            <h2 id="agents-title">Agents</h2>
             @if (vm.agents().length) {
               <div class="agent-filters" role="group" aria-label="Filtrer les agents par état">
                 <button type="button" class="agent-filter" [attr.aria-pressed]="!vm.activeAgentFilter()" (click)="vm.filterAgents(null)">Tous</button>
@@ -163,11 +165,12 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
                 }
               </div>
             }
+            </div>
             <div class="agent-list">
             @for (a of vm.visibleAgents(); track a.id) {
               <app-agent-row [agent]="a" (open)="vm.showAgent(a.id)" />
             } @empty {
-              <div class="empty flex flex-col items-start gap-2.5">
+              <div class="empty flex flex-col items-start gap-2.5 p-3.5">
                 @if (vm.claudeTerminal()) {
                   <p class="muted">Écris ta première demande dans le terminal.</p>
                   <button hlmBtn variant="outline" size="sm" (click)="vm.goToTerminal()">Aller au terminal</button>
@@ -203,23 +206,20 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
           @if (vm.view() === 'files') { <app-session-files [sessionId]="s.id" [idle]="vm.idle()" /> }
         </div>
 
-        <div hlmTabsContent="mise" class="panel">
-          @if (vm.view() === 'mise') { <app-session-mise [sessionId]="s.id" [mise]="vm.mise()" [loading]="vm.miseLoading()" (opened)="vm.selectTab($event)" (refresh)="vm.reloadMise()" /> }
-        </div>
-
-        <div hlmTabsContent="xcode" class="panel">
-          <!-- ponytail: pas de @defer, la page entière est déjà chargée à la demande (route) ; à ajouter si son chunk grossit trop. -->
-          @if (vm.view() === 'xcode') { <app-session-xcode [sessionId]="s.id" [cwd]="s.cwd" [project]="vm.xcode()" (opened)="vm.selectTab($event)" /> }
-        </div>
+        @for (p of vm.plugins(); track p.id) {
+          <div [hlmTabsContent]="'plugin:' + p.id" class="panel">
+            @if (vm.view() === 'plugin:' + p.id) { <app-plugin-tab [sessionId]="s.id" [cwd]="s.cwd" [pluginId]="p.id" (opened)="vm.selectTab($event)" (refresh)="vm.reloadTabs()" /> }
+          </div>
+        }
 
         <div hlmTabsContent="config" class="panel">
           @if (vm.view() === 'config') { <app-session-config [sessionId]="s.id" [cwd]="s.cwd" /> }
         </div>
 
-        <div hlmTabsContent="usage">
+        <div hlmTabsContent="usage" class="panel">
           @if (vm.view() === 'usage') {
             @if (vm.usage(); as u) {
-              <div class="usage">
+              <div class="flex flex-col gap-3.5">
                 <section hlmCard class="usage-card" aria-label="Tokens de la session">
                   <div class="stats">
                     <div class="lead"><span class="small muted">Depuis le cache</span><span class="mono big">{{ f.pct(u.cacheRate) }}</span></div>
@@ -257,24 +257,30 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
             } @else { <div hlmEmpty><div hlmEmptyHeader><div hlmEmptyDescription>Pas encore de consommation pour cette session.</div></div></div> }
           }
         </div>
+      </app-page>
       </div>
 
-        <app-agent-panel [agent]="vm.openAgent()" [canAnswer]="!vm.openAgent()?.sub && !!vm.claudeTerminal()" [error]="vm.replyError()" (closed)="vm.showAgent(null)" (allow)="vm.allow()" (refuse)="vm.refuse()" (focusTerminal)="vm.goToTerminal()" />
-      } @else if (vm.notFound()) {
-        <p class="muted">{{ vm.outdated() ? 'Session illisible : le daemon est-il à jour ? (redémarre-le après une mise à jour)' : 'Session introuvable.' }} <a routerLink="/">Retour aux sessions</a></p>
-      } @else {
-        <p class="muted">Chargement…</p>
-      }
-    </div>
+      <app-agent-panel [agent]="vm.openAgent()" [canAnswer]="!vm.openAgent()?.sub && !!vm.claudeTerminal()" [error]="vm.replyError()" (closed)="vm.showAgent(null)" (allow)="vm.allow()" (refuse)="vm.refuse()" (focusTerminal)="vm.goToTerminal()" />
+    } @else {
+      <app-page>
+        @if (vm.notFound()) {
+          <p class="muted">{{ vm.outdated() ? 'Session illisible : le daemon est-il à jour ? (redémarre-le après une mise à jour)' : 'Session introuvable.' }} <a routerLink="/">Retour au Dashboard</a></p>
+        } @else {
+          <p class="muted">Chargement…</p>
+        }
+      </app-page>
+    }
   `,
   styles: `
-    .page { gap: 14px; padding-top: 16px; padding-bottom: 24px; }
+    /* Gabarit (shell/page) : mode choisi par vue dans le VM ; ici, seulement l'espacement de la page de session. */
+    [hlmTabs] { display: contents; }
+    app-page { --page-pt: 16px; --page-pb: 24px; --page-gap: 14px; }
     header { display: flex; align-items: center; gap: 14px; }
     .head { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .ctx { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--faint); }
     .ctx-bar { width: 48px; height: 4px; background: var(--line); overflow: hidden; }
-    .ctx-bar i { display: block; height: 100%; background: var(--brand); transform: scaleX(var(--p, 0)); transform-origin: left; transition: transform var(--dur) var(--ease); }
+    .ctx-bar i { display: block; height: 100%; background: var(--data); transform: scaleX(var(--p, 0)); transform-origin: left; transition: transform var(--dur) var(--ease); }
     .ctx[data-level='mid'] { color: var(--text-2); }
     .ctx[data-level='high'] { color: var(--err); }
     .ctx[data-level='high'] .ctx-bar i { background: var(--err); }
@@ -282,21 +288,16 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
     h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .head-actions { display: flex; gap: 8px; flex: none; }
-    /* Vue Fichiers : le panneau colle aux bords et au bas de la zone de contenu, sous un filet. */
-    .page.files { padding-bottom: 0; }
-    .files-panel { margin-inline: -36px; border-top: 1px solid var(--line); }
-    .views { gap: 14px; }
+    /* Vue Fichiers : ses trois panneaux (rail, arbre, éditeur) se posent sur le fond pointillé, à l'écart régulier des autres vues (décision 043). */
     .views-list { border-bottom: 1px solid var(--line); }
-    /* Terminal, et Journal, Config, Fichiers… : la page tient dans la fenêtre ; en-tête, onglets et barre d'outils restent visibles, seul le contenu défile. */
-    .page:is(.fill, .fill-panel) { height: calc(100dvh - var(--chrome-top)); }
-    :is(.fill, .fill-panel) .views { flex: 1; min-height: 0; }
-    .fill-panel .panel { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
-    /* Le terminal est la zone principale : il prend toute la hauteur de la fenêtre. */
-    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; }
-    /* Vue terminal : le workspace prend la hauteur restante sous l'en-tête (pas de scroll). */
-    .fill .workspace { flex: 1; min-height: 360px; }
+    /* Un panneau = la vue ouverte : en mode fill il prend la hauteur du corps et la passe à ses colonnes. */
+    .panel { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+    /* Le terminal est la zone principale : il prend toute la hauteur restante, les agents défilent à côté. */
+    .workspace { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr); gap: 14px; }
     .workspace.no-agents { grid-template-columns: minmax(0, 1fr); }
-    .term { min-width: 0; min-height: 0; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--bg-deep); display: flex; flex-direction: column; overflow: hidden; }
+    /* Terminal et agents : deux cartes au même relief, en-tête compris. */
+    .term, .agents { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: 12px; box-shadow: var(--elev-1); overflow: hidden; }
+    .term { border: 1px solid var(--line-strong); background: var(--bg-deep); }
     .term app-terminal { flex: 1; min-height: 0; }
     .tabs { display: flex; align-items: stretch; background: var(--nav); border-bottom: 1px solid var(--surface-2); }
     .tabs button { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border: 0; border-right: 1px solid var(--surface-2); background: transparent; color: var(--text-muted); font-family: var(--mono); font-size: 12px; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
@@ -324,13 +325,13 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
     .external .err { flex-basis: 100%; color: var(--err); }
     .reply-error { color: var(--err); }
     /* La liste défile sous un titre fixe : des lignes séparées par des filets, dans un seul panneau. */
-    .agent-list { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-    .agent-list:has(.empty) { border: 0; background: none; }
-    /* Session externe : pas de terminal, la même liste en pleine largeur. */
-    .workspace.is-external { grid-template-columns: minmax(0, 1fr); height: auto; }
+    .agent-list { flex: 1; min-height: 0; overflow-y: auto; }
+    /* Session externe : pas de terminal, la même liste en pleine largeur ; le corps défile (mode scroll). */
+    .workspace.is-external { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
     .is-external .agent-list { overflow: visible; }
     .history { gap: 12px; }
-    .agents { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+    .agents { border: 1px solid var(--edge); background: var(--surface); }
+    .agents-head { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
     .agent-filters { display: flex; flex-wrap: wrap; gap: 6px; }
     .agent-filter {
       display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); background: transparent;
@@ -343,7 +344,6 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
     :is(.agent-filter, .files-btn)[aria-pressed='true'] { border-color: var(--brand); background: var(--brand-bg); color: var(--text); }
     .agent-filter[aria-pressed='true'] .mono { color: var(--brand); }
     h2 { font-size: 15px; font-weight: 600; }
-    .usage { display: flex; flex-direction: column; gap: 14px; }
     .usage-card { padding: 16px 18px; gap: 14px; }
     .stats { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 40px; }
     .lead { display: flex; flex-direction: column; gap: 4px; }
@@ -353,26 +353,30 @@ import { WaitBarComponent } from '../agents/wait-bar/wait-bar.component';
     .legend span { display: inline-flex; align-items: center; gap: 6px; }
     .legend i { width: 10px; height: 10px; border-radius: 2px; }
     .cache-read { background: var(--read); }
-    .cache-write { background: var(--cmd); }
+    .cache-write { background: var(--data); }
     .input { background: var(--text-muted); }
     .output { background: var(--brand); }
     .agent-row { display: flex; flex-direction: column; gap: 6px; }
     .row { display: flex; justify-content: space-between; gap: 8px; }
+    /* Fenêtre étroite : terminal au-dessus, agents dessous, chacun dans sa part de la hauteur (aucun défilement du corps). */
     @media (max-width: 1100px) {
-      .page.fill { height: auto; }
       .workspace { grid-template-columns: minmax(0, 1fr); }
-      .term { height: max(480px, calc(100dvh - var(--chrome-top) - 140px)); }
     }
+    @media (min-width: 721px) and (max-width: 1100px) { .workspace:not(.no-agents, .is-external) { grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); } }
     /* Téléphone : le titre garde sa ligne, les actions passent dessous et vont à la ligne si besoin. */
     @media (max-width: 720px) {
-      .files-panel { margin-inline: -16px; }
+      /* Seul le document défile (gabarit) : le terminal garde une hauteur propre, la liste des agents s'allonge. */
+      .term { height: max(480px, calc(100dvh - var(--chrome-top) - 140px)); }
+      .workspace { grid-template-rows: none; }
+      .agent-list { overflow: visible; }
       header { flex-wrap: wrap; align-items: flex-start; }
       .head { flex-basis: calc(100% - 50px); }
       .title-row { flex-wrap: wrap; }
       h1 { max-width: 100%; }
       /* Six ou sept vues ne tiennent pas : la barre défile. Le padding garde visible l'indicateur d'onglet actif (2px sous la barre). */
       .views-list > * { flex: none; }
-      .views-list { max-width: 100%; height: auto; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; padding-bottom: 5px; }
+      /* Le gabarit la fait coller sous la barre mobile ; pleine largeur, 41px = sa part de --sticky-top (shell/page). */
+      .views-list { width: 100%; height: 41px; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; padding-bottom: 5px; }
       .head-actions { flex: 1 1 100%; flex-wrap: wrap; }
     }
   `,

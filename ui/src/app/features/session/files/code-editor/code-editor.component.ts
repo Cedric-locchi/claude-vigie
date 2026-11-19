@@ -63,7 +63,8 @@ const LH = 18, PAD = 8;
       --lh: 18px; --pad: 8px; position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); min-width: max-content; min-height: 100%;
       font: 12px / var(--lh) var(--mono); font-variant-ligatures: none; letter-spacing: 0;
     }
-    .cur { position: absolute; left: 0; right: 0; top: calc(var(--pad) + var(--l) * var(--lh)); height: var(--lh); background: var(--hover); pointer-events: none; }
+    /* Ligne du curseur : bande lavée de la principale (décision 043). */
+    .cur { position: absolute; left: 0; right: 0; top: calc(var(--pad) + var(--l) * var(--lh)); height: var(--lh); background: color-mix(in oklch, var(--brand) 8%, transparent); pointer-events: none; }
     .wrap { min-width: 0; grid-template-columns: minmax(0, 1fr); }
     .gutter { position: sticky; left: 0; z-index: 1; padding: var(--pad) 12px var(--pad) 12px; background: var(--surface); border-right: 1px solid var(--line); }
     .nums { margin: 0; font: inherit; min-width: calc(var(--digits) * 1ch); text-align: right; color: var(--faint); white-space: pre; user-select: none; }
@@ -86,7 +87,7 @@ const LH = 18, PAD = 8;
     textarea { width: 100%; height: 100%; resize: none; overflow: hidden; background: transparent; color: transparent; caret-color: var(--text); outline: none; }
     textarea::selection { color: transparent; background: color-mix(in oklch, var(--brand) 35%, transparent); }
     /* Coloration : jetons du thème, clair comme sombre. */
-    .hl ::ng-deep :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-doctag) { color: var(--cmd); }
+    .hl ::ng-deep :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-doctag) { color: var(--run); }
     .hl ::ng-deep :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute, .hljs-template-tag) { color: var(--ok); }
     .hl ::ng-deep :is(.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet, .hljs-variable.language_) { color: var(--read); }
     .hl ::ng-deep :is(.hljs-title, .hljs-section, .hljs-name, .hljs-selector-class, .hljs-selector-id, .hljs-type) { color: var(--brand); }

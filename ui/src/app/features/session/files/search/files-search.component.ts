@@ -1,4 +1,5 @@
 import { Component, ElementRef, Injector, afterNextRender, inject, viewChild } from '@angular/core';
+import { FileIconComponent } from '../../../../core/file-icon.component';
 import { Icon } from '../../../../core/icon.component';
 import { SessionFilesVm } from '../session-files.vm';
 import { FilesSearchVm } from './files-search.vm';
@@ -10,7 +11,7 @@ import { FilesSearchVm } from './files-search.vm';
  */
 @Component({
   selector: 'app-files-search',
-  imports: [Icon],
+  imports: [Icon, FileIconComponent],
   template: `
     <div class="field">
       <svg appIcon="search" class="lens"></svg>
@@ -31,7 +32,7 @@ import { FilesSearchVm } from './files-search.vm';
         } @else {
           <div role="treeitem" class="row file" aria-level="1" [attr.aria-expanded]="r.open" [attr.data-path]="r.path" [attr.tabindex]="r.path === vm.focusRow() ? 0 : -1"
             [attr.title]="r.path" (click)="vm.pick(r)">
-            <svg appIcon="chevron" class="ic" [class.open]="r.open"></svg>
+            <svg appIcon="chevron" class="ic" [class.open]="r.open"></svg><app-file-icon [name]="r.path" />
             <span class="name">{{ r.name }}</span>
             @if (r.dir) { <span class="dir">{{ r.dir }}</span> }
             <span class="n mono">{{ r.count }}<span class="sr-only"> résultat{{ r.count > 1 ? 's' : '' }}</span></span>

@@ -2,8 +2,9 @@
 import path from 'node:path';
 
 // ponytail: quotage POSIX ; sous fish (le PTY lance `$SHELL -l -c`) l'apostrophe passe (`'\''` y est valide) mais pas l'antislash :
-// fish lit `\\` et `\'` comme des échappements même entre guillemets simples. Le scheme Xcode et les noms de conteneur l'évitent
-// par leur regex ; seul un nom de tâche mise avec un antislash y est exposé (jamais vu) ; la suite : `/bin/sh -c` plutôt que `$SHELL -c`.
+// fish lit `\\` et `\'` comme des échappements même entre guillemets simples. Les terminaux des plugins n'y sont pas exposés :
+// `terminal()` du SDK (plugins.mjs) refuse tout argument avec un antislash (une tâche mise qui en contient ne se lance donc pas) ;
+// la suite, pour lever ce refus : `/bin/sh -c` plutôt que `$SHELL -c`.
 export const shQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 // `claude` en tête, ou après un `&&` (ex. `git switch -c x && claude …`).

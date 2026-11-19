@@ -44,14 +44,14 @@ let quitting = false;
 
 /** Page d'attente affichée pendant que le daemon démarre, aux couleurs du thème système. */
 const splash = (message) => 'data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta name="color-scheme" content="dark light">
-<style>body{margin:0;height:100vh;display:grid;place-items:center;font:14px system-ui,sans-serif;background:#0d1116;color:#abb2ba}
-@media (prefers-color-scheme:light){body{background:#f1f4f7;color:#4f565e}}</style><p>${message}</p>`);
+<style>body{margin:0;height:100vh;display:grid;place-items:center;font:14px system-ui,sans-serif;background:#0b1214;color:#a8b3b6}
+@media (prefers-color-scheme:light){body{background:#fcfcfc;color:#4c585a}}</style><p>${message}</p>`);
 
 function open() {
   win = new BrowserWindow({
     width: 1400, height: 900, title: 'Vigie', show: false,
     autoHideMenuBar: true, // Linux : pas de barre de menus Electron par défaut (Alt l'affiche) ; sans effet sur macOS
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d1116' : '#f1f4f7',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b1214' : '#fcfcfc', // --bg des deux thèmes (ui/src/styles.css)
     // Le son « une session a besoin de toi » doit pouvoir jouer sans clic préalable dans la fenêtre.
     webPreferences: { autoplayPolicy: 'no-user-gesture-required', preload: path.join(HERE, 'preload.cjs') },
   });

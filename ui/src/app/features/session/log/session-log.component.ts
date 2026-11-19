@@ -93,13 +93,15 @@ const BADGES: Record<LogKind, BadgeVariants['variant']> = {
     /* Seule la liste défile : la recherche et les filtres restent à l'écran. */
     .scroller { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 16px; outline: none; }
     .scroller .entries { flex: none; }
+    /* Téléphone : le document défile seul, la liste s'allonge. */
+    @media (max-width: 720px) { .scroller { overflow: visible; } }
     .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
     .search { width: 320px; max-width: 100%; }
     .n { margin-inline-start: 4px; font-family: var(--mono); font-size: 11px; color: var(--faint); }
     .has-errors .n { color: var(--err); }
     .agent { width: 200px; }
     .total { margin-inline-start: auto; }
-    .entries { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+    .entries { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); overflow: hidden; }
     .entry { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--line); transition: background-color var(--dur-fast) var(--ease); }
     .entry:last-child { border-bottom: 0; }
     .entry:hover { background: var(--hover); }
@@ -107,7 +109,7 @@ const BADGES: Record<LogKind, BadgeVariants['variant']> = {
     .entry[data-kind='prompt'] { box-shadow: inset 3px 0 0 var(--brand); }
     .meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
     time { flex: none; font-size: 11px; color: var(--faint); }
-    .agent-name { flex: none; color: var(--cmd); }
+    .agent-name { flex: none; color: var(--text-2); }
     .title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--text); }
     .text { margin: 0; font-family: var(--mono); font-size: 12px; line-height: 1.5; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
     .entry[data-kind='thinking'] .text, .entry[data-kind='system'] .text { color: var(--text-muted); }

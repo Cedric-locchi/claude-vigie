@@ -42,11 +42,11 @@ function render(overrides: Partial<SessionPageVm> = {}) {
     connect: vi.fn(), summary: signal(aSession({ title: 'Moteur de suggestions', state: 'waiting', reason: 'permission', detail: 'Bash · xcodebuild test' })),
     stateBadge: signal({ variant: 'waiting', label: 'Attend ton autorisation' }), issues: signal(0),
     waitBar: signal<{ question: boolean; canAllow: boolean; detail: string | null } | null>({ question: false, canAllow: true, detail: 'Bash · xcodebuild test' }),
-    diffCount: signal(4), hasMise: signal(false), miseCount: signal(0), hasXcode: signal(false), xcode: signal(null), historyMode: signal('timeline'), showHistory: vi.fn(),
+    diffCount: signal(4), plugins: signal<{ id: string; name: string; badge?: string }[]>([]), historyMode: signal('timeline'), showHistory: vi.fn(),
     terminals: signal([claude]), activeTab: signal('t1'), activeTerminal: signal(claude), claudeTerminal: signal(claude),
     agents: signal([mainAgent]), context: signal({ used: 150_000, max: 200_000, pct: 0.75, level: "mid" }), canCompact: signal(true), canInterrupt: signal(false), compact: vi.fn(), isChat: signal(false), visibleAgents: signal([mainAgent]), agentFilters: signal([{ state: "waiting", label: "En attente", count: 1 }]), activeAgentFilter: signal(null), filterAgents: vi.fn(), agentStats: signal({ running: 0, waiting: 1 }), logQuery: signal(''), openLog: vi.fn(), usage: signal(null), openAgent: signal(null), showAgent: vi.fn(), resuming: signal(false), unsaved: signal(false), resumeError: signal(null), resume: vi.fn(), notFound: signal(false), outdated: signal(false),
     canFiles: signal(true), filesKey: { label: 'Ctrl+Shift+E', aria: 'Control+Shift+E' }, toggleFiles: vi.fn(), shortcut: vi.fn(),
-    selectTab: vi.fn(), addShell: vi.fn(), closeTab: vi.fn(), detach: vi.fn(), allow: vi.fn(), refuse: vi.fn(), interrupt: vi.fn(), remove: vi.fn(), agentsOpen: signal(true), toggleAgents: vi.fn(), isExternal: signal(false), view: signal('workspace'), showView: vi.fn(), focusTick: signal(0), goToTerminal: vi.fn(), end: vi.fn(), replyError: signal<string | null>(null),
+    selectTab: vi.fn(), addShell: vi.fn(), closeTab: vi.fn(), detach: vi.fn(), allow: vi.fn(), refuse: vi.fn(), interrupt: vi.fn(), remove: vi.fn(), agentsOpen: signal(true), toggleAgents: vi.fn(), isExternal: signal(false), view: signal('workspace'), pageMode: signal('fill'), showView: vi.fn(), focusTick: signal(0), goToTerminal: vi.fn(), end: vi.fn(), replyError: signal<string | null>(null),
     ...overrides,
   };
   TestBed.configureTestingModule({ providers: [provideRouter([])] })
@@ -104,16 +104,12 @@ describe('SessionPageComponent', () => {
     expect(el.querySelectorAll('app-agent-row button')).toHaveLength(1); // la ligne elle-même
   });
 
-  it('onglet Tâches mise : seulement si le projet embarque mise, avec le nombre de tâches', () => {
-    expect(render().el.querySelector('[hlmTabsTrigger="mise"]')).toBeNull();
+  it('un onglet par plugin qui s’applique au projet, avec son badge', () => {
+    const tabs = (el: HTMLElement) => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent!.replace(/\s+/g, ' ').trim());
+    expect(tabs(render().el)).toEqual(['Terminal & agents, agent en attente', 'Diff4', 'Historique', 'Consommation', 'Config']);
     TestBed.resetTestingModule();
-    expect(render({ hasMise: signal(true), miseCount: signal(3) }).el.querySelector('[hlmTabsTrigger="mise"]')!.textContent).toContain('3');
-  });
-
-  it('onglet Xcode : seulement pour un projet iOS', () => {
-    expect(render().el.querySelector('[hlmTabsTrigger="xcode"]')).toBeNull();
-    TestBed.resetTestingModule();
-    expect(render({ hasXcode: signal(true) }).el.querySelector('[hlmTabsTrigger="xcode"]')!.textContent).toContain('Xcode');
+    const el = render({ plugins: signal([{ id: 'mise', name: 'Tâches mise', badge: '3' }, { id: 'xcode', name: 'Xcode' }]) }).el;
+    expect(tabs(el)).toEqual(['Terminal & agents, agent en attente', 'Diff4', 'Tâches mise3', 'Xcode', 'Historique', 'Consommation', 'Config']);
   });
 
   it('Diff affiche le nombre de fichiers modifiés, rien si 0', () => {
@@ -168,7 +164,8 @@ describe('SessionPageComponent', () => {
 
     TestBed.resetTestingModule();
     const files = render({ view: signal<'workspace' | 'files'>('files'), idle: signal(true) });
-    expect(files.el.querySelector('.page')!.classList).toContain('files');
+    expect(files.el.querySelector('app-page')!.classList).toContain('files');
+    expect(files.el.querySelector<HTMLElement>('[hlmTabsList]')!.hidden).toBe(true); // barre d'onglets masquée
     expect([...files.el.querySelectorAll<HTMLButtonElement>('.head-actions button')].find((b) => b.textContent!.trim() === 'Fichiers')!.getAttribute('aria-pressed')).toBe('true');
     expect(files.el.querySelector('.files-panel app-session-files')).not.toBeNull();
     expect(files.el.querySelector('app-wait-bar')).not.toBeNull();
@@ -211,8 +208,8 @@ describe('SessionPageComponent', () => {
 
   it('onglet consommation : répartition des tokens et part par agent', () => {
     const usage = { total: 1000, calls: 3, context: 800, cacheRate: 0.5, parts: [{ key: 'output', label: 'Sortie', tokens: 1000, share: 1 }], agents: [{ id: 'main', name: 'Agent principal', sub: false, tokens: 1000, cost: 1.5, width: 100 }, { id: 'a1', name: 'Explore', sub: true, tokens: 10, width: 1 }] };
-    const { el } = render({ view: signal<'workspace' | 'usage'>('usage'), usage: signal(usage) as unknown as SessionPageVm['usage'] });
-    expect(el.querySelector('.page')!.classList).not.toContain('fill');
+    const { el } = render({ view: signal<'workspace' | 'usage'>('usage'), pageMode: signal<'fill' | 'scroll'>('scroll'), usage: signal(usage) as unknown as SessionPageVm['usage'] });
+    expect(el.querySelector('app-page')!.getAttribute('data-mode')).toBe('scroll'); // le corps de la page défile
     expect(el.querySelector('.lead')!.textContent).toContain('Depuis le cache'); // seul chiffre mis en avant
     expect(el.querySelector('dl')!.textContent).toContain('Contexte actuel');
     expect(el.textContent).toContain('Agent principal');
@@ -222,9 +219,11 @@ describe('SessionPageComponent', () => {
     expect(el.querySelector('app-session-cost')).not.toBeNull();
   });
 
-  it('vue terminal : la page tient dans la fenêtre', () => {
+  it('vue terminal : la page tient dans la fenêtre (gabarit en mode fill), onglets dans la barre fixe du gabarit', () => {
     const { el } = render();
-    expect(el.querySelector('.page')!.classList).toContain('fill');
+    expect(el.querySelector('app-page')!.getAttribute('data-mode')).toBe('fill');
+    expect(el.querySelector('.page-tabs [hlmTabsList]')).not.toBeNull();
+    expect(el.querySelector('.page-head header h1')!.textContent).toContain('Moteur de suggestions');
   });
 
   it("un clic sur un agent ouvre sa sidebar (sheet), Échap la ferme", async () => {
@@ -270,10 +269,8 @@ describe('SessionPageComponent', () => {
 
   it('historique en mode journal : la page tient dans la fenêtre pour que seule la liste défile', () => {
     const { el, vm } = render({ view: signal<'workspace' | 'history'>('history'), historyMode: signal('log') });
-    const page = el.querySelector('.page')!;
-    expect(page.classList).toContain('fill-panel');
-    expect(page.classList).not.toContain('fill');
-    expect(el.querySelector('.panel app-session-log')).not.toBeNull();
+    expect(el.querySelector('app-page')!.getAttribute('data-mode')).toBe('fill');
+    expect(el.querySelector('.page-body .panel app-session-log')).not.toBeNull();
     [...el.querySelectorAll<HTMLButtonElement>('.history button')].find((b) => b.textContent!.includes('Chronologie'))!.click();
     expect(vm.showHistory).toHaveBeenCalledWith('timeline');
   });

@@ -3,6 +3,6 @@
   "compilerOptions": {
     "types": []
   },
-  "include": ["src/**/*.ts", "libs/ui/**/src/**/*.ts"],
-  "exclude": ["src/**/*.spec.ts", "src/**/*.mock.ts"]
+  "include": ["src/**/*.ts", "libs/ui/**/src/**/*.ts", "../plugins/*/ui/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.mock.ts", "src/plugin-sdk/testing.ts", "../plugins/*/ui/**/*.spec.ts"]
 }

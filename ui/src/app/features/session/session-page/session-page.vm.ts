@@ -5,10 +5,10 @@ import { DISCARD_EDIT } from '../diff/session-diff.vm';
 import { SessionDetail, SessionState } from '../../../core/models';
 import { KEYS, OUTDATED, VigieService, isChat, sendReply } from '../../../core/vigie.service';
 import { stateLabel } from '../../../core/session-view';
-import { hasMise, projectTasks } from '../mise/session-mise.vm';
 import type { WaitBar } from '../agents/wait-bar/wait-bar.component';
-import { counter, entering, keepLast } from '../../../core/signals';
+import { counter, keepLast } from '../../../core/signals';
 import { CLIENT_OS, isShortcut } from '../../../core/platform';
+import type { PageMode } from '../../../shell/page/page.component';
 
 /** Filtres de la liste des agents, dans l'ordre d'urgence. */
 /** « Non terminés » regroupe ceux qui t'attendent (question, autorisation, fin de tour) et ceux qui tournent ;
@@ -19,7 +19,8 @@ const AGENT_FILTERS: { state: SessionState; label: string; states?: SessionState
   { state: 'done', label: 'Terminés' },
 ];
 
-export type SessionView = 'workspace' | 'diff' | 'files' | 'mise' | 'xcode' | 'history' | 'usage' | 'config';
+/** `plugin:<id>` : onglet d'un plugin actif qui s'applique au projet (décision 034). */
+export type SessionView = 'workspace' | 'diff' | 'files' | 'history' | 'usage' | 'config' | `plugin:${string}`;
 /** Onglet Historique : la chronologie par tours ou le journal brut. */
 export type HistoryMode = 'timeline' | 'log';
 
@@ -106,10 +107,19 @@ export class SessionPageVm {
   /** Onglet de premier niveau : terminal et agents, chronologie ou consommation en pleine page. */
   /** Une discussion n'a que Discussion et Consommation : on y arrive toujours sur Discussion. Ailleurs, on garde la dernière vue choisie. */
   readonly view = linkedSignal<boolean, SessionView>({ source: this.isChat, computation: (chat, prev) => (chat ? 'workspace' : prev && !prev.source ? prev.value : lastView) });
+  /**
+   * Règle de défilement du gabarit (shell/page) : `fill` pour les vues en colonnes qui défilent chacune (terminal et agents, Diff,
+   * Fichiers, Historique, Config) ; `scroll` pour celles qui se lisent d'un trait (Consommation, plugins, agents d'une session externe).
+   */
+  readonly pageMode = computed<PageMode>(() => {
+    const view = this.view();
+    if (view === 'usage' || view.startsWith('plugin:')) return 'scroll';
+    return view === 'workspace' && this.isExternal() ? 'scroll' : 'fill';
+  });
   private readonly rememberView = effect(() => {
     const view = this.view();
-    // « Tâches mise » et « Xcode » ne sont pas retenues : la session suivante n'a peut-être ni l'un ni l'autre.
-    if (!this.isChat() && view !== 'mise' && view !== 'xcode') lastView = view;
+    // Un onglet de plugin n'est pas retenu : la session suivante ne l'a peut-être pas.
+    if (!this.isChat() && !view.startsWith('plugin:')) lastView = view;
   });
 
   /** Agent affiché dans la sidebar de détail ; remis à zéro quand on change de session. */
@@ -219,32 +229,24 @@ export class SessionPageVm {
   readonly diffCount = computed(() => this.lastGit()?.files.length ?? 0);
 
   /**
-   * Tâches mise : chargées à l'ouverture de la page (pour savoir si l'onglet existe), à chaque entrée dans l'onglet
-   * (retour après `mise trust`) et sur « Rafraîchir » ; jamais à chaque snapshot. Pas de terminal ici (externe, discussion) : pas de tâches.
+   * Onglets des plugins : plugins actifs dont la détection vaut pour ce dossier. Relus quand la liste des plugins actifs change
+   * (page Plugins), jamais à chaque événement. Session externe comprise : le daemon résout le dossier par le store et une action
+   * ouvre son propre terminal dans la session (qui cesse alors d'être externe). Discussion (pas de projet) : pas d'onglet, pas de requête.
    */
-  private readonly miseId = computed(() => (this.summary() && !this.isChat() && !this.isExternal() ? this.id() : null));
-  private readonly miseVersion = counter(() => this.view() === 'mise', entering);
-  private readonly miseResource = this.vigie.miseResource(this.miseId, this.miseVersion);
-  /** Garde la dernière liste de la même session pendant un rechargement : l'onglet ne clignote pas. */
-  readonly mise = keepLast(this.miseResource, this.miseId);
-  readonly miseLoading = computed(() => this.miseResource.isLoading());
-  /** L'onglet n'apparaît que si le projet embarque mise. */
-  readonly hasMise = computed(() => hasMise(this.mise()));
-  readonly miseCount = computed(() => projectTasks(this.mise()).length);
-
-  reloadMise(): void {
-    this.miseResource.reload();
+  private readonly pluginsId = computed(() => (this.summary()?.cwd && !this.isChat() ? this.id() : null));
+  private readonly pluginsResource = this.vigie.sessionPluginsResource(this.pluginsId);
+  /** Garde la dernière liste de la même session pendant un rechargement : les onglets ne clignotent pas. */
+  private readonly lastPlugins = keepLast(this.pluginsResource, this.pluginsId);
+  readonly plugins = computed(() => (this.pluginsId() && this.vigie.snapshot()?.plugins?.length ? this.lastPlugins() ?? [] : []));
+  /** Relit les onglets de plugins (un plugin le demande, ex. après `mise trust`). */
+  reloadTabs(): void {
+    this.pluginsResource.reload();
   }
-
-  /**
-   * Projet Xcode (même session que mise : il faut un terminal) : chargé avec la page pour savoir si l'onglet existe,
-   * relu à chaque entrée dans l'onglet (scripts ajoutés). Les schemes et simulateurs, lents, sont lus par l'onglet lui-même.
-   */
-  private readonly xcodeVersion = counter(() => this.view() === 'xcode', entering);
-  private readonly xcodeResource = this.vigie.xcodeResource(this.miseId, this.xcodeVersion);
-  readonly xcode = keepLast(this.xcodeResource, this.miseId);
-  /** L'onglet n'apparaît que pour un projet iOS / Swift (workspace, projet ou Package.swift). */
-  readonly hasXcode = computed(() => !!this.xcode()?.container);
+  /** Onglet de plugin affiché qui disparaît (plugin désactivé, projet qui ne s'y prête plus) : retour au terminal. */
+  private readonly dropPlugin = effect(() => {
+    const view = this.view();
+    if (view.startsWith('plugin:') && !this.pluginsResource.isLoading() && !this.plugins().some((p) => `plugin:${p.id}` === view)) this.view.set('workspace');
+  });
 
   /** Redonne le focus au terminal, même déjà actif. */
   readonly focusTick = signal(0);

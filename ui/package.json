@@ -3,9 +3,13 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
+    "prestart": "node ../scripts/plugin-uis.mjs",
     "start": "ng serve",
+    "prebuild": "node ../scripts/plugin-uis.mjs",
     "build": "ng build",
+    "prewatch": "node ../scripts/plugin-uis.mjs",
     "watch": "ng build --watch --configuration development",
+    "pretest": "node ../scripts/plugin-uis.mjs",
     "test": "ng test"
   },
   "private": true,

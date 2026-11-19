@@ -84,6 +84,7 @@ export const Snapshot = z.object({
   terminals: z.array(Terminal),
   // Absent jusqu'au premier relevé ; 'unknown' en cas d'échec.
   claudeStatus: z.optional(ClaudeStatus),
+  plugins: z.optional(z.array(str)), // ids des plugins actifs (décision 034) ; absent sur un daemon plus ancien
 });
 
 // ── Détail d'une session ──────────────────────────────────────────────────
@@ -275,13 +276,6 @@ export const SearchMatch = z.object({ line: num, col: num, text: str, at: num })
 export const SearchFile = z.object({ path: str, matches: z.array(SearchMatch) });
 export const SearchResults = z.object({ files: z.array(SearchFile), truncated: bool });
 
-// ── Tâches mise (GET /api/sessions/:id/mise) ──────────────────────────────
-// `source` et `file` : relatifs au cwd s'ils sont dedans, sinon `~/…`, sinon absolus ; `depends` / `run` en texte.
-// Tâches globales (`global`) comprises : l'UI filtre. Jamais l'`env` ni les `secrets` d'une tâche.
-export const MiseTask = z.object({ name: str, aliases: z.array(str), description: str, source: str, depends: z.array(str), run: z.array(str), file: nstr, global: bool });
-// `available` : faux si mise n'est pas installé ; `untrusted` : config non approuvée (proposer `mise trust`) ; `error` : message de mise.
-export const MiseTasks = z.object({ available: bool, untrusted: bool, tasks: z.array(MiseTask), error: nstr });
-
 // ── Projets (GET /api/projects?q=) ────────────────────────────────────────
 // q sans séparateur de chemin : dossiers récents (30). q = chemin : ses sous-dossiers non cachés qui commencent par le dernier segment (50 max).
 // `path` en ~/… (nom et parent déduits par l'UI) ; `kind` : premier marqueur trouvé à la racine ;
@@ -303,6 +297,20 @@ export const Alerts = z.object({
 // `locale` : choisie dans Vigie (null = automatique) ; `defaultLocale` : celle qu'auraient les terminaux sans choix.
 // `alerts` : absent sur un daemon plus ancien.
 export const Settings = z.object({ locale: nstr, defaultLocale: str, alerts: z.optional(Alerts) });
+
+// ── Plugins (décisions 034, 037) : socle seulement ; les schémas propres à un plugin vivent dans plugins/<id>/contract.mjs ──
+// Le front d'un plugin est un composant Angular (décision 037) : plus de vue déclarative. La réponse d'une méthode (`call`)
+// n'a pas de schéma ici : le front la valide avec le schéma du plugin.
+const pname = z.string().check(z.regex(/^[\w-]{1,64}$/));
+const ptext = z.string().check(z.maxLength(2000));
+// GET /api/plugins : `error` = chargement impossible (API non supportée, erreur à l'import), affiché sur la carte.
+export const PluginInfo = z.object({ id: str, name: str, description: str, enabled: bool, error: nstr });
+export const Plugins = z.array(PluginInfo);
+// GET /api/sessions/:id/plugins : plugins actifs dont `detect` est vrai pour le dossier de la session.
+export const SessionPlugin = z.object({ id: str, name: str, badge: z.optional(str) });
+export const SessionPlugins = z.array(SessionPlugin);
+// POST …/plugins/:pid/actions/:aid : terminal ouvert (201).
+export const PluginActionResult = z.object({ terminal: Terminal });
 
 // ── Entrées (corps POST et messages /pty) ─────────────────────────────────
 // Messages en français fixés ici plutôt que z.locales.fr() : l'UI importe aussi ce module, pas de config globale.
@@ -348,32 +356,20 @@ export const WriteBody = z.object({
   hash: text('Empreinte manquante').check(z.regex(/^[0-9a-f]{64}$/, 'Empreinte invalide')),
 }, body); // POST …/git/write ou …/files/write
 export const CommitBody = z.object({ message: text('Le message de commit est vide').check(z.refine((s) => s.trim() !== '', 'Le message de commit est vide')) }, body);
-// POST …/terminals : corps `{}` = un shell ; `miseTask` = nom ou alias d'une tâche listée par GET …/mise ; `miseTrust` = lance `mise trust`.
-// ── Xcode (GET …/xcode : rapide, sans process ; GET …/xcode/targets : lent, xcodebuild + simctl) ──
-// `name` relatif au cwd (« App.xcworkspace », « Package.swift ») ; `container` null = pas un projet iOS (pas d'onglet).
-export const XcodeContainer = z.object({ kind: z.enum(['workspace', 'project', 'package']), name: str });
-// `scripts` : noms des fichiers scripts/*.sh|*.py du cwd (fichiers ordinaires, non cachés).
-export const XcodeProject = z.object({ container: z.nullable(XcodeContainer), scripts: z.array(str) });
-export const Simulator = z.object({ udid: str, name: str, runtime: str, booted: bool }); // runtime « iOS 18.0 »
-// `available` : faux sans Xcode (Linux, ou Mac avec les seuls Command Line Tools) ; `error` : message à montrer.
-export const XcodeTargets = z.object({ available: bool, schemes: z.array(str), simulators: z.array(Simulator), error: nstr });
-export const XcodeAction = z.enum(['build', 'test', 'clean', 'run']);
-const UDID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
-export const XcodeBody = z.object({
-  action: XcodeAction,
-  // Ni `\` ni `'` : sous fish, `\'` sortirait des guillemets simples de shQuote.
-  // eslint-disable-next-line no-control-regex -- refuser les caractères de contrôle est le but
-  scheme: text('Choisis un scheme').check(z.regex(/^(?!-)[^\x00-\x1f\x7f\\']{1,200}$/, 'Scheme invalide')),
-  udid: z.optional(text('Choisis un simulateur').check(z.regex(UDID, 'Simulateur invalide'))),
-}, body).check(z.refine((b) => b.action === 'clean' || b.udid !== undefined, 'Choisis un simulateur'));
-
-// Au plus une action par terminal (vérifié par le daemon) ; `script` : nom d'un fichier de scripts/ listé par …/xcode.
-export const TerminalBody = z.object({
-  miseTask: z.optional(text('La tâche mise doit être un texte')),
-  miseTrust: z.optional(z.boolean({ error: 'miseTrust doit être un booléen' })),
-  xcode: z.optional(XcodeBody),
-  script: z.optional(text('Le script doit être un texte').check(z.regex(/^[\w.-]+\.(sh|py)$/, 'Script invalide'))),
+// POST …/terminals : corps `{}` = un shell, rien d'autre (une UI d'avant les plugins qui envoie `miseTask` prend un 400).
+// Les terminaux d'un outil (mise, Xcode…) passent par l'action d'un plugin.
+export const TerminalBody = z.strictObject({}, body);
+// POST /api/plugins/:id
+export const PluginToggleBody = z.object({ enabled: z.boolean({ error: 'enabled doit être un booléen' }) }, body);
+// POST …/plugins/:pid/call/:method : `params` libre ici, validé ensuite par le schéma de la méthode (dans le plugin).
+export const PluginCallBody = z.object({ params: z.optional(z.unknown()) }, body);
+// POST …/plugins/:pid/actions/:aid : `params` plats (scalaires), validés ensuite par le schéma de l'action.
+// Strict : une UI d'avant la 037 qui envoie `values` prend un 400 clair plutôt qu'une action lancée sans ses choix.
+export const PluginActionBody = z.strictObject({
+  params: z.optional(z.record(pname, z.union([ptext, num, bool, z.null()], { error: 'Paramètre invalide' }), { error: 'Paramètres invalides' })),
 }, body);
+// Fichier ~/.vigie/settings.json (lu par le transport) : SettingsBody + état des plugins. Jamais accepté en POST /api/settings.
+export const SettingsFile = z.extend(SettingsBody, { plugins: z.optional(z.record(str, bool)) });
 export const InputBody = z.object({ data: text('Le texte à envoyer au terminal manque') }, body);
 // Entier borné : 2**31 passerait `> 0` puis ferait lever pty.resize dans l'écouteur WebSocket.
 const positive = z.int().check(z.positive(), z.lte(10_000));

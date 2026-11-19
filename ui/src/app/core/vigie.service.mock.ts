@@ -1,6 +1,6 @@
 import { Provider, computed, signal } from '@angular/core';
 import { vi } from 'vitest';
-import { Agent, ClaudeConfig, MiseTasks, Project, ProjectFiles, SearchResults, SessionCost, SessionSummary, Settings, Snapshot, Terminal, Usage, UsageRow, UsageRows, XcodeProject, XcodeTargets } from './models';
+import { Agent, ClaudeConfig, PluginInfo, Project, ProjectFiles, SearchResults, SessionCost, SessionSummary, Settings, Snapshot, Terminal, Usage, UsageRow, UsageRows } from './models';
 import { VigieService } from './vigie.service';
 
 export function aSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -82,35 +82,13 @@ export function aSearchResults(overrides: Partial<SearchResults> = {}): SearchRe
   };
 }
 
-/** Réponse de GET /api/sessions/:id/mise : une tâche du projet, une globale (l'UI filtre). */
-export function aMiseTasks(overrides: Partial<MiseTasks> = {}): MiseTasks {
-  return {
-    available: true, untrusted: false, error: null,
-    tasks: [
-      { name: 'test', aliases: ['t'], description: 'Lance les tests', source: 'mise.toml', depends: ['build'], run: ['npm test'], file: null, global: false },
-      { name: 'cleanup', aliases: [], description: '', source: '~/.config/mise/config.toml', depends: [], run: ['rm -rf tmp'], file: null, global: true },
-    ],
-    ...overrides,
-  };
-}
-
-/** Réponse de GET /api/sessions/:id/xcode : un workspace iOS et deux scripts. */
-export function anXcodeProject(overrides: Partial<XcodeProject> = {}): XcodeProject {
-  return { container: { kind: 'workspace', name: 'App.xcworkspace' }, scripts: ['bootstrap.sh', 'lint.py'], ...overrides };
-}
-
-/** Réponse de GET /api/sessions/:id/xcode/targets : deux schemes, trois simulateurs sur deux runtimes, le second démarré. */
-export function anXcodeTargets(overrides: Partial<XcodeTargets> = {}): XcodeTargets {
-  return {
-    available: true, error: null,
-    schemes: ['App', 'AppTests'],
-    simulators: [
-      { udid: '11111111-1111-1111-1111-111111111111', name: 'iPhone 16', runtime: 'iOS 18.0', booted: false },
-      { udid: '22222222-2222-2222-2222-222222222222', name: 'iPhone 16 Pro', runtime: 'iOS 18.0', booted: true },
-      { udid: '33333333-3333-3333-3333-333333333333', name: 'iPhone 15', runtime: 'iOS 17.5', booted: false },
-    ],
-    ...overrides,
-  };
+/** Réponse de GET /api/plugins : un plugin actif, un inactif, un en erreur. */
+export function somePlugins(): PluginInfo[] {
+  return [
+    { id: 'mise', name: 'Tâches mise', description: 'Lance les tâches mise du projet dans un terminal.', enabled: true, error: null },
+    { id: 'xcode', name: 'Xcode', description: 'Build, test et lancement sur simulateur.', enabled: false, error: null },
+    { id: 'gradle', name: 'Gradle', description: 'Tâches Gradle.', enabled: false, error: 'API de plugin non supportée (2)' },
+  ];
 }
 
 export function aProject(overrides: Partial<Project> = {}): Project {
@@ -167,10 +145,14 @@ export function provideVigieServiceMock(overrides: Partial<VigieService> = {}): 
       configResource: (() => fakeResource(undefined)) as unknown as VigieService['configResource'],
       traceResource: (() => fakeResource(undefined)) as unknown as VigieService['traceResource'],
       gitResource: (() => fakeResource(undefined)) as unknown as VigieService['gitResource'],
-      miseResource: (() => fakeResource(aMiseTasks())) as unknown as VigieService['miseResource'],
-      xcodeResource: (() => fakeResource(anXcodeProject())) as unknown as VigieService['xcodeResource'],
-      xcodeTargetsResource: (() => fakeResource(anXcodeTargets())) as unknown as VigieService['xcodeTargetsResource'],
-      openXcode: vi.fn(async () => ({ ok: true })),
+      pluginsResource: (() => fakeResource(somePlugins())) as unknown as VigieService['pluginsResource'],
+      togglePlugin: vi.fn(async (id: string, enabled: boolean) => ({ ...somePlugins().find((p) => p.id === id)!, enabled })),
+      sessionPluginsResource: (() => fakeResource([{ id: 'mise', name: 'Tâches mise' }])) as unknown as VigieService['sessionPluginsResource'],
+      // ponytail: `null` pour toute méthode ; des réponses par plugin et méthode quand une spec du cœur en aura besoin
+      // (les specs des plugins passent par fakePluginHost, pas par ce mock).
+      pluginCall: vi.fn(async () => null),
+      // Une action ouvre un terminal (201 du daemon).
+      pluginAction: vi.fn(async () => ({ terminal: aTerminal({ id: 't9', kind: 'shell', title: 'test' }) })),
       gitFile: vi.fn(async (_id: string, path: string) => ({ path, content: 'export const a = 1;\n', hash: 'a'.repeat(64) })),
       writeFile: vi.fn(async () => ({ ok: true })),
       files: vi.fn(async () => aProjectFiles()),

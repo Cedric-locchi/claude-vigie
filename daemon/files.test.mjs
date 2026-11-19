@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { listProjectFiles, readProjectFile, searchProjectFiles, writeProjectFile } from './files.mjs';
 import { readGitDiff } from './git.mjs';
 import { FileBody, ProjectFiles, SearchResults } from '../contract/index.mjs';
+import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
 
 const conforme = (S, v) => { const j = JSON.parse(JSON.stringify(v)); assert.deepStrictEqual(S.parse(j), j); };
 const sha = (b) => createHash('sha256').update(b).digest('hex');
-const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
+const tmp = (p) => tempDir(p);
 const put = (dir, rel, data = 'v1\n') => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), data); };
 
 /** Dépôt : suivi.txt commité, non-suivi.txt, .env et dist/ ignorés, sous/ ; .env factice, jamais un vrai. */

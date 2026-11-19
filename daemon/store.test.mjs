@@ -2,10 +2,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { createStore } from './store.mjs';
 import * as C from '../contract/index.mjs';
+import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
 
 // Sortie conforme au contrat : parse retire les clés inconnues, donc l'égalité échoue sur un champ manquant comme sur un champ en trop.
 const conforme = (S, v) => { const j = JSON.parse(JSON.stringify(v)); assert.deepStrictEqual(S.parse(j), j); };
@@ -16,7 +16,7 @@ const line = (ts, text) => JSON.stringify({
 }) + '\n';
 
 test('une session supprimée disparaît, et réapparaît si elle reprend', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-store-'));
+  const tmp = tempDir('vigie-store-');
   const file = path.join(tmp, 'projects', 'p', 'S.jsonl');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const hiddenFile = path.join(tmp, 'hidden.json');
@@ -39,7 +39,7 @@ test('une session supprimée disparaît, et réapparaît si elle reprend', () =>
 });
 
 test('transcript déplacé (sortie de worktree) : une seule session, sous le nouveau chemin', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-relocate-'));
+  const tmp = tempDir('vigie-relocate-');
   const from = path.join(tmp, 'p--claude-worktrees-w', 'S.jsonl');
   const to = path.join(tmp, 'p', 'S.jsonl');
   fs.mkdirSync(path.join(path.dirname(from), 'S', 'subagents'), { recursive: true });
@@ -61,7 +61,7 @@ test('transcript déplacé (sortie de worktree) : une seule session, sous le nou
 });
 
 test('purge : la discussion est effacée du disque, les autres sessions restent', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-purge-'));
+  const tmp = tempDir('vigie-purge-');
   const dir = path.join(tmp, 'p');
   fs.mkdirSync(path.join(dir, 'S', 'subagents'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'S.jsonl'), line(Date.now() - 60_000, 'chat'));
@@ -80,7 +80,7 @@ test('limites réelles : le plus haut relevé de la fenêtre en cours gagne, les
   const { quotaWindow } = await import('./usage.mjs');
   // Même calcul que store.snapshot : relevés des fenêtres encore ouvertes, sinon estimation (null ici).
   const realWindow = (now, dir) => { const open = readReadings(now, dir).filter((r) => r.end > now); return open.length ? quotaWindow(open, now) : null; };
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-limits-'));
+  const dir = tempDir('vigie-limits-');
   const now = Date.parse('2026-11-08T01:00:00Z');
   const end = Date.parse('2026-11-08T04:20:00Z') / 1000;
   const write = (name, ts, five, resets = end) => fs.writeFileSync(path.join(dir, `${name}.json`), JSON.stringify({
@@ -100,7 +100,7 @@ test('limites réelles : le plus haut relevé de la fenêtre en cours gagne, les
 });
 
 test('détail : consommation de la session, contexte = dernier appel', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-usage-'));
+  const tmp = tempDir('vigie-usage-');
   const file = path.join(tmp, 'p', 'S.jsonl');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const call = (ts, id, input, output, cacheCreate, cacheRead) => JSON.stringify({
@@ -117,7 +117,7 @@ test('détail : consommation de la session, contexte = dernier appel', () => {
 });
 
 test('détail : un dernier message coupé à 20 000 caractères est signalé (lastTextTruncated)', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-trunc-'));
+  const tmp = tempDir('vigie-trunc-');
   fs.mkdirSync(path.join(tmp, 'p'), { recursive: true });
   const now = Date.now();
   const say = (n, id) => JSON.stringify({
@@ -143,7 +143,7 @@ test('coût par modèle et lignes de consommation par jour × session × modèle
   assert.equal(costOf({ model: 'gpt-x', input: 1e6, output: 0, cacheCreate: 0, cacheRead: 0 }), 0);
   assert.equal(family('claude-opus-5-5'), 'opus');
 
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-rows-'));
+  const tmp = tempDir('vigie-rows-');
   const file = path.join(tmp, 'p', 'S.jsonl');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const call = (ts, id, model, output) => JSON.stringify({
@@ -160,7 +160,7 @@ test('coût par modèle et lignes de consommation par jour × session × modèle
 });
 
 test('résumé : coût estimé et activité par minute du dernier quart d’heure', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-act-'));
+  const tmp = tempDir('vigie-act-');
   const file = path.join(tmp, 'p', 'S.jsonl');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const now = Date.now();
@@ -180,7 +180,7 @@ test('résumé : coût estimé et activité par minute du dernier quart d’heur
 });
 
 test('journal : prompts, messages, outils, résultats et erreurs, puis seulement la suite', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-log-'));
+  const tmp = tempDir('vigie-log-');
   const file = path.join(tmp, 'p', 'S.jsonl');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const t0 = Date.now() - 10_000;
@@ -208,7 +208,7 @@ test('journal : prompts, messages, outils, résultats et erreurs, puis seulement
 });
 
 test('trace : tours délimités par les messages, sous-agents rattachés à leur appel', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-trace-'));
+  const tmp = tempDir('vigie-trace-');
   const dir = path.join(tmp, 'p');
   fs.mkdirSync(path.join(dir, 'S', 'subagents'), { recursive: true });
   const t0 = Date.now() - 3 * 3_600_000; // tout dans le passé, sous-agent compris (7206 s)
@@ -252,7 +252,7 @@ test('trace : tours délimités par les messages, sous-agents rattachés à leur
 
 test('taille max du contexte : relevé de la statusline, sinon déduite du modèle', async () => {
   const { contextMax } = await import('./store.mjs');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-ctx-'));
+  const dir = tempDir('vigie-ctx-');
   fs.writeFileSync(path.join(dir, 's1.json'), JSON.stringify({ ts: 1, context_window: { context_window_size: 400_000 } }));
   assert.equal(contextMax('s1', 'claude-opus-5-5', dir), 400_000);
   assert.equal(contextMax('s2', 'claude-opus-5-5[1m]', dir), 1_000_000);
@@ -271,7 +271,7 @@ const rec = (sid, ts, { pending = false, usage = false } = {}) => JSON.stringify
 }) + '\n';
 
 test('snapshot : session de plus d’un jour visible seulement avec un terminal claude, ou un sous-agent récent', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-day-'));
+  const tmp = tempDir('vigie-day-');
   const dir = path.join(tmp, 'p');
   fs.mkdirSync(path.join(dir, 'R', 'subagents'), { recursive: true });
   const now = Date.now();
@@ -288,7 +288,7 @@ test('snapshot : session de plus d’un jour visible seulement avec un terminal 
 });
 
 test('sous-agents : comptés par session, oubliés après purge', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-subs-'));
+  const tmp = tempDir('vigie-subs-');
   const dir = path.join(tmp, 'p');
   const now = Date.now();
   for (const sid of ['S', 'T']) {
@@ -310,7 +310,7 @@ test('sous-agents : comptés par session, oubliés après purge', () => {
 });
 
 test('sous-agent en cours : meta relu tant qu’il n’est pas terminé', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-meta-'));
+  const tmp = tempDir('vigie-meta-');
   const dir = path.join(tmp, 'p');
   fs.mkdirSync(path.join(dir, 'S', 'subagents'), { recursive: true });
   const now = Date.now();
@@ -338,7 +338,7 @@ const at = (sid, cwd, ts) => JSON.stringify({
 }) + '\n';
 
 function chatFixture() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-chat-'));
+  const tmp = tempDir('vigie-chat-');
   const chat = path.join(tmp, 'chat');
   const projA = path.join(tmp, 'a');
   const projB = path.join(tmp, 'b');
@@ -417,7 +417,7 @@ test("isChat : un même id présent dans un vrai projet n'est jamais traité com
 });
 
 test('idle : vrai au tour rendu ou terminé, faux au travail, en attente, avec un sous-agent actif ou inconnu', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-idle-'));
+  const tmp = tempDir('vigie-idle-');
   const dir = path.join(tmp, 'p');
   const now = Date.now();
   fs.mkdirSync(path.join(dir, 'A', 'subagents'), { recursive: true });
@@ -445,7 +445,7 @@ const usageCall = (ts, id, model, output, { sessionId = 'S', cwd = '/dev/revu', 
 }) + '\n';
 
 function historyFixture() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-history-'));
+  const tmp = tempDir('vigie-history-');
   const projects = path.join(tmp, 'projects');
   fs.mkdirSync(path.join(projects, 'p'), { recursive: true });
   const historyFile = path.join(tmp, 'vigie', 'usage.json');
@@ -579,7 +579,7 @@ test('historique : plus de la moitié des lignes illisibles → mis de côté, p
 });
 
 test('toolPath : chemin complet du fichier de l’outil en cours, null pour un outil sans fichier', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-toolpath-'));
+  const tmp = tempDir('vigie-toolpath-');
   const dir = path.join(tmp, 'p');
   fs.mkdirSync(dir, { recursive: true });
   const t0 = Date.now() - 60_000;

@@ -16,9 +16,9 @@ import { SessionFilesVm } from './session-files.vm';
 const NARROW = '(max-width: 820px)';
 
 /**
- * Vue Fichiers de la session, ambiance WebStorm : barre d'activité (Projet, Rechercher, Claude), fenêtre d'outil
- * (en-tête de 32 px et ses boutons ; redimensionnable, masquable, tiroir sur écran étroit), onglets et éditeur,
- * barre d'état en bas ; ⌘P ouvre la fenêtre flottante « Aller au fichier ».
+ * Vue Fichiers de la session, en trois panneaux séparés : rail d'activité en pilule (Projet, Rechercher, Claude), fenêtre d'outil
+ * (en-tête de 32 px et ses boutons ; redimensionnable, masquable, tiroir sur écran étroit), éditeur (onglets, code, barre d'état) ;
+ * ⌘P ouvre la fenêtre flottante « Aller au fichier ».
  */
 @Component({
   selector: 'app-session-files',
@@ -94,23 +94,28 @@ const NARROW = '(max-width: 820px)';
             </dl>
           </div>
         }
+        <app-files-status (reveal)="reveal($event)" />
       </section>
-
-      <app-files-status (reveal)="reveal($event)" />
     </div>
     <app-files-finder (opened)="focusEditor()" (searched)="focusSearch()" />
   `,
   styles: `
     :host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    /* Téléphone : la page de session défile au document ; l'éditeur garde une hauteur propre (tiroir, aller à la ligne), l'écran sous la barre mobile, comme le terminal. */
+    @media (max-width: 720px) { :host { flex: none; height: calc(100dvh - var(--chrome-top)); } }
+    /* Trois panneaux séparés sur le fond pointillé (décision 043) : rail en pilule, arbre, éditeur ; chacun défile seul. */
     .ide {
-      position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 44px var(--w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
-      background: var(--surface); scrollbar-color: var(--line-strong) transparent; transition: grid-template-columns var(--dur) var(--ease);
+      --gap: 10px; position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 44px var(--w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+      column-gap: var(--gap); scrollbar-color: var(--line-strong) transparent; transition: grid-template-columns var(--dur) var(--ease), column-gap var(--dur) var(--ease);
     }
-    .ide.collapsed { grid-template-columns: 44px 0 minmax(0, 1fr); }
+    /* Masqué : la colonne de l'arbre et un des deux écarts disparaissent, l'écart entre rail et éditeur reste le même. */
+    .ide.collapsed { grid-template-columns: 44px 0 minmax(0, 1fr); column-gap: calc(var(--gap) / 2); }
     .ide.dragging { transition: none; }
-    app-files-status { grid-column: 1 / -1; }
-    .side { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--nav); }
-    .ide.collapsed .side { overflow: hidden; border-right: 0; }
+    app-files-activity { align-self: start; }
+    .side, .main { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--edge); border-radius: 12px; background: var(--surface); box-shadow: var(--elev-1); }
+    .side { position: relative; }
+    .ide.collapsed .side { overflow: hidden; border: 0; box-shadow: none; }
+    app-files-status { margin-top: auto; }
     .tw-head { flex: none; display: flex; align-items: center; gap: 2px; height: 32px; padding: 0 4px 0 12px; }
     .tw-title { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--text); }
     .tw-btn {
@@ -125,11 +130,12 @@ const NARROW = '(max-width: 820px)';
     .tw-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
     .aa { font: 600 12px/1 var(--mono); }
     /* Poignée de largeur : invisible au repos, filet bleu au survol et au focus ; double-clic = largeur d'origine. */
-    .split { position: absolute; top: 0; bottom: 0; right: -4px; z-index: 3; width: 7px; cursor: col-resize; touch-action: none; }
+    /* Centrée dans l'écart entre l'arbre et l'éditeur. */
+    .split { position: absolute; top: 0; bottom: 0; right: calc(-3.5px - var(--gap) / 2); z-index: 3; width: 7px; cursor: col-resize; touch-action: none; }
     .split::after { content: ''; position: absolute; inset: 0 3px; background: transparent; transition: background-color var(--dur) var(--ease); }
     .split:hover::after, .split:focus-visible::after, .split:active::after { background: var(--brand); }
     .split:focus-visible { outline: none; }
-    .main { min-width: 0; min-height: 0; display: flex; flex-direction: column; outline: none; }
+    .main { overflow: hidden; outline: none; }
     .note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--err); }
     .md { flex: 1; min-height: 0; overflow: auto; padding: 16px 24px; scrollbar-width: thin; }
     .empty { margin: 0; padding: 16px; font-size: 13px; color: var(--faint); }
@@ -141,10 +147,10 @@ const NARROW = '(max-width: 820px)';
     kbd { padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; font-size: 11px; color: var(--text-2); }
     /* Étroit : la fenêtre d'outil devient un tiroir posé sur l'éditeur, ouvert depuis la barre d'activité. */
     @media (max-width: 820px) {
-      .ide, .ide.collapsed { grid-template-columns: 44px minmax(0, 1fr); }
+      .ide, .ide.collapsed { grid-template-columns: 44px minmax(0, 1fr); column-gap: var(--gap); }
       app-files-activity { grid-row: 1; }
-      .side {
-        display: none; position: absolute; inset: 0 auto 0 44px; z-index: 2; width: min(320px, calc(100% - 60px)); box-shadow: 0 8px 24px var(--shadow);
+      .side, .ide.collapsed .side {
+        display: none; position: absolute; inset: 0 auto 0 calc(44px + var(--gap)); z-index: 2; width: min(320px, calc(100% - 60px)); border: 1px solid var(--edge); box-shadow: var(--elev-2);
         transition: translate var(--dur) var(--ease), opacity var(--dur) var(--ease);
       }
       .ide.drawer .side { display: flex; }

@@ -1,0 +1,12 @@
+{
+  "name": "@vigie/plugin-xcode",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "vigie": {
+    "api": 2,
+    "id": "xcode",
+    "name": "Xcode",
+    "description": "Construit, teste et lance l'app iOS du projet sur un simulateur, et lance les scripts de scripts/."
+  }
+}

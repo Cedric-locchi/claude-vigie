@@ -9,14 +9,15 @@ import { PlotChartComponent } from '../plot-chart/plot-chart.component';
 import { UsageHeroComponent } from '../usage-hero/usage-hero.component';
 import { colorOf } from '../usage-series';
 import { UsagePageVm } from './usage-page.vm';
+import { PageComponent } from '../../../shell/page/page.component';
 
 @Component({
   selector: 'app-usage-page',
-  imports: [RouterLink, PlotChartComponent, UsageHeroComponent, HlmCardImports, HlmProgressImports, HlmTableImports, HlmToggleGroupImports],
+  imports: [PageComponent, RouterLink, PlotChartComponent, UsageHeroComponent, HlmCardImports, HlmProgressImports, HlmTableImports, HlmToggleGroupImports],
   providers: [UsagePageVm],
   template: `
-    <div class="page">
-      <header>
+    <app-page>
+      <header pageHeader>
         <h1>Consommation</h1>
         <p class="muted">Calculée depuis les transcripts locaux · coûts estimés au tarif API, même sur abonnement</p>
       </header>
@@ -86,7 +87,7 @@ import { UsagePageVm } from './usage-page.vm';
         @if (vm.topSessions().length) {
           <app-plot-chart class="pick" [draw]="vm.sessionsDraw()" [label]="vm.sessionsLabel()" />
           <div class="legend small muted" aria-hidden="true">
-            <span><i class="sw c-brand"></i>cache ≥ 50 %</span>
+            <span><i class="sw c-data"></i>cache ≥ 50 %</span>
             <span><svg width="12" height="12" viewBox="0 0 12 12" class="tri"><path d="M6 1.5 11 10.5H1z" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>sous 50 % : recharge beaucoup de contexte</span>
           </div>
         } @else {
@@ -145,7 +146,7 @@ import { UsagePageVm } from './usage-page.vm';
         </section>
       </div>
       <p class="small faint">Coûts estimés : tarif API par million de tokens (cache écrit 1,25 × entrée, lu 0,1 × entrée). Sur abonnement, c'est l'équivalent de ce que tu aurais payé à l'API.</p>
-    </div>
+    </app-page>
   `,
   styles: `
     header { display: flex; flex-direction: column; gap: 4px; }
@@ -159,7 +160,7 @@ import { UsagePageVm } from './usage-page.vm';
     .toolbar { display: flex; flex-wrap: wrap; gap: 12px; }
 
     .sw { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; vertical-align: -1px; background: var(--neutral); }
-    .c-brand { background: var(--brand); }
+    .c-data { background: var(--data); }
     h2 { margin: 0; font-size: 14px; font-weight: 600; }
     .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; }
     .tri { margin-right: 6px; vertical-align: -1px; color: var(--text); }

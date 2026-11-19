@@ -10,6 +10,7 @@ import { createTransport } from './transport.mjs';
 import { hooksSettings } from './launch.mjs';
 import { findOnPath, nodeVersionOk } from './platform.mjs';
 import { fetchStatus } from './claude-status.mjs';
+import { killAll } from './plugins.mjs';
 
 const PORT = Number(process.env.VIGIE_PORT ?? 4317);
 // Serveur de dev Angular (ng serve) accepté seulement sur demande : VIGIE_DEV=1.
@@ -25,6 +26,17 @@ const HOOKS_FILE = path.join(VIGIE_DIR, 'hooks.json');
 const CHAT_DIR = path.join(VIGIE_DIR, 'chat');
 
 fs.mkdirSync(CHAT_DIR, { recursive: true });
+
+// Sous Node 24, une promesse rejetée que personne n'attend tue le process : un plugin (ou un adaptateur) ne doit pas faire tomber le daemon.
+process.on('unhandledRejection', (e) => console.error('[vigie] rejet non géré :', e));
+// ponytail: une exception synchrone d'un plugin (dans un timer, un émetteur sans écouteur `error`) tue encore le daemon ; acceptable
+// tant que les plugins sont livrés avec Vigie (pas de `uncaughtException` global, qui laisserait tourner un état incohérent).
+// Suite : un utilityProcess / worker par plugin si des plugins tiers arrivent.
+
+// Arrêt (launchd, systemd, Ctrl-C) : les outils lancés par les plugins (groupes détachés) ne survivent pas au daemon.
+// Le signal est relevé une fois le ménage fait : l'arrêt reste celui par défaut (même code de sortie).
+for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, () => { killAll(); process.kill(process.pid, sig); });
+process.on('exit', killAll);
 
 // Commande node des scripts lancés par Claude Code (statusline à chaque rafraîchissement, hook de repli).
 // Dans l'app Electron, process.execPath est le binaire Electron, lourd à démarrer à chaque fois : on préfère un vrai node
@@ -106,7 +118,7 @@ readSpool();
 
 // ── Transport et rafraîchissements ────────────────────────────────────────
 let claudeStatus; // absent du snapshot jusqu'au premier relevé
-const { server, changed } = createTransport({ store, port: PORT, uiDir: UI_DIR, home: HOME, chatDir: CHAT_DIR, hooksFile: HOOKS_FILE, settingsFile: path.join(VIGIE_DIR, 'settings.json'), xcodeDir: path.join(VIGIE_DIR, 'xcode'), spoolFile: SPOOL, dev: DEV, claudeStatus: () => claudeStatus });
+const { server, changed } = createTransport({ store, port: PORT, uiDir: UI_DIR, home: HOME, chatDir: CHAT_DIR, hooksFile: HOOKS_FILE, settingsFile: path.join(VIGIE_DIR, 'settings.json'), pluginsDir: path.join(ROOT, 'plugins'), pluginsDataDir: path.join(VIGIE_DIR, 'plugins-data'), spoolFile: SPOOL, dev: DEV, claudeStatus: () => claudeStatus });
 
 let scanTimer = null;
 const scheduleScan = () => { clearTimeout(scanTimer); scanTimer = setTimeout(() => store.scan() && changed(), 250); };

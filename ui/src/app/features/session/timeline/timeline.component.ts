@@ -130,9 +130,11 @@ import { TimelineVm } from './timeline.vm';
   `,
   styles: `
     /* Jamais de défilement latéral de la page : seul le bandeau défile sur le côté, à l'intérieur de son cadre. */
-    :host { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
-    .k-read { background: var(--read); } .k-edit { background: var(--brand); } .k-command { background: var(--cmd); }
-    .k-agent { background: var(--ok); } .k-other { background: var(--neutral); } .k-wait { background: var(--wait); }
+    :host { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; overflow: clip; }
+    /* Bureau : conteneur de taille, le Gantt borne sa hauteur à une part de la vue (cqh) et les tours gardent le reste. */
+    @media (min-width: 721px) { :host { container-type: size; } }
+    .k-read { background: var(--read); } .k-edit { background: var(--brand); } .k-command { background: var(--text-2); }
+    .k-agent { background: var(--data); } .k-other { background: var(--neutral); } .k-wait { background: var(--wait); }
     app-gantt { flex: none; }
 
     /* Barre d'outils */
@@ -146,8 +148,8 @@ import { TimelineVm } from './timeline.vm';
 
     /* Tours */
     .turns { flex: 1; min-height: 0; min-width: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; padding-bottom: 16px; outline: none; }
-    .turn { flex: none; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); scroll-margin-top: 8px; }
-    .turn.live { border-color: color-mix(in oklch, var(--brand) 45%, var(--line)); }
+    .turn { flex: none; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); scroll-margin-top: calc(var(--sticky-top, 0px) + 8px); }
+    .turn.live { border-color: color-mix(in oklch, var(--run) 45%, var(--line)); }
     .turn-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; text-align: start; transition: background-color var(--dur-fast) var(--ease); }
     .turn-head:hover { background: var(--hover); }
     .turn-head:active { background: var(--press); }
@@ -193,6 +195,8 @@ import { TimelineVm } from './timeline.vm';
     .waiting .name { color: var(--wait); }
     .none { padding: 6px 14px; }
 
+    /* Téléphone : le document défile seul, la liste des tours s'allonge. */
+    @media (max-width: 720px) { .turns { overflow: visible; } }
     @media (max-width: 900px) {
       .row { grid-template-columns: minmax(0, 1fr) 70px; }
       .row .track { display: none; }
