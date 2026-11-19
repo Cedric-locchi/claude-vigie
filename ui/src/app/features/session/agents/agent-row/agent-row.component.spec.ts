@@ -30,4 +30,13 @@ describe('AgentRowComponent', () => {
     buttons[0].click();
     expect(open).toHaveBeenCalled();
   });
+
+  it("montre sa mission plutôt que la commande en cours ; la commande sinon", () => {
+    const el = render({ description: 'Dev front pan 2a' }).nativeElement as HTMLElement;
+    expect(el.querySelector('.mission')?.textContent).toBe('Dev front pan 2a');
+    expect(el.textContent).not.toContain('npm test');
+    expect((render({}).nativeElement as HTMLElement).textContent).toContain('Bash · npm test');
+    // Agent principal : sa mission, on la connaît ; on garde la commande.
+    expect((render({ sub: false, description: 'Mon prompt' }).nativeElement as HTMLElement).textContent).toContain('Bash · npm test');
+  });
 });
