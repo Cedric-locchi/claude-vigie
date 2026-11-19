@@ -108,13 +108,18 @@ describe('MiseTabComponent', () => {
     return { el, host, fixture };
   }
 
-  it('un panneau par secteur, un bouton « Lancer » par tâche', async () => {
-    const { el, host } = await render(aMise({ tasks: [task('front:build'), task('lint')] }), '.theme');
-    expect([...el.querySelectorAll('.toggle .label')].map((h) => h.textContent)).toEqual(['Projet', 'front']);
-    const go = [...el.querySelectorAll<HTMLButtonElement>('button.go')];
-    expect(go.map((b) => b.getAttribute('aria-label'))).toEqual(['Lancer lint', 'Lancer build']);
-    go[1].click();
+  it('un thème par secteur dans la navigation, un bouton « Lancer » par tâche du thème choisi', async () => {
+    const { el, host, fixture } = await render(aMise({ tasks: [task('front:build'), task('lint')] }), '.nav-item');
+    const nav = [...el.querySelectorAll<HTMLButtonElement>('.nav-item')];
+    expect(nav.map((b) => b.querySelector('.label')!.textContent)).toEqual(['Projet', 'front']);
+    const go = () => [...el.querySelectorAll<HTMLButtonElement>('button.go')];
+    expect(go().map((b) => b.getAttribute('aria-label'))).toEqual(['Lancer lint']);
+    nav[1].click();
+    fixture.detectChanges();
+    expect(go().map((b) => b.getAttribute('aria-label'))).toEqual(['Lancer build']);
+    go()[0].click();
     expect(host.terminal).toHaveBeenCalledWith('run', { task: 'front:build' });
+    localStorage.clear();
   });
 
   it('config non approuvée : sortie de mise dans l’encadré et bouton mise trust, pas d’état vide', async () => {

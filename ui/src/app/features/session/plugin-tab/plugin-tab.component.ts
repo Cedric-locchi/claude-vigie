@@ -24,8 +24,10 @@ import { PluginTabVm } from './plugin-tab.vm';
     }
   `,
   styles: `
-    /* Pas de défilement propre : l'onglet est en mode scroll (gabarit), la barre du lanceur colle au corps au bureau, au document sur téléphone. */
-    :host { display: flex; flex-direction: column; gap: 14px; }
+    /* Mode fill (gabarit) : l'onglet prend la hauteur du corps ; le lanceur la remplit et ses panneaux défilent, un plugin
+       sans hauteur propre (xcode) défile ici. Téléphone : seul le document défile. */
+    :host { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+    @media (max-width: 720px) { :host { overflow: visible; } }
     p { margin: 0; }
     .fail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   `,

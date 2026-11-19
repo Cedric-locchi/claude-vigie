@@ -13,7 +13,7 @@ export interface LauncherTask {
   keywords?: readonly string[];
 }
 
-/** Un thème : un panneau repliable du lanceur. */
+/** Un thème : une rubrique du lanceur (navigation à gauche, ses tâches à droite). */
 export interface TaskTheme {
   id: string;
   label: string;
@@ -25,7 +25,6 @@ export interface LauncherSource {
   themes: Signal<readonly TaskTheme[]>;
   launching: Signal<string | null>;
   storageKey: Signal<string>;
-  collapsedByDefault: Signal<readonly string[]>;
   run: (task: LauncherTask) => void;
 }
 
@@ -39,21 +38,18 @@ export function isSearchShortcut(e: KeyboardEvent): boolean {
   return !el?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
 }
 
-const PREFIX = 'vigie.launcher.';
-// Préférence de ce navigateur : stockage bloqué ou illisible = défauts, écriture ignorée.
-function readSaved(key: string): Record<string, boolean> {
-  try {
-    const v = JSON.parse(globalThis.localStorage?.getItem(PREFIX + key) ?? '{}');
-    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
-  } catch { return {}; }
+const PREFIX = 'vigie.launcher.theme.';
+// Préférence de ce navigateur : stockage bloqué ou illisible = premier thème, écriture ignorée.
+function readSaved(key: string): string | null {
+  try { return globalThis.localStorage?.getItem(PREFIX + key) ?? null; } catch { return null; }
 }
-function writeSaved(key: string, v: Record<string, boolean>): void {
-  try { globalThis.localStorage?.setItem(PREFIX + key, JSON.stringify(v)); } catch { /* stockage bloqué */ }
+function writeSaved(key: string, id: string): void {
+  try { globalThis.localStorage?.setItem(PREFIX + key, id); } catch { /* stockage bloqué */ }
 }
 
 /**
- * Lanceur de tâches (SDK des plugins) : recherche, thèmes repliables mémorisés par clé (plugin + dossier), première tâche
- * visible pour « Entrée », garde-fou d'un lancement à la fois.
+ * Lanceur de tâches (SDK des plugins) : recherche, thème choisi mémorisé par clé (plugin + dossier), première tâche
+ * du thème affiché pour « Entrée », garde-fou d'un lancement à la fois.
  */
 @Injectable()
 export class TaskLauncherVm {
@@ -69,47 +65,35 @@ export class TaskLauncherVm {
   readonly launching = computed(() => this.src()?.launching() ?? null);
   readonly count = computed(() => this.themes().reduce((n, t) => n + t.tasks.length, 0));
 
-  /** État replié choisi par l'utilisateur (id du thème → replié), relu quand la clé change. */
-  private readonly saved = linkedSignal(() => readSaved(this.src()?.storageKey() ?? ''));
-  /** Pendant une recherche, tout ce qui correspond s'ouvre ; replier un thème ne vaut que pour cette recherche. */
-  private readonly searchClosed = linkedSignal<string, ReadonlySet<string>>({ source: this.query, computation: () => new Set() });
+  /** Thème choisi par l'utilisateur, relu quand la clé change. */
+  private readonly selected = linkedSignal(() => readSaved(this.src()?.storageKey() ?? ''));
 
   /** Thèmes filtrés par la recherche (nom, workspace, indication, commande, mots-clés ; un thème qui correspond garde
-   *  toutes ses tâches), avec leur état ouvert. Un thème sans tâche visible disparaît. */
+   *  toutes ses tâches). Un thème sans tâche visible disparaît de la navigation. */
   readonly visible = computed(() => {
     const q = this.query();
     const hit = (s: string | null | undefined) => !!s && s.toLowerCase().includes(q);
-    const saved = this.saved();
-    const byDefault = this.src()?.collapsedByDefault() ?? [];
-    const closed = this.searchClosed();
     return this.themes()
-      .map((th) => ({
-        ...th,
-        tasks: !q || hit(th.label) ? th.tasks : th.tasks.filter((t) => [t.name, t.scope, t.hint, t.command, ...(t.keywords ?? [])].some(hit)),
-        open: q ? !closed.has(th.id) : !(saved[th.id] ?? byDefault.includes(th.id)),
-      }))
+      .map((th) => ({ ...th, tasks: !q || hit(th.label) ? th.tasks : th.tasks.filter((t) => [t.name, t.scope, t.hint, t.command, ...(t.keywords ?? [])].some(hit)) }))
       .filter((th) => th.tasks.length);
   });
 
-  /** Première tâche lançable d'un thème ouvert : « Entrée » dans la recherche la lance. */
-  readonly first = computed(() => {
-    for (const th of this.visible()) {
-      if (!th.open) continue;
-      const t = th.tasks.find((x) => !x.disabledReason);
-      if (t) return { task: t, theme: th.label };
-    }
-    return null;
+  /** Thème affiché : le choisi s'il reste visible (la recherche peut l'écarter), sinon le premier. */
+  readonly current = computed(() => {
+    const v = this.visible();
+    return v.find((th) => th.id === this.selected()) ?? v.at(0) ?? null;
   });
 
-  toggle(id: string): void {
-    if (this.query()) {
-      this.searchClosed.update((s) => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n; });
-      return;
-    }
-    const open = this.visible().find((t) => t.id === id)?.open ?? true;
-    const next = { ...this.saved(), [id]: open };
-    this.saved.set(next);
-    writeSaved(this.src()?.storageKey() ?? '', next);
+  /** Première tâche lançable du thème affiché : « Entrée » dans la recherche la lance. */
+  readonly first = computed(() => {
+    const th = this.current();
+    const t = th?.tasks.find((x) => !x.disabledReason);
+    return th && t ? { task: t, theme: th.label } : null;
+  });
+
+  select(id: string): void {
+    this.selected.set(id);
+    writeSaved(this.src()?.storageKey() ?? '', id);
   }
 
   readonly label = launchLabel;

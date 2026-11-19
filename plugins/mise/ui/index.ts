@@ -30,7 +30,7 @@ import { MISE_MISSING, MiseVm } from './mise.vm';
     </vigie-task-launcher>
   `,
   styles: `
-    :host { display: block; }
+    :host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     .trust { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
     .trust p { flex: 1 1 24ch; min-width: 0; margin: 0; white-space: pre-wrap; }
   `,

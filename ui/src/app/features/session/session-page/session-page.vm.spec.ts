@@ -369,7 +369,7 @@ describe('SessionPageVm', () => {
   it('gabarit : fill pour les vues en colonnes, scroll pour celles qui se lisent d’un trait', () => {
     const { vm } = createVm();
     const modes = (['workspace', 'diff', 'files', 'history', 'config', 'usage', 'plugin:npm'] as const).map((v) => (vm.showView(v), vm.pageMode()));
-    expect(modes).toEqual(['fill', 'fill', 'fill', 'fill', 'fill', 'scroll', 'scroll']);
+    expect(modes).toEqual(['fill', 'fill', 'fill', 'fill', 'fill', 'scroll', 'fill']);
     vm.showView('workspace');
     TestBed.tick(); // remet la dernière vue du module pour les autres tests
 

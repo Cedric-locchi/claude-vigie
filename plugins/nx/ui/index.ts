@@ -22,7 +22,7 @@ import { NxVm } from './nx.vm';
       @if (vm.graph() && !vm.telemetry()) { <p empty class="small faint">Aucune cible dans cet espace Nx.</p> }
     </vigie-task-launcher>
   `,
-  styles: `:host { display: block; }`,
+  styles: `:host { flex: 1; min-height: 0; display: flex; flex-direction: column; }`,
 })
 export default class NxTabComponent {
   protected readonly vm = inject(NxVm);

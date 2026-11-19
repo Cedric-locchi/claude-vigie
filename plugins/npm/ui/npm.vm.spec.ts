@@ -96,12 +96,12 @@ describe('NpmTabComponent', () => {
     TestBed.configureTestingModule({ providers: [{ provide: PluginHost, useValue: host }] });
     const fixture = TestBed.createComponent(NpmTabComponent);
     const el = fixture.nativeElement as HTMLElement;
-    await vi.waitFor(() => { fixture.detectChanges(); expect(el.querySelector('.theme')).not.toBeNull(); });
-    expect(el.querySelector('.bar')!.textContent).toContain('pnpm · pnpm-lock.yaml');
+    await vi.waitFor(() => { fixture.detectChanges(); expect(el.querySelector('.nav-item')).not.toBeNull(); });
+    expect(el.querySelector('.head')!.textContent).toContain('pnpm · pnpm-lock.yaml');
     expect(el.querySelector('h2')!.textContent).toBe('Scripts npm');
     expect(el.querySelector('.notes')!.textContent).toContain('en désaccord avec yarn');
     expect(el.querySelector('.notes')!.textContent).toContain('Liste incomplète');
-    expect([...el.querySelectorAll('.toggle .label')].map((h) => h.textContent)).toEqual(['Développement', 'Build', 'Tests']);
-    expect([...el.querySelectorAll('button.go')].map((b) => b.getAttribute('aria-label'))).toEqual(['Lancer start dans @app/api', 'Lancer build', 'Lancer test']);
+    expect([...el.querySelectorAll('.nav-item .label')].map((h) => h.textContent)).toEqual(['Développement', 'Build', 'Tests']);
+    expect([...el.querySelectorAll('button.go')].map((b) => b.getAttribute('aria-label'))).toEqual(['Lancer start dans @app/api']);
   });
 });
