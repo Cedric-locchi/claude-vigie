@@ -85,7 +85,7 @@ import { XCODE_ACTIONS, XcodeVm } from './xcode.vm';
     </section>
   `,
   styles: `
-    /* Pas de défilement propre : le corps de la page défile (gabarit, mode scroll). */
+    /* Pas de défilement propre : l'onglet hôte défile. */
     :host { display: flex; flex-direction: column; gap: 14px; }
     .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
     h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }

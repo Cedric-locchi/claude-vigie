@@ -16,63 +16,61 @@ function setup(over: { key?: string; launching?: string | null } = {}) {
   const run = vi.fn();
   const launching = signal<string | null>(over.launching ?? null);
   const key = signal(over.key ?? 'npm:/dev/app');
-  vm.connect({ themes: signal(THEMES), launching, storageKey: key, collapsedByDefault: signal(['lifecycle']), run });
+  vm.connect({ themes: signal(THEMES), launching, storageKey: key, run });
   return { vm, run, launching, key };
 }
-const state = (vm: TaskLauncherVm) => vm.visible().map((th) => [th.id, th.open, th.tasks.map((x) => x.id)]);
+const state = (vm: TaskLauncherVm) => [vm.current()?.id, vm.visible().map((th) => [th.id, th.tasks.map((x) => x.id)])];
 
 afterEach(() => localStorage.clear());
 
 describe('TaskLauncherVm', () => {
-  it('tout déplié sauf les thèmes repliés par défaut ; replier est mémorisé par clé (plugin + dossier)', () => {
+  it('premier thème par défaut ; le thème choisi est mémorisé par clé (plugin + dossier)', () => {
     let { vm } = setup();
-    expect(state(vm).map(([id, open]) => [id, open])).toEqual([['dev', true], ['lifecycle', false], ['other', true]]);
-    vm.toggle('dev');
-    vm.toggle('lifecycle');
-    expect(state(vm).map(([, open]) => open)).toEqual([false, true, true]);
+    expect(vm.current()?.id).toBe('dev');
+    vm.select('other');
+    expect(vm.current()?.id).toBe('other');
     TestBed.resetTestingModule();
     ({ vm } = setup());
-    expect(state(vm).map(([, open]) => open)).toEqual([false, true, true]);
+    expect(vm.current()?.id).toBe('other');
     TestBed.resetTestingModule();
     ({ vm } = setup({ key: 'npm:/autre' }));
-    expect(state(vm).map(([, open]) => open)).toEqual([true, false, true]);
+    expect(vm.current()?.id).toBe('dev');
   });
 
-  it('stockage illisible ou bloqué : défauts, sans erreur', () => {
-    localStorage.setItem('vigie.launcher.npm:/dev/app', '{oups');
+  it('stockage bloqué ou thème disparu : premier thème, sans erreur', () => {
+    localStorage.setItem('vigie.launcher.theme.npm:/dev/app', 'parti');
     const { vm } = setup();
-    expect(state(vm).map(([, open]) => open)).toEqual([true, false, true]);
+    expect(vm.current()?.id).toBe('dev');
     const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
-    expect(() => vm.toggle('dev')).not.toThrow();
-    expect(state(vm)[0][1]).toBe(false);
+    expect(() => vm.select('lifecycle')).not.toThrow();
+    expect(vm.current()?.id).toBe('lifecycle');
     set.mockRestore();
   });
 
-  it('recherche : nom, workspace, indication, commande, mots-clés, thème ; les thèmes correspondants s’ouvrent', () => {
+  it('recherche : nom, workspace, indication, commande, mots-clés, thème ; le thème choisi reste s’il a des résultats', () => {
     const { vm } = setup();
-    vm.toggle('dev');
+    vm.select('other');
     vm.search.set('HUSKY');
-    expect(state(vm)).toEqual([['lifecycle', true, ['prepare']]]);
+    expect(state(vm)).toEqual(['lifecycle', [['lifecycle', ['prepare']]]]);
     vm.search.set('api');
-    expect(state(vm)).toEqual([['dev', true, ['start']]]);
+    expect(state(vm)).toEqual(['dev', [['dev', ['start']]]]);
     vm.search.set('rimraf');
-    expect(state(vm)).toEqual([['other', true, ['clean']]]);
+    expect(state(vm)).toEqual(['other', [['other', ['clean']]]]);
     vm.search.set('cycle');
-    expect(state(vm)).toEqual([['lifecycle', true, ['prepare']]]);
-    // Replier pendant la recherche ne vaut que pour elle.
-    vm.toggle('lifecycle');
-    expect(state(vm)).toEqual([['lifecycle', false, ['prepare']]]);
+    expect(state(vm)).toEqual(['lifecycle', [['lifecycle', ['prepare']]]]);
+    vm.search.set('zzz');
+    expect(state(vm)).toEqual([undefined, []]);
     vm.search.set('');
-    expect(state(vm).map(([, open]) => open)).toEqual([false, false, true]);
+    expect(vm.current()?.id).toBe('other');
   });
 
-  it('« Entrée » lance la première tâche lançable d’un thème ouvert', () => {
+  it('« Entrée » lance la première tâche lançable du thème affiché', () => {
     const { vm, run } = setup();
     vm.search.set('lint');
-    expect(vm.first()).toBeNull();
+    expect(vm.first()).toBeNull(); // lint:fix non lançable
     vm.search.set('');
-    vm.toggle('dev');
-    expect(vm.first()?.task.id).toBe('clean'); // dev replié, lifecycle replié, lint:fix non lançable
+    vm.select('other');
+    expect(vm.first()?.task.id).toBe('clean');
     vm.runFirst();
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ id: 'clean' }));
   });

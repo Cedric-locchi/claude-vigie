@@ -14,7 +14,7 @@ const THEMES: TaskTheme[] = [
   imports: [TaskLauncherComponent],
   template: `
     <vigie-task-launcher heading="Scripts npm" source="npm · package-lock.json" [themes]="themes()" [launching]="launching()" storageKey="spec"
-                         [collapsedByDefault]="['lifecycle']" (run)="runs.push($event)" (refresh)="refreshes = refreshes + 1">
+                         (run)="runs.push($event)" (refresh)="refreshes = refreshes + 1">
       <p note>Attention</p>
       <p empty>Rien ici</p>
     </vigie-task-launcher>
@@ -31,45 +31,54 @@ function render() {
   const fixture = TestBed.createComponent(Host);
   fixture.detectChanges();
   const el = fixture.nativeElement as HTMLElement;
-  const toggles = () => [...el.querySelectorAll<HTMLButtonElement>('.toggle')];
+  const nav = () => [...el.querySelectorAll<HTMLButtonElement>('.nav-item')];
   const go = () => [...el.querySelectorAll<HTMLButtonElement>('button.go')];
   const search = () => el.querySelector<HTMLInputElement>('input[type="search"]')!;
-  return { fixture, el, host: fixture.componentInstance, toggles, go, search };
+  return { fixture, el, host: fixture.componentInstance, nav, go, search };
 }
 
 afterEach(() => localStorage.clear());
 
 describe('TaskLauncherComponent', () => {
-  it('h2, provenance, encadré des avertissements, panneaux avec aria-expanded / aria-controls', () => {
-    const { el, toggles } = render();
+  it('h2, provenance, encadré des avertissements, un thème par entrée de navigation, le premier affiché', () => {
+    const { el, nav } = render();
     expect(el.querySelector('h2')!.textContent).toBe('Scripts npm');
-    expect(el.querySelector('.bar')!.textContent).toContain('npm · package-lock.json');
+    expect(el.querySelector('.head')!.textContent).toContain('npm · package-lock.json');
     expect(el.querySelector('.notes')!.textContent).toBe('Attention');
     expect(el.textContent).not.toContain('Rien ici');
-    expect(toggles().map((b) => [b.querySelector('.label')!.textContent, b.getAttribute('aria-expanded')])).toEqual([['Développement', 'true'], ['Cycle de vie', 'false'], ['Autres', 'true']]);
-    const list = el.querySelector<HTMLElement>('#' + toggles()[1].getAttribute('aria-controls'))!;
-    expect(list.hidden).toBe(true);
+    expect(nav().map((b) => [b.querySelector('.label')!.textContent, b.getAttribute('aria-current')])).toEqual([['Développement', 'page'], ['Cycle de vie', null], ['Autres', null]]);
+    expect(el.querySelector('h3')!.textContent).toBe('Développement');
   });
 
-  it('replier / déplier au clic, mémorisé pour la même clé', () => {
+  it('choisir un thème l’affiche, mémorisé pour la même clé', () => {
     let r = render();
-    r.toggles()[0].click();
+    r.nav()[2].click();
     r.fixture.detectChanges();
-    expect(r.toggles()[0].getAttribute('aria-expanded')).toBe('false');
+    expect([r.nav()[2].getAttribute('aria-current'), r.el.querySelector('h3')!.textContent]).toEqual(['page', 'Autres']);
     r.fixture.destroy();
     r = render();
-    expect(r.toggles()[0].getAttribute('aria-expanded')).toBe('false');
+    expect(r.el.querySelector('h3')!.textContent).toBe('Autres');
   });
 
   it('un bouton « Lancer » par tâche, libellé avec le workspace ; non lançable = aria-disabled + raison', () => {
-    const { go, host, el } = render();
-    expect(go().map((b) => b.getAttribute('aria-label'))).toEqual(['Lancer dev', 'Lancer start dans @app/api', 'Lancer prepare', 'Lancer lint:fix']);
-    const off = go()[3];
-    expect([off.disabled, off.getAttribute('aria-disabled')]).toEqual([false, 'true']);
+    const { go, host, el, nav, fixture } = render();
+    expect(go().map((b) => b.getAttribute('aria-label'))).toEqual(['Lancer dev', 'Lancer start dans @app/api']);
+    go()[1].click();
+    nav()[2].click();
+    fixture.detectChanges();
+    const off = go()[0];
+    expect([off.getAttribute('aria-label'), off.disabled, off.getAttribute('aria-disabled')]).toEqual(['Lancer lint:fix', false, 'true']);
     expect(el.querySelector('#' + off.getAttribute('aria-describedby'))!.textContent).toBe('Non lançable');
     off.click();
-    go()[1].click();
+    off.closest('li')!.click();
     expect(host.runs.map((t) => t.id)).toEqual(['w/start']);
+  });
+
+  it('un clic n’importe où sur la ligne lance la tâche, une seule fois', () => {
+    const { el, go, host } = render();
+    el.querySelector<HTMLElement>('li .cmd')!.click();
+    go()[1].click();
+    expect(host.runs.map((t) => t.id)).toEqual(['dev', 'w/start']);
   });
 
   it('pendant un lancement : boutons aria-disabled mais jamais disabled, ligne lancée marquée, clic ignoré', () => {
@@ -82,15 +91,19 @@ describe('TaskLauncherComponent', () => {
     expect(host.runs).toEqual([]);
   });
 
-  it('recherche : ouvre les thèmes correspondants, indice Entrée, « Entrée » lance la première tâche visible', () => {
-    const { fixture, search, toggles, host, el } = render();
+  it('recherche : la navigation ne garde que les thèmes correspondants, indice Entrée, « Entrée » lance la première tâche', () => {
+    const { fixture, search, nav, host, el } = render();
     search().value = 'husky';
     search().dispatchEvent(new Event('input'));
     fixture.detectChanges();
-    expect(toggles().map((b) => b.getAttribute('aria-expanded'))).toEqual(['true']);
+    expect(nav().map((b) => b.querySelector('.label')!.textContent)).toEqual(['Cycle de vie']);
     expect(el.querySelector('.enter')!.textContent).toContain('lance prepare');
     search().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     expect(host.runs.map((t) => t.id)).toEqual(['prepare']);
+    search().value = 'zzz';
+    search().dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(el.querySelector('.pane')!.textContent).toContain('Aucune tâche ne contient « zzz »');
   });
 
   it('« / » met le focus dans la recherche, sauf depuis un champ', () => {
@@ -115,9 +128,9 @@ describe('TaskLauncherComponent', () => {
     expect(host.refreshes).toBe(1);
   });
 
-  it('pas de défilement propre : c’est l’onglet qui défile', () => {
+  it('deux panneaux qui défilent chacun : navigation et contenu', () => {
     const { el } = render();
-    const scrollers = [...el.querySelectorAll('*')].filter((n) => /auto|scroll/.test(getComputedStyle(n).overflowY));
-    expect(scrollers).toEqual([]);
+    const scrollers = [...el.querySelectorAll('*')].filter((n) => /auto|scroll/.test(getComputedStyle(n).overflowY)).map((n) => n.className);
+    expect(scrollers).toEqual(['nav', 'pane']);
   });
 });

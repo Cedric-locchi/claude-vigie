@@ -109,11 +109,11 @@ export class SessionPageVm {
   readonly view = linkedSignal<boolean, SessionView>({ source: this.isChat, computation: (chat, prev) => (chat ? 'workspace' : prev && !prev.source ? prev.value : lastView) });
   /**
    * Règle de défilement du gabarit (shell/page) : `fill` pour les vues en colonnes qui défilent chacune (terminal et agents, Diff,
-   * Fichiers, Historique, Config) ; `scroll` pour celles qui se lisent d'un trait (Consommation, plugins, agents d'une session externe).
+   * Fichiers, Historique, Config, plugins) ; `scroll` pour celles qui se lisent d'un trait (Consommation, agents d'une session externe).
    */
   readonly pageMode = computed<PageMode>(() => {
     const view = this.view();
-    if (view === 'usage' || view.startsWith('plugin:')) return 'scroll';
+    if (view === 'usage') return 'scroll';
     return view === 'workspace' && this.isExternal() ? 'scroll' : 'fill';
   });
   private readonly rememberView = effect(() => {

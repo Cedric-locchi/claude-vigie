@@ -132,13 +132,19 @@ describe('NxTabComponent', () => {
     const fixture = TestBed.createComponent(NxTabComponent);
     const el = fixture.nativeElement as HTMLElement;
     await vi.waitFor(() => { fixture.detectChanges(); expect(el.querySelector(ready)).not.toBeNull(); });
-    return el;
+    // Les boutons « Lancer » de tous les thèmes, en passant de l'un à l'autre dans la navigation.
+    const allGo = () => [...el.querySelectorAll<HTMLButtonElement>('.nav-item')].flatMap((b) => {
+      b.click();
+      fixture.detectChanges();
+      return [...el.querySelectorAll<HTMLButtonElement>('button.go')];
+    });
+    return Object.assign(el, { allGo });
   }
 
   it('graphe tronqué : « Liste incomplète » dans l’encadré neutre, cibles lues affichées', async () => {
-    const el = await render({ graph: aGraph({ truncated: true }) }, '.theme');
+    const el = await render({ graph: aGraph({ truncated: true }) }, '.nav-item');
     expect(el.querySelector('.notes')?.textContent).toContain('Liste incomplète');
-    expect(el.querySelectorAll('.theme')).toHaveLength(4);
+    expect(el.querySelectorAll('.nav-item')).toHaveLength(4);
   });
 
   it('télémétrie : explication, pas d’erreur ni d’état vide', async () => {
@@ -149,8 +155,9 @@ describe('NxTabComponent', () => {
   });
 
   it('cible non lançable : bouton aria-disabled avec sa raison, jamais disabled', async () => {
-    const el = await render({}, '.theme');
-    const go = [...el.querySelectorAll<HTMLButtonElement>('button.go')];
+    const el = await render({}, '.nav-item');
+    const go = el.allGo();
+    localStorage.clear();
     expect(go.map((b) => b.getAttribute('aria-label'))).toEqual(['Lancer api:serve', 'Lancer api:build', 'Lancer ui-kit:test', 'Lancer ui-kit:lint:fix']);
     expect(go.map((b) => b.getAttribute('aria-disabled'))).toEqual([null, null, null, 'true']);
     expect(go.some((b) => b.disabled)).toBe(false);
