@@ -21,7 +21,7 @@ export const buttonVariants = cva(
           'bg-destructive/10 hover:bg-destructive/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/20 text-destructive focus-visible:border-destructive/40 dark:hover:bg-destructive/30',
         link: 'text-primary underline-offset-4 hover:underline',
         /** Vigie : action sur une session qui attend (autoriser, répondre). */
-        wait: 'bg-wait text-[var(--on-wait)] font-semibold hover:bg-[var(--wait-hover)]',
+        wait: 'bg-[var(--wait-fill)] text-[var(--on-wait)] font-semibold hover:bg-[var(--wait-hover)]',
       },
       size: {
         default:

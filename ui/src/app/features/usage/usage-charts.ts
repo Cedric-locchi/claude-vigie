@@ -108,7 +108,7 @@ export function sessionsChart(data: SessionPoint[], o: { metric: Metric; open: (
     y: { label: null, domain: [0, 1], grid: true, tickFormat: (v: number) => f.pct(v), ticks: 5 },
     marks: [
       Plot.ruleY([0.5], { stroke: 'var(--line-strong)', strokeDasharray: '4 3' }),
-      Plot.dot(data.filter((d) => !d.lowCache), { x, y: 'cacheRate', r: 4, fill: 'var(--brand)', stroke: 'var(--surface)' }),
+      Plot.dot(data.filter((d) => !d.lowCache), { x, y: 'cacheRate', r: 4, fill: 'var(--data)', stroke: 'var(--surface)' }),
       Plot.dot(data.filter((d) => d.lowCache), { x, y: 'cacheRate', r: 5, symbol: 'triangle', stroke: 'var(--text)', strokeWidth: 1.5, fill: 'none' }),
       Plot.tip(data, Plot.pointer({
         x, y: 'cacheRate', ...tip,

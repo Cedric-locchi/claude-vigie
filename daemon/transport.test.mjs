@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { createStore } from './store.mjs';
 import { createTransport } from './transport.mjs';
+import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
 
 const PORT = 4317;
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
@@ -17,8 +17,8 @@ const HOST = `127.0.0.1:${PORT}`;
 
 const LOCALES = 'C\nPOSIX\nen_US.UTF-8\nfr_FR.UTF-8\n'; // `locale -a` simulé : les tests ne dépendent pas de la machine
 
-function fixture({ miseBin, claudeStatus, xcodeBins } = {}) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-transport-'));
+function fixture({ claudeStatus, pluginsDir, settingsFile } = {}) {
+  const tmp = tempDir('vigie-transport-');
   const home = path.join(tmp, 'home');
   const chatDir = path.join(home, '.vigie', 'chat');
   const proj = path.join(home, 'proj');
@@ -36,20 +36,23 @@ function fixture({ miseBin, claudeStatus, xcodeBins } = {}) {
   fs.writeFileSync(path.join(dir, 'W.jsonl'), rec('W', path.join(proj, '.claude', 'worktrees', 'x')));
   const store = createStore({ projectsDir: path.join(tmp, 'projects'), hiddenFile: path.join(tmp, 'hidden.json'), chatDir, limitsDir: path.join(tmp, 'limits') });
   store.scan();
-  const { server } = createTransport({ store, port: PORT, uiDir, home, chatDir, hooksFile: path.join(tmp, 'hooks.json'), miseBin, claudeStatus, xcodeBins, xcodeDir: path.join(tmp, 'xcode'), listLocales: async () => LOCALES });
+  const { server } = createTransport({ store, port: PORT, uiDir, home, chatDir, hooksFile: path.join(tmp, 'hooks.json'), claudeStatus, pluginsDir, pluginsDataDir: path.join(tmp, 'plugins-data'), settingsFile, listLocales: async () => LOCALES });
   return { server, dir, store, proj, tmp };
 }
 
 /** Envoie une requête simulée ; résout { status, body } quand la réponse est terminée. */
-function request(server, method, url, { headers = {}, body } = {}) {
+/** `abortAfter` (ms) : la connexion se ferme avant la réponse (`close` sans `writableFinished`), comme un onglet fermé. */
+function request(server, method, url, { headers = {}, body, abortAfter } = {}) {
   const req = Object.assign(Readable.from(body ? [body] : []), { method, url, headers: { host: HOST, ...headers } });
   return new Promise((resolve) => {
+    const closers = [];
     const res = {
-      statusCode: 0, headersSent: false,
+      statusCode: 0, headersSent: false, writableFinished: false,
       writeHead(code) { this.statusCode = code; this.headersSent = true; },
-      end(data = '') { resolve({ status: this.statusCode, body: String(data) }); },
-      on() { return this; }, // res.on('close') : la recherche s'annule à la fermeture
+      end(data = '') { this.writableFinished = true; resolve({ status: this.statusCode, body: String(data) }); },
+      on(ev, fn) { if (ev === 'close') closers.push(fn); return this; }, // res.on('close') : recherche et méthodes de plugin s'annulent
     };
+    if (abortAfter !== undefined) setTimeout(() => { for (const fn of closers) fn(); }, abortAfter);
     server.emit('request', req, res);
   });
 }
@@ -242,7 +245,7 @@ test('réglages : locale choisie, conforme au contrat, refusée si invalide', as
 });
 
 test('réglages : persistés dans settingsFile, fichier corrompu ou hors contrat ignoré', async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-settings-'));
+  const tmp = tempDir('vigie-settings-');
   const store = createStore({ projectsDir: path.join(tmp, 'projects'), hiddenFile: path.join(tmp, 'hidden.json') });
   const settingsFile = path.join(tmp, 'settings.json');
   const make = () => createTransport({ store, port: PORT, uiDir: tmp, home: tmp, chatDir: tmp, hooksFile: path.join(tmp, 'hooks.json'), settingsFile, listLocales: async () => LOCALES }).server;
@@ -253,11 +256,20 @@ test('réglages : persistés dans settingsFile, fichier corrompu ou hors contrat
   for (const bad of ['{', '{"locale":42}', '{"locale":"a b"}']) {
     fs.writeFileSync(settingsFile, bad);
     assert.equal(await locale(make()), null, bad);
+  }  // Régression : `plugins` hors contrat ne fait plus rejeter tout le fichier ; seules ses entrées booléennes restent,
+  // et le prochain POST ne perd ni la locale ni les plugins valides.
+  for (const plugins of [{ mise: 'oui', xcode: true }, 'oui', ['mise'], null]) {
+    fs.writeFileSync(settingsFile, JSON.stringify({ locale: 'fr_FR.UTF-8', plugins }));
+    const server = make();
+    assert.equal(await locale(server), 'fr_FR.UTF-8', JSON.stringify(plugins));
+    assert.equal((await request(server, 'POST', '/api/settings', { headers: { 'content-type': 'application/json' }, body: '{"alerts":{"dailyCost":5,"windowPct":null}}' })).status, 200);
+    const saved = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+    assert.deepEqual([saved.locale, saved.plugins], ['fr_FR.UTF-8', plugins?.xcode ? { xcode: true } : {}], JSON.stringify(plugins));
   }
 });
 
 test('POST /api/hook : événement ajouté au spool (champs filtrés), charset toléré, hors contrat refusé', async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-hook-'));
+  const tmp = tempDir('vigie-hook-');
   const spoolFile = path.join(tmp, 'spool.jsonl');
   const store = createStore({ projectsDir: path.join(tmp, 'projects'), hiddenFile: path.join(tmp, 'hidden.json') });
   const { server } = createTransport({ store, port: PORT, uiDir: tmp, home: tmp, chatDir: tmp, hooksFile: path.join(tmp, 'hooks.json'), spoolFile, listLocales: async () => LOCALES });
@@ -340,44 +352,15 @@ test('recherche dans l’explorateur : conforme, origine, session inconnue, q in
   assert.deepEqual([one.status, JSON.parse(one.body)], [400, { error: 'Au moins 2 caractères' }]);
 });
 
-test('/mise : origine étrangère 403, session inconnue 404, réponse conforme ; env sans MISE_YES, hors ligne', async () => {
-  const { MiseTasks } = await import('../contract/index.mjs');
-  const bin = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-fake-mise-')), 'mise');
-  // Faux mise : une tâche dont la description rapporte l'environnement reçu.
-  fs.writeFileSync(bin, `#!/usr/bin/env node
-process.stdout.write(JSON.stringify([{ name: 'test', aliases: ['t'], description: JSON.stringify([process.env.MISE_YES ?? null, process.env.MISE_OFFLINE, process.env.MISE_HIDE_UPDATE_WARNING]), source: process.cwd() + '/mise.toml', env: ['SECRET=x'] }]));
-`);
-  fs.chmodSync(bin, 0o755);
-  process.env.MISE_YES = '1';
-  let server;
-  try { ({ server } = fixture({ miseBin: bin })); } finally { delete process.env.MISE_YES; }
-  assert.equal((await request(server, 'GET', '/api/sessions/S/mise', { headers: { origin: 'http://evil.com' } })).status, 403);
-  assert.equal((await request(server, 'GET', '/api/sessions/inconnue/mise')).status, 404);
-  const r = await request(server, 'GET', '/api/sessions/S/mise');
-  assert.equal(r.status, 200);
-  const j = JSON.parse(r.body);
-  assert.deepStrictEqual(MiseTasks.parse(j), j);
-  assert.deepEqual(JSON.parse(j.tasks[0].description), [null, '1', '1']);
-  assert.equal(j.tasks[0].source, 'mise.toml');
-  assert.equal('env' in j.tasks[0], false);
-
-  const absent = JSON.parse((await request(fixture({ miseBin: path.join(path.dirname(bin), 'absent') }).server, 'GET', '/api/sessions/S/mise')).body);
-  assert.deepEqual(absent, { available: false, untrusted: false, tasks: [], error: null });
-
-  // Lancement : nom absent de la liste, ou tâche et trust ensemble, refusés avant tout PTY.
-  const send = (body) => request(server, 'POST', '/api/sessions/S/terminals', { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  for (const [body, error] of [
-    [{ miseTask: 'inconnue' }, 'Tâche mise inconnue'],
-    [{ miseTask: "test'; rm -rf ~" }, 'Tâche mise inconnue'],
-    [{ miseTask: 'test', miseTrust: true }, 'Une seule action à la fois'],
-    [{ miseTask: 42 }, 'La tâche mise doit être un texte'],
-    [{ miseTrust: 'oui' }, 'miseTrust doit être un booléen'],
-    [null, 'Corps de requête invalide'],
-  ]) {
-    const res = await send(body);
-    assert.deepEqual([res.status, JSON.parse(res.body)], [400, { error }], JSON.stringify(body));
+test('POST …/terminals : seul le corps vide passe ; champs d’avant les plugins (miseTask…) refusés avant tout PTY', async () => {
+  const { server } = fixture();
+  const send = (body, headers = {}) => request(server, 'POST', '/api/sessions/S/terminals', { headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  for (const body of [{ miseTask: 'x' }, { miseTrust: true }, { script: 'hello.sh' }, null]) {
+    const r = await send(body);
+    assert.deepEqual([r.status, JSON.parse(r.body)], [400, { error: 'Corps de requête invalide' }], JSON.stringify(body));
   }
-  assert.equal((await request(server, 'POST', '/api/sessions/S/terminals', { headers: { 'content-type': 'application/json', origin: 'http://evil.com' }, body: '{"miseTrust":true}' })).status, 403);
+  assert.equal((await send({}, { origin: 'http://evil.com' })).status, 403);
+  assert.equal((await request(server, 'POST', '/api/sessions/inconnue/terminals', { headers: { 'content-type': 'application/json' }, body: '{}' })).status, 404);
 });
 
 test('/api/usage?days= : borné à 1..400, conforme ; /cost : conforme, 404 si inconnue', async () => {
@@ -427,83 +410,152 @@ test('réglages : seuils d’alerte enregistrés sans toucher la locale (et inve
   assert.deepEqual((await send({ alerts: { dailyCost: null, windowPct: null } })).j.alerts, { dailyCost: null, windowPct: null });
 });
 
-test('/xcode : 403, 404, conforme ; targets sans conteneur ou sans Xcode → indisponible', async () => {
-  const C = await import('../contract/index.mjs');
-  const absent = path.join(os.tmpdir(), 'vigie-pas-de-xcode');
-  const { server, proj } = fixture({ xcodeBins: { xcodebuild: absent, xcrun: absent, xed: absent } });
-  const get = async (url, headers) => { const r = await request(server, 'GET', url, { headers }); return { status: r.status, j: JSON.parse(r.body) }; };
-  for (const url of ['/api/sessions/S/xcode', '/api/sessions/S/xcode/targets']) {
-    assert.equal((await get(url, { origin: 'http://evil.com' })).status, 403, url);
-    assert.equal((await get(url.replace('/S/', '/inconnue/'))).status, 404, url);
+// ── Plugins (décisions 034, 037) ───────────────────────────────────────────
+/** Dossier de plugins temporaire avec un plugin de démo (rien dans le dépôt). */
+function demoPlugins() {
+  const root = tempDir('vigie-transport-plugins-');
+  fs.mkdirSync(path.join(root, 'demo'));
+  fs.writeFileSync(path.join(root, 'demo', 'package.json'), JSON.stringify({ name: 'demo', type: 'module', vigie: { api: 2, id: 'demo', name: 'Démo', description: 'Plugin de test' } }));
+  fs.writeFileSync(path.join(root, 'demo', 'index.mjs'), `export default (v) => v.definePlugin({ id: 'demo', session: {
+  detect: () => ({ badge: 1 }),
+  methods: {
+    double: { params: v.z.object({ n: v.z.number({ error: 'n doit être un nombre' }) }), result: v.z.object({ n: v.z.number() }), handler: ({ params }) => ({ n: params.n * 2 }) },
+    rien: { handler: () => undefined },
+    refuse: { handler: () => { throw v.error('Refusé par le plugin'); } },
+    attend: { handler: async ({ cwd, signal }) => ({ error: (await v.exec([process.execPath, '-e', 'setTimeout(() => {}, 10000)'], { cwd, signal })).error, aborted: signal.aborted }) },
+  },
+  actions: {
+    show: { params: v.z.object({ n: v.z.number({ error: 'n doit être un nombre' }) }), handler: ({ params }) => v.terminal(['echo', String(params.n)]) },
+    term: { handler: () => v.terminal(['echo', 'ok'], { title: 'Démo' }) },
+    refus: { handler: () => { throw v.error('Refusé par le plugin'); } },
+  },
+} });`);
+  return root;
+}
+
+test('plugins : origine étrangère 403 sur les 5 routes (GET compris), 415, 413, entrées refusées, 404', async () => {
+  const { server } = fixture({ pluginsDir: demoPlugins() });
+  const evil = { origin: 'http://evil.com' };
+  for (const url of ['/api/plugins', '/api/sessions/S/plugins']) {
+    assert.equal((await request(server, 'GET', url, { headers: evil })).status, 403, url);
   }
-  assert.deepEqual((await get('/api/sessions/S/xcode')).j, { container: null, scripts: [] });
-  const none = (await get('/api/sessions/S/xcode/targets')).j;
-  assert.deepEqual(none, { available: false, schemes: [], simulators: [], error: 'Pas un projet Xcode' });
-  assert.deepStrictEqual(C.XcodeTargets.parse(none), none);
-
-  fs.mkdirSync(path.join(proj, 'App.xcworkspace'));
-  fs.mkdirSync(path.join(proj, 'scripts'));
-  fs.writeFileSync(path.join(proj, 'scripts', 'seed.sh'), 'echo ok\n');
-  const p = await get('/api/sessions/S/xcode');
-  assert.deepEqual(p.j, { container: { kind: 'workspace', name: 'App.xcworkspace' }, scripts: ['seed.sh'] });
-  assert.deepStrictEqual(C.XcodeProject.parse(p.j), p.j);
-  const t = (await get('/api/sessions/S/xcode/targets')).j;
-  assert.deepEqual(t, { available: false, schemes: [], simulators: [], error: null });
-  assert.deepStrictEqual(C.XcodeTargets.parse(t), t);
+  const posts = ['/api/plugins/demo', '/api/sessions/S/plugins/demo/actions/term', '/api/sessions/S/plugins/demo/call/double'];
+  for (const url of posts) {
+    assert.equal((await post(server, url, evil)).status, 403, url);
+    assert.equal((await post(server, url, { 'content-type': 'text/plain' })).status, 415, url);
+  }
+  const send = (url, body) => request(server, 'POST', url, { headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+  const error = async (r) => { const x = await r; return [x.status, JSON.parse(x.body).error]; };
+  assert.equal((await send('/api/sessions/S/plugins/demo/call/double', { params: { s: 'x'.repeat(1e6) } })).status, 413);
+  assert.deepEqual((await error(send('/api/sessions/S/plugins/demo/call/double', '{"params":')))[0], 400);
+  assert.deepEqual(await error(send('/api/plugins/demo', { enabled: 'oui' })), [400, 'enabled doit être un booléen']);
+  assert.deepEqual(await error(send('/api/plugins/demo', null)), [400, 'Corps de requête invalide']);
+  assert.deepEqual(await error(send('/api/plugins/inconnu', { enabled: true })), [404, 'Plugin inconnu']);
+  // Désactivé par défaut : ni méthode ni action.
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/call/double', { params: { n: 1 } })), [404, 'Plugin désactivé ou indisponible']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/actions/term', {})), [404, 'Plugin désactivé ou indisponible']);
+  await send('/api/plugins/demo', { enabled: true });
+  // La route de vue d'avant la 037 n'existe plus.
+  assert.equal((await request(server, 'GET', '/api/sessions/S/plugins/demo')).status, 404);
+  // call
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/call/double', null)), [400, 'Corps de requête invalide']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/call/double', { params: { n: 'x' } })), [400, 'n doit être un nombre']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/call/refuse', {})), [400, 'Refusé par le plugin']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/call/absente', {})), [404, 'Méthode inconnue']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/call/term', {})), [404, 'Méthode inconnue']); // une action n'est pas une méthode
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/inconnu/call/double', {})), [404, 'Plugin désactivé ou indisponible']);
+  assert.equal((await send('/api/sessions/S/plugins/demo/call/a.b', {})).status, 404);
+  assert.equal((await send('/api/sessions/inconnue/plugins/demo/call/double', {})).status, 404);
+  // actions
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/actions/show', { params: 'x' })), [400, 'Paramètres invalides']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/actions/show', { params: { 'a b': 1 } })), [400, 'Paramètres invalides']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/actions/show', { params: { n: {} } })), [400, 'Paramètre invalide']);
+  // `values` (vue déclarative, avant la 037) : refusé, plus de champ silencieusement ignoré.
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/actions/show', { params: { n: 1 }, values: { s: 'a' } })), [400, 'Corps de requête invalide']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/actions/show', { params: { n: 'x' } })), [400, 'n doit être un nombre']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/actions/refus', {})), [400, 'Refusé par le plugin']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/actions/absente', {})), [404, 'Action inconnue']);
+  assert.deepEqual(await error(send('/api/sessions/S/plugins/demo/actions/double', {})), [404, 'Action inconnue']);
+  assert.equal((await request(server, 'GET', '/api/sessions/inconnue/plugins')).status, 404);
+  assert.equal((await send('/api/sessions/inconnue/plugins/demo/actions/show', {})).status, 404);
 });
 
-test('POST …/terminals xcode et script : refus avant tout PTY', async () => {
-  const { server, proj } = fixture();
-  const U = '0A1B2C3D-0000-1111-2222-333344445555';
-  const send = (body, headers = {}) => request(server, 'POST', '/api/sessions/S/terminals', { headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
-  const refuse = async (body, error) => {
-    const r = await send(body);
-    assert.deepEqual([r.status, JSON.parse(r.body)], [400, { error }], JSON.stringify(body));
-  };
-  // Dossier non iOS : un corps valide est refusé (jamais de 201 xcode dans les tests : il lancerait le vrai xcodebuild).
-  await refuse({ xcode: { action: 'build', scheme: 'App', udid: U } }, 'Pas un projet Xcode');
-  fs.mkdirSync(path.join(proj, 'App.xcodeproj'));
-  fs.mkdirSync(path.join(proj, 'scripts'));
-  fs.writeFileSync(path.join(proj, 'scripts', 'hello.sh'), 'echo bonjour\n');
-  await refuse({ xcode: { action: 'build', scheme: 'App', udid: 'pas-un-udid' } }, 'Simulateur invalide');
-  await refuse({ xcode: { action: 'build', scheme: '-x', udid: U } }, 'Scheme invalide');
-  // fish : `\'` sort des guillemets simples de shQuote.
-  await refuse({ xcode: { action: 'build', scheme: "a\\'b", udid: U } }, 'Scheme invalide');
-  await refuse({ xcode: { action: 'build', scheme: "a'b", udid: U } }, 'Scheme invalide');
-  await refuse({ xcode: { action: 'build', scheme: 'App' } }, 'Choisis un simulateur');
-  await refuse({ xcode: { action: 'run', scheme: 'App', udid: U }, script: 'hello.sh' }, 'Une seule action à la fois');
-  await refuse({ miseTrust: true, script: 'hello.sh' }, 'Une seule action à la fois');
-  await refuse({ script: '../x.sh' }, 'Script invalide');
-  await refuse({ script: 'absent.sh' }, 'Script inconnu');
-  assert.equal((await send({ script: 'hello.sh' }, { origin: 'http://evil.com' })).status, 403);
+test('POST …/plugins/:pid/call : requête abandonnée → signal du handler annulé, outil tué ; réponse finie → rien d’annulé', async () => {
+  const { server } = fixture({ pluginsDir: demoPlugins() });
+  const send = (url, body, opts = {}) => request(server, 'POST', url, { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), ...opts });
+  await send('/api/plugins/demo', { enabled: true });
+  const t0 = Date.now();
+  // Le handler finit quand même (outil tué) ; sa réponse, écrite sur la connexion fermée, dit ce qu'il a vu.
+  const r = await send('/api/sessions/S/plugins/demo/call/attend', {}, { abortAfter: 200 });
+  assert.deepEqual(JSON.parse(r.body), { error: 'annulé', aborted: true });
+  assert.ok(Date.now() - t0 < 5000, 'outil non tué');
+  assert.deepEqual(JSON.parse((await send('/api/sessions/S/plugins/demo/call/double', { params: { n: 2 } }, { abortAfter: 50 })).body), { n: 4 });
 });
 
-// Seul test qui ouvre un vrai PTY (script inoffensif). Pas de sonde : une panne de node-pty (spawn-helper sans +x) doit faire échouer.
-// Le sandbox macOS refuse posix_spawnp : y lancer les tests avec VIGIE_NO_PTY=1.
-test('POST …/terminals script listé : 201, puis fermé', { skip: process.env.VIGIE_NO_PTY === '1' && 'PTY désactivé (VIGIE_NO_PTY=1)' }, async () => {
-  const { server, proj } = fixture();
-  fs.mkdirSync(path.join(proj, 'scripts'));
-  fs.writeFileSync(path.join(proj, 'scripts', 'hello.sh'), 'echo bonjour\n');
-  const ok = await request(server, 'POST', '/api/sessions/S/terminals', { headers: { 'content-type': 'application/json' }, body: '{"script":"hello.sh"}' });
-  assert.equal(ok.status, 201, ok.body);
-  const term = JSON.parse(ok.body);
-  assert.deepEqual([term.title, term.cwd, term.kind], ['hello.sh', proj, 'shell']);
-  assert.equal((await post(server, `/api/terminals/${term.id}/close`)).status, 200);
+test('contrat : corps des routes de plugins (PluginCallBody, PluginActionBody)', async () => {
+  const C = await import('../contract/index.mjs');
+  const msg = (schema, v) => { const r = schema.safeParse(v); return r.success ? null : r.error.issues[0].message; };
+  assert.equal(msg(C.PluginCallBody, {}), null);
+  assert.equal(msg(C.PluginCallBody, { params: { libre: [1, { a: null }] } }), null);
+  for (const v of [null, [], 'x']) assert.equal(msg(C.PluginCallBody, v), 'Corps de requête invalide', JSON.stringify(v));
+  assert.equal(msg(C.PluginActionBody, { params: { a: 'x', b: 1, c: true, d: null } }), null);
+  assert.notEqual(msg(C.PluginActionBody, { params: { a: 'x'.repeat(2001) } }), null);
+  assert.equal(msg(C.PluginActionBody, { params: { a: [] } }), 'Paramètre invalide');
+  assert.equal(msg(C.PluginActionBody, { values: {} }), 'Corps de requête invalide');
 });
 
-test('POST …/xcode/open : origine 403, session inconnue 404, pas iOS 400, xed lancé sinon', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-fake-xed-'));
-  const out = path.join(dir, 'argv.json');
-  const xed = path.join(dir, 'xed');
-  fs.writeFileSync(xed, `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(out)}, JSON.stringify(process.argv.slice(2)));\n`);
-  fs.chmodSync(xed, 0o755);
-  const { server, proj } = fixture({ xcodeBins: { xcodebuild: 'xcodebuild', xcrun: 'xcrun', xed } });
-  assert.equal((await post(server, '/api/sessions/S/xcode/open', { origin: 'http://evil.com' })).status, 403);
-  assert.equal((await post(server, '/api/sessions/inconnue/xcode/open')).status, 404);
-  const no = await post(server, '/api/sessions/S/xcode/open');
-  assert.deepEqual([no.status, JSON.parse(no.body)], [400, { error: 'Pas un projet Xcode' }]);
-  fs.writeFileSync(path.join(proj, 'Package.swift'), '');
-  const r = await post(server, '/api/sessions/S/xcode/open');
-  assert.deepEqual([r.status, JSON.parse(r.body)], [200, { ok: true }]);
-  assert.deepEqual(JSON.parse(fs.readFileSync(out, 'utf8')), [proj]);
+test('plugins : réponses conformes, snapshot.plugins, activation persistée et gardée après POST /api/settings', async () => {
+  const C = await import('../contract/index.mjs');
+  const conforme = (schema, body) => { const j = JSON.parse(body); assert.deepStrictEqual(schema.parse(j), j); return j; };
+  const pluginsDir = demoPlugins();
+  const settingsFile = path.join(tempDir('vigie-settings-'), 'settings.json');
+  const { server } = fixture({ pluginsDir, settingsFile });
+  const send = (url, body) => request(server, 'POST', url, { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  assert.deepEqual(conforme(C.Plugins, (await request(server, 'GET', '/api/plugins')).body), [{ id: 'demo', name: 'Démo', description: 'Plugin de test', enabled: false, error: null }]);
+  assert.deepEqual(conforme(C.SessionPlugins, (await request(server, 'GET', '/api/sessions/S/plugins')).body), []);
+  assert.deepEqual(conforme(C.Snapshot, (await request(server, 'GET', '/api/snapshot')).body).plugins, []);
+
+  const on = await send('/api/plugins/demo', { enabled: true });
+  assert.equal(on.status, 200);
+  assert.equal(conforme(C.PluginInfo, on.body).enabled, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, 'utf8')).plugins, { demo: true });
+  assert.deepEqual(conforme(C.Snapshot, (await request(server, 'GET', '/api/snapshot')).body).plugins, ['demo']);
+  assert.deepEqual(conforme(C.SessionPlugins, (await request(server, 'GET', '/api/sessions/S/plugins')).body), [{ id: 'demo', name: 'Démo', badge: '1' }]);
+  // call : 200 avec le JSON du plugin (pas de schéma du socle : le front valide avec celui du plugin), `null` possible.
+  const doubled = await send('/api/sessions/S/plugins/demo/call/double', { params: { n: 2 } });
+  assert.deepEqual([doubled.status, JSON.parse(doubled.body)], [200, { n: 4 }]);
+  const nothing = await send('/api/sessions/S/plugins/demo/call/rien', {});
+  assert.deepEqual([nothing.status, nothing.body], [200, 'null']);
+
+  // Régression (P0) : un POST /api/settings ne doit pas effacer l'état des plugins du fichier.
+  assert.equal((await send('/api/settings', { locale: 'fr_FR.UTF-8' })).status, 200);
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, 'utf8')), { locale: 'fr_FR.UTF-8', plugins: { demo: true } });
+  // Relu au redémarrage : le plugin reste actif, la locale aussi.
+  const again = fixture({ pluginsDir, settingsFile }).server;
+  assert.deepEqual(JSON.parse((await request(again, 'GET', '/api/snapshot')).body).plugins, ['demo']);
+  assert.equal(JSON.parse((await request(again, 'GET', '/api/settings')).body).locale, 'fr_FR.UTF-8');
+  assert.equal((await request(again, 'POST', '/api/settings', { headers: { 'content-type': 'application/json' }, body: '{"alerts":{"dailyCost":5,"windowPct":null}}' })).status, 200);
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, 'utf8')).plugins, { demo: true });
+  // POST /api/settings n'accepte pas `plugins` : clé ignorée (SettingsBody), l'état ne change pas.
+  await request(again, 'POST', '/api/settings', { headers: { 'content-type': 'application/json' }, body: '{"plugins":{"demo":false}}' });
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, 'utf8')).plugins, { demo: true });
+
+  const off = await send('/api/plugins/demo', { enabled: false });
+  assert.equal(conforme(C.PluginInfo, off.body).enabled, false);
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, 'utf8')), { locale: 'fr_FR.UTF-8', plugins: { demo: false } });
+});
+
+// Ouvre un vrai PTY (echo ok) : sauté dans le sandbox (VIGIE_NO_PTY=1).
+test('plugins : action qui décrit un terminal → 201, conforme, puis fermé', { skip: process.env.VIGIE_NO_PTY === '1' && 'PTY désactivé (VIGIE_NO_PTY=1)' }, async () => {
+  const C = await import('../contract/index.mjs');
+  const { server, proj } = fixture({ pluginsDir: demoPlugins() });
+  const send = (url, body) => request(server, 'POST', url, { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  await send('/api/plugins/demo', { enabled: true });
+  const r = await send('/api/sessions/S/plugins/demo/actions/term', {});
+  assert.equal(r.status, 201, r.body);
+  const j = JSON.parse(r.body);
+  assert.deepStrictEqual(C.PluginActionResult.parse(j), j);
+  assert.deepEqual([j.terminal.title, j.terminal.cwd, j.terminal.kind], ['Démo', proj, 'shell']);
+  assert.equal((await post(server, `/api/terminals/${j.terminal.id}/close`)).status, 200);
 });

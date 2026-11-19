@@ -19,7 +19,7 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [011](2026-11-11-011-securite-du-daemon.md) | Durcissement du daemon local | Acceptée | 2026-11-11 |
 | [012](2026-11-11-012-purge-des-discussions.md) | Exception unique : les discussions sont effacées de `~/.claude` | Acceptée par défaut (documentée, sans objection de ta part) | 2026-11-11 |
 | [013](2026-11-11-013-polices-embarquees.md) | Polices embarquées au lieu de Google Fonts | Acceptée | 2026-11-11 |
-| [014](2026-11-11-014-palette-oklch-et-cartes-plates.md) | Nouvelle palette OKLCH et cartes spartan plates | Acceptée | 2026-11-11 |
+| [014](2026-11-11-014-palette-oklch-et-cartes-plates.md) | Nouvelle palette OKLCH et cartes spartan plates | Remplacée par 040 | 2026-11-11 |
 | [015](2026-11-12-015-mouvement-signe.md) | Un seul mouvement signé : l'arrivée d'une attente | Acceptée | 2026-11-12 |
 | [016](2026-11-11-016-budget-bundle-720k.md) | Budget du chargement initial porté à 720 kB | Remplacée par 026 | 2026-11-11 |
 | [017](2026-11-12-017-lib-de-graphiques.md) | Une lib de graphiques pour comparer les modèles | Acceptée (comparaisons tranchées avec la 025) | 2026-11-12 |
@@ -31,14 +31,23 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [023](2026-11-12-023-coloration-syntaxique.md) | Coloration syntaxique dans l'explorateur de fichiers | Acceptée (limite d'édition levée par 027) | 2026-11-12 |
 | [024](2026-11-13-024-statut-claude.md) | Statut de Claude (status.claude.com) : seule requête sortante | Acceptée | 2026-11-13 |
 | [025](2026-11-13-025-historique-de-consommation.md) | Historique de consommation conservé dans `~/.vigie/usage.json` | Acceptée | 2026-11-13 |
-| [026](2026-11-13-026-budget-bundle-740k.md) | Budget du chargement initial porté à 740 kB | Acceptée | 2026-11-13 |
+| [026](2026-11-13-026-budget-bundle-740k.md) | Budget du chargement initial porté à 740 kB | Remplacée par 036 | 2026-11-13 |
 | [027](2026-11-13-027-onglet-fichiers-facon-ide.md) | Onglet Fichiers façon IDE léger, éditeur coloré sans dépendance (remplace la limite « textarea brute » de la 023) | Acceptée | 2026-11-13 |
 | [028](2026-11-13-028-graphique-heros-consommation.md) | Un graphique principal pour la page Consommation | Acceptée | 2026-11-13 |
 | [029](2026-11-13-029-selecteur-projets.md) | Sélecteur de projet : GET /api/projects remplace /api/dirs | Acceptée | 2026-11-13 |
-| [030](2026-11-13-030-onglet-xcode.md) | Onglet Xcode : frontière de plateforme par l’outil, DerivedData sous ~/.vigie/xcode | Acceptée | 2026-11-13 |
+| [030](2026-11-13-030-onglet-xcode.md) | Onglet Xcode : frontière de plateforme par l’outil, DerivedData sous ~/.vigie/xcode | Acceptée (onglet devenu plugin, DerivedData remplacé par 035) | 2026-11-13 |
 | [031](2026-11-16-031-arborescence-ui-un-dossier-par-composant.md) | Arborescence de l’UI : un dossier par composant | Acceptée | 2026-11-16 |
 | [032](2026-11-17-032-eslint.md) | ESLint sur le code Node (daemon, contract, bin, electron) | Acceptée | 2026-11-17 |
 | [033](2026-11-17-033-eslint-ui.md) | ESLint sur l'UI Angular (angular-eslint, typescript-eslint) | Acceptée | 2026-11-17 |
+| [034](2026-11-18-034-systeme-de-plugins.md) | Système de plugins : de nouveaux onglets de session, vue déclarative rendue par l'UI, plugins locaux activés d'un clic | Acceptée (alias remplacés par 035, vue déclarative par 037) | 2026-11-18 |
+| [035](2026-11-18-035-retrait-direct-des-routes-mise-xcode.md) | Retrait direct des routes mise et Xcode, sans alias ; DerivedData sous `~/.vigie/plugins-data/xcode` | Acceptée | 2026-11-18 |
+| [036](2026-11-18-036-budget-bundle-800k.md) | Budget du chargement initial porté à 800 kB | Acceptée | 2026-11-18 |
+| [037](2026-11-18-037-front-des-plugins-en-angular.md) | Le plugin porte son front : composants Angular compilés avec l'app, prêts pour Native Federation (remplace la vue déclarative de la 034) | Acceptée | 2026-11-18 |
+| [038](2026-11-18-038-plugins-npm-et-nx.md) | Plugins npm et Nx : lecture sans process pour npm, `nx graph` sans réseau ni écriture dans le dépôt, refus si télémétrie Nx | Acceptée | 2026-11-18 |
+| [039](2026-11-18-039-etude-refonte-visuelle-dashboard.md) | Étude : Dashboard, palette pétrole et relief léger teinté | Acceptée (lots 1 et 2) | 2026-11-18 |
+| [040](2026-11-18-040-palette-petrole-relief-et-points.md) | Palette pétrole, relief léger teinté et fond pointillé (remplace la 014) | Acceptée (palette remplacée par 042) | 2026-11-18 |
+| [041](2026-11-18-041-dashboard.md) | La page Sessions devient le Dashboard (indicateurs, heatmap des tokens, graphiques) | Acceptée | 2026-11-18 |
+| [042](2026-11-19-042-palette-trois-couleurs.md) | Palette à trois couleurs (violet, bleu-vert, orange) + vert et rouge ; pastilles des indicateurs (remplace la palette de la 040) | Acceptée | 2026-11-19 |
 
 ## En attente de ton choix
 

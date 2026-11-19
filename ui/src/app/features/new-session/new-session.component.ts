@@ -12,13 +12,14 @@ import { HlmSelectImports } from '@spartan-ng/helm/select';
 import { HlmToggleGroupImports } from '@spartan-ng/helm/toggle-group';
 import { Icon } from '../../core/icon.component';
 import { NewSessionVm } from './new-session.vm';
+import { PageComponent } from '../../shell/page/page.component';
 
 @Component({
   selector: 'app-new-session',
-  imports: [Icon, RouterLink, FormField, HlmBadge, HlmButton, HlmCardImports, HlmInputGroupImports, HlmInput, HlmKbd, HlmLabel, HlmSelectImports, HlmToggleGroupImports],
+  imports: [PageComponent, Icon, RouterLink, FormField, HlmBadge, HlmButton, HlmCardImports, HlmInputGroupImports, HlmInput, HlmKbd, HlmLabel, HlmSelectImports, HlmToggleGroupImports],
   providers: [NewSessionVm],
   template: `
-    <div class="backdrop">
+    <app-page class="backdrop">
       <form hlmCard aria-labelledby="ns-title" (submit)="$event.preventDefault(); vm.launch()" (keydown)="vm.launchOnShortcut($any($event))">
         <div class="top">
           <h1 id="ns-title">Nouvelle session</h1>
@@ -161,14 +162,14 @@ import { NewSessionVm } from './new-session.vm';
           <button hlmBtn size="lg" type="submit" [disabled]="vm.form().submitting()">Lancer la session <kbd hlmKbd>{{ vm.launchKey }}</kbd></button>
         </div>
       </form>
-    </div>
+    </app-page>
   `,
   styles: `
-    .backdrop { min-height: 100vh; padding: 64px 24px; display: flex; justify-content: center; align-items: flex-start; background: var(--backdrop); }
-    form { width: 100%; max-width: 640px; padding: 28px; gap: 20px; }
+    .backdrop { --page-pt: 64px; --page-px: 24px; --page-pb: 64px; background-color: var(--backdrop); }
+    form { align-self: center; width: 100%; max-width: 640px; padding: 28px; gap: 20px; }
     /* Téléphone : le formulaire prend l'écran, sans marge perdue autour. */
     @media (max-width: 720px) {
-      .backdrop { min-height: calc(100dvh - var(--chrome-top)); padding: 16px; }
+      .backdrop { --page-pt: 16px; --page-px: 16px; --page-pb: 16px; min-height: calc(100dvh - var(--chrome-top)); }
       form { padding: 20px; }
     }
     .top { display: flex; justify-content: space-between; align-items: center; }
@@ -183,7 +184,8 @@ import { NewSessionVm } from './new-session.vm';
     .crumbs button:hover { background: var(--hover); color: var(--text); }
     .crumbs button:last-of-type { color: var(--text); }
     .pick { cursor: pointer; }
-    .list { max-height: 296px; overflow-y: auto; overscroll-behavior: contain; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-deep); }
+    /* Pas de défilement propre : la liste s'allonge, la page défile (un seul défilement, gabarit shell/page). */
+    .list { padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-deep); }
     .row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 4px 4px 10px; border-radius: 6px; cursor: pointer; transition: background var(--dur-fast) var(--ease); }
     .row.active { background: var(--hover); }
     .row.picked { background: var(--brand-bg); box-shadow: inset 2px 0 0 var(--brand); }
@@ -201,7 +203,6 @@ import { NewSessionVm } from './new-session.vm';
     .age { flex: none; font-size: 11px; color: var(--faint); }
     .go { flex: none; color: var(--faint); }
     .empty { padding: 14px 10px; color: var(--text-muted); }
-    @media (max-width: 720px) { .list { max-height: 45dvh; } }
     .foot { display: flex; justify-content: flex-end; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
   `,
 })

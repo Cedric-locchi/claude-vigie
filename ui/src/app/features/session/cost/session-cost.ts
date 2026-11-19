@@ -3,9 +3,9 @@ import * as f from '../../../core/format';
 import { Agent, SessionCost } from '../../../core/models';
 import { type Draw, type PlotModule, frame, leftFor } from '../../usage/usage-charts';
 
-/** Couleurs de données (3:1 sur --surface, deux thèmes). Pas d'ambre : il est réservé à ce qui attend. */
+/** Couleurs de données (3:1 sur --surface, deux thèmes). Principale et secondaire, puis des neutres (décision 042). Pas d'orange : il est réservé à ce qui attend. */
 // ponytail: 5 couleurs puis on recommence ; au-delà, deux sous-agents partagent une teinte (la légende et l'info-bulle les distinguent).
-const PALETTE = ['var(--brand)', 'var(--cmd)', 'var(--ok)', 'var(--read)', 'var(--text-2)'];
+const PALETTE = ['var(--brand)', 'var(--data)', 'var(--text-2)', 'var(--read)', 'var(--neutral)'];
 
 export interface CostSerie { id: string; name: string; color: string; total: number }
 export interface CostPoint { ts: number; id: string; value: number }

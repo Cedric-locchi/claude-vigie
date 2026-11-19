@@ -94,7 +94,7 @@ import { colorOf, compact, dayIndexAt } from '../usage-series';
     .strip:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
     .strip i {
       position: absolute; top: 4px; bottom: 4px; min-width: 2px; border-radius: 2px;
-      background: color-mix(in oklch, var(--brand) calc(20% + var(--lv) * 80%), transparent);
+      background: color-mix(in oklch, var(--data) calc(20% + var(--lv) * 80%), transparent);
     }
     .strip i.est { background: color-mix(in oklch, var(--read) calc(20% + var(--lv) * 80%), transparent); }
     .sel { position: absolute; top: 0; bottom: 0; border-radius: 6px; box-shadow: inset 0 0 0 2px var(--brand); background: color-mix(in oklch, var(--brand) 12%, transparent); pointer-events: none; }
@@ -105,7 +105,7 @@ import { colorOf, compact, dayIndexAt } from '../usage-series';
     .legend a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
     .legend a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 2px; }
     .sw { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; vertical-align: -1px; }
-    .sw.blk { background: var(--brand); }
+    .sw.blk { background: var(--data); }
     .sw.blk.est { background: var(--read); }
     .ln { display: inline-block; width: 16px; margin-right: 6px; vertical-align: 3px; border-top: 2px solid var(--text); }
     .ln.dash { border-top: 1px dashed var(--text-muted); }

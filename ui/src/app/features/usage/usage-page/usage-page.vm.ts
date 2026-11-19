@@ -6,7 +6,7 @@ import { UsageRow } from '../../../core/models';
 import { VigieService } from '../../../core/vigie.service';
 import { heroChart, heroMargins, sessionsChart } from '../usage-charts';
 import {
-  Metric, Range, addDays, byFamily, dailyByFamily, dayTotals, daysBetween, daysOf, familyOf, groupBy, heroScale, inRange, sessionPoints, startOfDay, stripBlocks, sum,
+  Metric, Range, addDays, byFamily, byModel, dailyByFamily, dayTotals, daysBetween, daysOf, familyOf, groupBy, heroScale, inRange, sessionPoints, startOfDay, stripBlocks, sum,
 } from '../usage-series';
 
 export type { Metric } from '../usage-series';
@@ -95,12 +95,7 @@ export class UsagePageVm {
   });
 
   /** Par modèle exact : répartition des tokens et coût. */
-  readonly models = computed(() => {
-    const total = Math.max(1e-9, sum(this.selected()).cost);
-    return [...groupBy(this.selected(), (r) => r.model)]
-      .map(([model, rs]) => ({ model, family: familyOf(model), ...sum(rs), share: sum(rs).cost / total }))
-      .sort((a, b) => b.cost - a.cost);
-  });
+  readonly models = computed(() => byModel(this.selected()));
 
   readonly projects = computed(() => {
     const list = [...groupBy(this.selected(), (r) => r.project)].map(([project, rs]) => ({ project, value: this.value(rs) })).sort((a, b) => b.value - a.value);

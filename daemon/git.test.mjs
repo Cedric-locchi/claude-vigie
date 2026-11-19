@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { commitAll, createBranch, headBranch, parseStatus, readGitDiff, readWorktreeFile, restoreFile, splitPatch, untrackedPatch, writeWorktreeFile } from './git.mjs';
 import { FileBody, GitDiff } from '../contract/index.mjs';
+import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
 
 // Sortie conforme au contrat : parse retire les clés inconnues, donc l'égalité échoue sur un champ manquant comme sur un champ en trop.
 const conforme = (S, v) => { const j = JSON.parse(JSON.stringify(v)); assert.deepStrictEqual(S.parse(j), j); };
@@ -20,7 +20,7 @@ test('parseStatus : modifié, indexé, renommé, non suivi', () => {
 });
 
 test('readGitDiff : patchs et compteurs sur un vrai dépôt', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-git-'));
+  const dir = tempDir('vigie-git-');
   const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir });
   g('init', '-q');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'un\ndeux\n');
@@ -38,13 +38,13 @@ test('readGitDiff : patchs et compteurs sur un vrai dépôt', async () => {
   const n = d.files.find((f) => f.path === 'neuf.txt');
   assert.deepEqual([n.status, n.added], ['?', 1]);
 
-  const none = await readGitDiff(fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-nogit-')));
+  const none = await readGitDiff(tempDir('vigie-nogit-'));
   conforme(GitDiff, none);
   assert.equal(none.repo, false);
 });
 
 test('restoreFile : modifié, ajouté, non suivi ; refuse un chemin hors status', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-git-'));
+  const dir = tempDir('vigie-git-');
   const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir });
   g('init', '-q');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'un\n');
@@ -62,7 +62,7 @@ test('restoreFile : modifié, ajouté, non suivi ; refuse un chemin hors status'
 });
 
 test('commitAll : indexe tout et commite ; refuse un message vide', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-git-'));
+  const dir = tempDir('vigie-git-');
   const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
   g('init', '-q');
   g('config', 'user.name', 't'); g('config', 'user.email', 't@t'); g('config', 'commit.gpgsign', 'false');
@@ -74,7 +74,7 @@ test('commitAll : indexe tout et commite ; refuse un message vide', async () => 
 });
 
 test('createBranch : bascule sur la nouvelle branche avec les modifs ; refuse un nom invalide ou déjà pris', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-git-'));
+  const dir = tempDir('vigie-git-');
   const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir });
   g('init', '-q');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'un\n');
@@ -103,7 +103,7 @@ test('splitPatch : un patch par chemin ; renommage, espaces, chemin entre guille
 });
 
 test('readGitDiff : modifié, renommé, non suivi et chemin avec espace en un seul git diff ; cache invalidé par un commit', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-git-'));
+  const dir = tempDir('vigie-git-');
   const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { cwd: dir }).toString();
   g('init', '-q');
   g('config', 'user.name', 't'); g('config', 'user.email', 't@t'); g('config', 'commit.gpgsign', 'false');
@@ -143,7 +143,7 @@ test('readGitDiff : modifié, renommé, non suivi et chemin avec espace en un se
 });
 
 test('untrackedPatch : fichier trop gros tronqué, vide sans hunk', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-git-'));
+  const dir = tempDir('vigie-git-');
   fs.writeFileSync(path.join(dir, 'gros.txt'), 'abcdefghi\n'.repeat(20_000));
   const big = await untrackedPatch(dir, 'gros.txt');
   assert.equal(big.truncated, true);
@@ -153,7 +153,7 @@ test('untrackedPatch : fichier trop gros tronqué, vide sans hunk', async () => 
 });
 
 test('untrackedPatch : au-delà de MAX_PATCH, added compte tout le fichier', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-git-'));
+  const dir = tempDir('vigie-git-');
   fs.writeFileSync(path.join(dir, 'gros.txt'), 'abcdefghi\n'.repeat(20_000));
   fs.writeFileSync(path.join(dir, 'sans-fin.txt'), 'abcdefghi\n'.repeat(20_000) + 'fin');
   assert.equal((await untrackedPatch(dir, 'gros.txt')).added, 20_000);
@@ -163,7 +163,7 @@ test('untrackedPatch : au-delà de MAX_PATCH, added compte tout le fichier', asy
 });
 
 test('untrackedPatch : chemin avec guillemet, antislash, contrôle mis entre guillemets comme git', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-git-'));
+  const dir = tempDir('vigie-git-');
   const names = ['a"b\\c\nd e.txt', 'b\x01in\tx y'];
   fs.writeFileSync(path.join(dir, names[0]), 'x\n+faux\n');
   fs.writeFileSync(path.join(dir, names[1]), Buffer.from([0, 1]));
@@ -176,7 +176,7 @@ test('untrackedPatch : chemin avec guillemet, antislash, contrôle mis entre gui
 
 /** Dépôt avec a.txt commité puis modifié ; renvoie le dossier et un raccourci git. */
 function repo() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-edit-'));
+  const dir = tempDir('vigie-edit-');
   const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { cwd: dir });
   g('init', '-q');
   for (const f of ['a.txt', 'gone.txt', 'bin.dat', 'gros.txt', 'latin.txt', 'run.sh', 'crlf.txt']) fs.writeFileSync(path.join(dir, f), 'v1\n');
@@ -202,7 +202,7 @@ test('readWorktreeFile : refuse hors status, sortie du dépôt, supprimé, binai
   fs.writeFileSync(path.join(dir, 'bin.dat'), Buffer.from([1, 0, 2]));
   fs.writeFileSync(path.join(dir, 'gros.txt'), 'x'.repeat(100_001));
   fs.writeFileSync(path.join(dir, 'latin.txt'), Buffer.from([0xff]));
-  const outside = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-out-')), 'secret.txt');
+  const outside = path.join(tempDir('vigie-out-'), 'secret.txt');
   fs.writeFileSync(outside, 'secret\n');
   fs.symlinkSync(outside, path.join(dir, 'lien.txt'));
   for (const [p, re] of [['b.txt', /non modifié/], ['../../etc/passwd', /non modifié/], ['gone.txt', /supprimé/], ['bin.dat', /binaire/],
@@ -272,17 +272,17 @@ test('writeWorktreeFile : lien physique écrit en place (même inode, l’autre 
 
 test('writeWorktreeFile : refuse d’écrire sous <home>/.claude (403), lien compris', async () => {
   const { dir } = repo();
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-home-'));
+  const home = tempDir('vigie-home-');
   fs.symlinkSync(dir, path.join(home, '.claude')); // ~/.claude qui mène au dépôt : la cible résolue est protégée
   const { hash } = await readWorktreeFile(dir, 'a.txt');
   await assert.rejects(writeWorktreeFile(dir, 'a.txt', 'pirate\n', hash, home), (e) => e.status === 403 && /lecture seule/.test(e.message));
   assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'v2\n');
-  await writeWorktreeFile(dir, 'a.txt', 'v3\n', hash, fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-home-')));
+  await writeWorktreeFile(dir, 'a.txt', 'v3\n', hash, tempDir('vigie-home-'));
   assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'v3\n');
 });
 
 test('headBranch : branche nommée, HEAD détachée, .git fichier relatif, worktree réel, hors dépôt', async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-head-'));
+  const tmp = tempDir('vigie-head-');
   const dir = path.join(tmp, 'repo');
   fs.mkdirSync(dir);
   const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir });

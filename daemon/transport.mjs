@@ -11,15 +11,14 @@ import { execFile } from 'node:child_process';
 import pty from 'node-pty';
 import { WebSocketServer } from 'ws';
 // Chemin relatif, pas `@vigie/contract` : la copie des liens de workspace par electron-builder n'est pas garantie.
-import { BranchBody, CommitBody, FileQuery, HookEvent, InputBody, NewSessionBody, PtyMessage, RestoreBody, SearchQuery, SettingsBody, TerminalBody, UsageQuery, WriteBody } from '../contract/index.mjs';
+import { BranchBody, CommitBody, FileQuery, HookEvent, InputBody, NewSessionBody, PluginActionBody, PluginCallBody, PluginToggleBody, PtyMessage, RestoreBody, SearchQuery, SettingsBody, SettingsFile, TerminalBody, UsageQuery, WriteBody } from '../contract/index.mjs';
 import { readClaudeConfig } from './claude-config.mjs';
 import { listProjectFiles, readProjectFile, searchProjectFiles, writeProjectFile } from './files.mjs';
 import { commitAll, createBranch, readGitDiff, readWorktreeFile, restoreFile, suggestCommitMessage, writeWorktreeFile } from './git.mjs';
 import { hostOk, staticFile } from './guard.mjs';
-import { readMiseTasks } from './mise.mjs';
+import { createPlugins } from './plugins.mjs';
 import { childDirs, describeDirs } from './projects.mjs';
 import { claudeCommand, shQuote, spoolLine } from './launch.mjs';
-import { derivedDataDir, openInXcode, readXcodeProject, readXcodeTargets, scriptCommand, xcodeCommand } from './xcode.mjs';
 import { defaultLocale, localeEnv, localeInstalled } from './platform.mjs';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.ico': 'image/x-icon', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.woff2': 'font/woff2' };
@@ -30,17 +29,27 @@ const SCROLLBACK = 512 * 1024;
  * `chatDir` : dossier des discussions ; `hooksFile` : réglages passés à claude --settings ; `dev` : accepte ng serve (4200) ;
  * `listLocales` : sortie de `locale -a` (promesse de texte, null = indisponible) ; `settingsFile` : réglages du daemon (~/.vigie/settings.json), gardés en mémoire seulement s'il est absent ;
  * `spoolFile` : spool des hooks (~/.vigie/spool.jsonl), où POST /api/hook ajoute ce que Claude Code poste ;
- * `miseBin` : exécutable mise pour lister les tâches (injecté par les tests) ;
- * `xcodeBins` : exécutables xcodebuild / xcrun / xed ; `xcodeDir` : DerivedData de Vigie (~/.vigie/xcode).
+ * `pluginsDir` : dossier des plugins livrés (plugins/ du dépôt, null = aucun) ; `pluginsDataDir` : leurs données (~/.vigie/plugins-data).
  */
-export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, settingsFile = null, spoolFile = null, dev = false, miseBin = 'mise', xcodeBins = { xcodebuild: 'xcodebuild', xcrun: 'xcrun', xed: 'xed' }, xcodeDir = path.join(home, '.vigie', 'xcode'), claudeStatus = () => undefined, listLocales = null }) {
+export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, settingsFile = null, spoolFile = null, dev = false, pluginsDir = null, pluginsDataDir = path.join(home, '.vigie', 'plugins-data'), claudeStatus = () => undefined, listLocales = null }) {
   const ORIGINS = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...(dev ? ['http://localhost:4200'] : [])]);
   const originOk = (req) => !req.headers.origin || ORIGINS.has(req.headers.origin);
 
   // ── Réglages ────────────────────────────────────────────────────────────
   // Fichier absent, illisible ou hors contrat (édité à la main) : réglages par défaut plutôt qu'une locale invalide dans les PTY.
+  // Lu avec SettingsFile (SettingsBody + `plugins`) : avec SettingsBody, zod retirerait `plugins` à la lecture et le prochain
+  // POST /api/settings l'effacerait du fichier.
+  // `plugins` hors contrat (édité à la main) : seules ses entrées booléennes sont gardées, sans faire rejeter la locale ni les alertes.
   let settings = { locale: null };
-  try { const r = SettingsBody.safeParse(JSON.parse(fs.readFileSync(settingsFile, 'utf8'))); if (r.success) settings = r.data; } catch { /* pas encore de réglages */ }
+  try {
+    const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+    if (raw && typeof raw === 'object' && 'plugins' in raw) {
+      const p = raw.plugins;
+      raw.plugins = Object.fromEntries(p && typeof p === 'object' && !Array.isArray(p) ? Object.entries(p).filter(([, v]) => typeof v === 'boolean') : []);
+    }
+    const r = SettingsFile.safeParse(raw);
+    if (r.success) settings = r.data;
+  } catch { /* pas encore de réglages */ }
   const settingsView = () => ({
     locale: settings.locale ?? null,
     defaultLocale: defaultLocale({ platform: process.platform, env: cleanEnv }),
@@ -63,10 +72,10 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
   // Les terminaux ne doivent hériter ni de la session Claude parente, ni des réglages internes de l'app.
   const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('CLAUDECODE') && !k.startsWith('CLAUDE_CODE_') && k !== 'ELECTRON_RUN_AS_NODE' && k !== 'VIGIE_NODE'));
 
-  // Lecture des tâches mise : jamais de MISE_YES (pas d'approbation implicite), hors ligne (pas d'installation ni de téléchargement).
-  const { MISE_YES: _yes, ...miseBase } = cleanEnv;
-  const miseEnv = { ...miseBase, MISE_OFFLINE: '1', MISE_HIDE_UPDATE_WARNING: '1' };
-  const miseTasks = (cwd) => readMiseTasks(cwd, { env: miseEnv, bin: miseBin, home });
+  // Plugins (décisions 034, 037) : le plugin répond (JSON d'une méthode) ou décrit un terminal ; le transport valide l'entrée, ouvre le PTY et répond.
+  const plugins = createPlugins({ dir: pluginsDir, dataRoot: pluginsDataDir, baseEnv: cleanEnv, enabled: settings.plugins ?? {} });
+  /** Erreur d'un plugin (marquée `status` : 400 message pour l'utilisateur, 404, 500, 504) → réponse JSON. */
+  const pluginError = (res, e) => json(res, e.status ?? 500, { error: String(e?.message ?? e) });
 
   function spawnTerminal({ sessionId, kind, cwd, command, title }) {
     // SHELL manque quand le daemon tourne en service ; zsh est souvent absent sous Linux.
@@ -94,7 +103,7 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
   const publicTerm = ({ id, sessionId, kind, title, cwd, shell, pid, cols, rows, exited, startedAt }) => ({ id, sessionId, kind, title, cwd, shell, pid, cols, rows, exited, startedAt });
   const termList = () => [...terminals.values()].map(publicTerm);
   // Le statut de Claude est relevé par server.mjs (seul à sortir de la machine) ; le transport ne fait que le joindre.
-  const snap = () => ({ ...store.snapshot(termList()), claudeStatus: claudeStatus() });
+  const snap = () => ({ ...store.snapshot(termList()), claudeStatus: claudeStatus(), plugins: plugins.active() });
 
   function startSession({ cwd, command }) {
     const dir = String(cwd ?? '').replace(/^~(?=$|\/)/, home);
@@ -186,23 +195,6 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       const cwd = sessionCwd(r[1], res);
       return cwd && json(res, 200, await readGitDiff(cwd));
     }
-    // Origine contrôlée même en GET : lire une config mise approuvée peut exécuter ses templates.
-    if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/mise$/))) {
-      if (refused(req, res)) return;
-      const cwd = sessionCwd(r[1], res);
-      return cwd && json(res, 200, await miseTasks(cwd));
-    }
-    // Xcode : origine contrôlée, la route sonde le disque (et `targets` lance xcodebuild).
-    // ponytail: pas de cache, l'UI garde la liste ; si l'onglet est rechargé souvent, une Map cwd → promesse.
-    if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/xcode(\/targets)?$/))) {
-      if (refused(req, res)) return;
-      const cwd = sessionCwd(r[1], res);
-      if (!cwd) return;
-      const project = await readXcodeProject(cwd);
-      if (!r[2]) return json(res, 200, project);
-      if (!project.container) return json(res, 200, { available: false, schemes: [], simulators: [], error: 'Pas un projet Xcode' });
-      return json(res, 200, await readXcodeTargets(cwd, project.container, { env: cleanEnv, bins: xcodeBins }));
-    }
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/git\/file$/))) {
       const cwd = sessionCwd(r[1], res);
       if (!cwd) return;
@@ -246,6 +238,16 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       const tilde = (p) => (p === home || p.startsWith(home + path.sep) ? '~' + p.slice(home.length) : p);
       return json(res, 200, projects.map((p) => ({ ...p, path: tilde(p.path) })));
     }
+    // Plugins : origine contrôlée même en GET, un plugin lance des outils (detect compris).
+    if (req.method === 'GET' && url.pathname === '/api/plugins') {
+      if (refused(req, res)) return;
+      return json(res, 200, plugins.list());
+    }
+    if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/plugins$/))) {
+      if (refused(req, res)) return;
+      const cwd = sessionCwd(r[1], res);
+      return cwd && json(res, 200, await plugins.detect(cwd));
+    }
     if (req.method === 'GET' && url.pathname === '/api/settings') return json(res, 200, settingsView());
     if (req.method !== 'POST') return json(res, 404, { error: 'not found' });
     if (refused(req, res)) return;
@@ -268,6 +270,41 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       if (b.locale && !(await localeKnown(b.locale))) return json(res, 400, { error: `Locale « ${b.locale} » non installée sur ce système (voir \`locale -a\`) : le terminal retomberait en C et les accents seraient cassés.` });
       try { saveSettings({ ...settings, ...b }); } catch (e) { return json(res, 500, { error: `Réglages non enregistrés : ${e.message}` }); }
       return json(res, 200, settingsView());
+    }
+    if ((r = m(/^\/api\/plugins\/([a-z0-9-]+)$/))) {
+      const b = valid(PluginToggleBody, body, res);
+      if (!b) return;
+      let info;
+      try { info = await plugins.setEnabled(r[1], b.enabled); } catch (e) { return pluginError(res, e); }
+      // Écrit après le chargement réussi ; un échec d'écriture annule le changement (pas d'état actif mais oublié au redémarrage).
+      try { saveSettings({ ...settings, plugins: { ...settings.plugins, [r[1]]: b.enabled } }); } catch (e) {
+        await plugins.setEnabled(r[1], !b.enabled).catch(() => {});
+        return json(res, 500, { error: `Réglages non enregistrés : ${e.message}` });
+      }
+      changed();
+      return json(res, 200, info);
+    }
+    // Méthode d'un plugin : une lecture, mais en POST (origine, content-type JSON et préflight déjà en place ; params en JSON libre).
+    if ((r = m(/^\/api\/sessions\/([\w-]+)\/plugins\/([a-z0-9-]+)\/call\/([\w-]+)$/))) {
+      const cwd = sessionCwd(r[1], res);
+      if (!cwd) return;
+      const b = valid(PluginCallBody, body, res);
+      if (!b) return;
+      // Onglet fermé ou requête abandonnée : le signal du handler est annulé, son outil (vigie.exec) tué. `close` suit aussi
+      // une réponse envoyée : seul un abandon (réponse pas finie) annule.
+      const ac = new AbortController();
+      res.on('close', () => { if (!res.writableFinished) ac.abort(); });
+      try { return json(res, 200, await plugins.call(r[2], r[3], cwd, b.params, { signal: ac.signal })); } catch (e) { return pluginError(res, e); }
+    }
+    if ((r = m(/^\/api\/sessions\/([\w-]+)\/plugins\/([a-z0-9-]+)\/actions\/([\w-]+)$/))) {
+      const cwd = sessionCwd(r[1], res);
+      if (!cwd) return;
+      const b = valid(PluginActionBody, body, res);
+      if (!b) return;
+      let out;
+      try { out = await plugins.action(r[2], r[3], cwd, b); } catch (e) { return pluginError(res, e); }
+      // Le plugin a seulement décrit le terminal (argv quoté par le SDK) : seul le transport ouvre le PTY, avec l'env normal des terminaux.
+      return json(res, 201, { terminal: publicTerm(spawnTerminal({ sessionId: r[1], kind: 'shell', cwd, command: out.terminal.command, title: out.terminal.title })) });
     }
     if (url.pathname === '/api/sessions') {
       const b = valid(NewSessionBody, body, res);
@@ -302,36 +339,7 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       if (!cwd) return json(res, 404, { error: 'session inconnue' });
       const b = valid(TerminalBody, body, res);
       if (!b) return;
-      if ([b.miseTask !== undefined, b.miseTrust, b.xcode, b.script].filter(Boolean).length > 1) return json(res, 400, { error: 'Une seule action à la fois' });
-      // Xcode et scripts : conteneur et liste relus à l'instant ; le scheme n'est pas relu (xcodebuild -list est trop lent), il passe la regex du contrat puis shQuote.
-      if (b.xcode || b.script !== undefined) {
-        const project = await readXcodeProject(cwd);
-        if (b.script !== undefined) {
-          if (!project.scripts.includes(b.script)) return json(res, 400, { error: 'Script inconnu' });
-          return json(res, 201, publicTerm(spawnTerminal({ sessionId: r[1], kind: 'shell', cwd, command: scriptCommand(b.script), title: b.script })));
-        }
-        if (!project.container) return json(res, 400, { error: 'Pas un projet Xcode' });
-        const command = xcodeCommand({ ...b.xcode, container: project.container, derivedData: derivedDataDir(xcodeDir, cwd) });
-        return json(res, 201, publicTerm(spawnTerminal({ sessionId: r[1], kind: 'shell', cwd, command, title: `${b.xcode.action} ${b.xcode.scheme}` })));
-      }
-      // C'est l'utilisateur qui clique : seul endroit où Vigie lance `mise trust`. L'env du PTY reste le sien (réseau permis).
-      if (b.miseTrust) return json(res, 201, publicTerm(spawnTerminal({ sessionId: r[1], kind: 'shell', cwd, command: 'mise trust', title: 'mise trust' })));
-      if (b.miseTask !== undefined) {
-        // Seul un nom listé par mise passe (relu ici, pas cru sur parole) ; un nom en `-…` serait pris pour une option.
-        // `mise run -- <nom>` ne convient pas : mise y lit le nom comme argument de la tâche par défaut.
-        const task = (await miseTasks(cwd)).tasks.find((t) => t.name === b.miseTask || t.aliases.includes(b.miseTask));
-        if (!task || task.name.startsWith('-')) return json(res, 400, { error: 'Tâche mise inconnue' });
-        return json(res, 201, publicTerm(spawnTerminal({ sessionId: r[1], kind: 'shell', cwd, command: `mise run ${shQuote(task.name)}`, title: task.name })));
-      }
       return json(res, 201, publicTerm(spawnTerminal({ sessionId: r[1], kind: 'shell', cwd })));
-    }
-    if ((r = m(/^\/api\/sessions\/([\w-]+)\/xcode\/open$/))) {
-      const cwd = sessionCwd(r[1], res);
-      if (!cwd) return;
-      const { container } = await readXcodeProject(cwd);
-      if (!container) return json(res, 400, { error: 'Pas un projet Xcode' });
-      const o = await openInXcode(cwd, container, { env: cleanEnv, bins: xcodeBins });
-      return o.ok ? json(res, 200, { ok: true }) : json(res, 500, { error: o.error });
     }
     if ((r = m(/^\/api\/sessions\/([\w-]+)\/git\/(restore|commit|commit-message|branch|write)$/))) {
       const cwd = sessionCwd(r[1], res);

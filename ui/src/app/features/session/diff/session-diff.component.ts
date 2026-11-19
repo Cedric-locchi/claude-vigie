@@ -3,12 +3,13 @@ import { FormField } from '@angular/forms/signals';
 import { HlmButton } from '@spartan-ng/helm/button';
 import { HlmInput } from '@spartan-ng/helm/input';
 import { HlmTooltip } from '@spartan-ng/helm/tooltip';
+import { FileIconComponent } from '../../../core/file-icon.component';
 import { SessionDiffVm, STATUS } from './session-diff.vm';
 
 /** Onglet Diff : fichiers modifiés par rapport à HEAD à gauche, patch du fichier choisi à droite. Rechargé à l'ouverture de l'onglet et à chaque activité ; annulation par fichier et message de commit proposé par Claude. */
 @Component({
   selector: 'app-session-diff',
-  imports: [FormField, HlmButton, HlmInput, HlmTooltip],
+  imports: [FormField, HlmButton, HlmInput, HlmTooltip, FileIconComponent],
   providers: [SessionDiffVm],
   template: `
     @let d = vm.diff();
@@ -68,6 +69,7 @@ import { SessionDiffVm, STATUS } from './session-diff.vm';
             @for (f of d!.files; track f.path) {
               <button type="button" class="file" [attr.aria-current]="vm.file().path === f.path ? 'page' : null" (click)="vm.select(f.path)" [hlmTooltip]="(f.from ? f.from + ' → ' : '') + f.path" [showDelay]="500">
                 <span class="st mono" [attr.data-st]="f.status"><span aria-hidden="true">{{ STATUS[f.status].label }}</span><span class="sr-only">{{ STATUS[f.status].hint }}</span></span>
+                <app-file-icon [name]="f.path" />
                 <span class="name"><span class="base">{{ base(f.path) }}</span><span class="dir mono">{{ dir(f.path) }}</span></span>
                 <span class="nums mono"><span class="add">+{{ f.added }}</span> <span class="del">−{{ f.removed }}</span></span>
               </button>
@@ -138,8 +140,11 @@ import { SessionDiffVm, STATUS } from './session-diff.vm';
     .where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
     .add { color: var(--ok); } .del { color: var(--err); }
 
-    .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px minmax(0, 1fr); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
-    .files { display: flex; flex-direction: column; gap: 1px; padding: 8px; border-right: 1px solid var(--line); overflow-y: auto; }
+    /* Deux panneaux séparés sur le fond pointillé (décision 043) : liste des fichiers, patch ; chacun défile seul. */
+    .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 10px; }
+    .files, .pane { border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); }
+    /* relative : les libellés sr-only (absolus) restent dans la liste au lieu d'agrandir la page. */
+    .files { position: relative; display: flex; flex-direction: column; gap: 1px; padding: 8px; overflow-y: auto; }
     .file {
       display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent;
       color: var(--text-2); font: inherit; font-size: 13px; text-align: start; transition: background-color var(--dur-fast) var(--ease);
@@ -150,14 +155,14 @@ import { SessionDiffVm, STATUS } from './session-diff.vm';
     .st { flex: none; width: 1.4em; text-align: center; font-size: 11px; font-weight: 600; color: var(--text-muted); }
     .st[data-st='A'], .st[data-st='?'] { color: var(--ok); }
     .st[data-st='D'] { color: var(--err); }
-    .st[data-st='R'] { color: var(--cmd); }
+    .st[data-st='R'] { color: var(--text-2); }
     .name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     .base, .dir { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .dir { font-size: 11px; color: var(--faint); direction: rtl; text-align: left; }
     .nums { flex: none; font-size: 11px; }
     .more { padding: 6px 8px; margin: 0; }
 
-    .pane { min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+    .pane { position: relative; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
     .pane-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
     .pane-title { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
     .pane-actions { flex: none; display: flex; gap: 4px; }
@@ -187,8 +192,13 @@ import { SessionDiffVm, STATUS } from './session-diff.vm';
 
     @media (max-width: 820px) {
       .body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 35%) minmax(0, 1fr); }
-      .files { border-right: 0; border-bottom: 1px solid var(--line); }
       .where { display: none; }
+    }
+    /* Téléphone : le document défile seul ; la liste s'allonge, le patch ne défile que sur le côté. */
+    @media (max-width: 720px) {
+      .body { grid-template-rows: auto auto; }
+      .files { overflow: visible; }
+      .pane { overflow: auto hidden; }
     }
   `,
 })

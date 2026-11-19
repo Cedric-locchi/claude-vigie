@@ -5,15 +5,16 @@ import { HlmCardImports } from '@spartan-ng/helm/card';
 import { HlmInput } from '@spartan-ng/helm/input';
 import { HlmToggleGroupImports } from '@spartan-ng/helm/toggle-group';
 import { SettingsPageVm } from './settings-page.vm';
+import { PageComponent } from '../../shell/page/page.component';
 
 /** Réglages de l'app : une section par sujet, ajoutées au fur et à mesure. */
 @Component({
   selector: 'app-settings-page',
-  imports: [FormField, HlmButton, HlmCardImports, HlmInput, HlmToggleGroupImports],
+  imports: [PageComponent, FormField, HlmButton, HlmCardImports, HlmInput, HlmToggleGroupImports],
   providers: [SettingsPageVm],
   template: `
-    <div class="page">
-      <header>
+    <app-page>
+      <header pageHeader>
         <h1>Réglages</h1>
         <p class="muted">Mémorisés sur cette machine</p>
       </header>
@@ -132,10 +133,10 @@ import { SettingsPageVm } from './settings-page.vm';
           <button hlmBtn size="sm" type="submit" [disabled]="vm.alertsForm().submitting()">Enregistrer</button>
         </form>
       </section>
-    </div>
+    </app-page>
   `,
   styles: `
-    .page { max-width: 760px; gap: 12px; }
+    app-page { --page-max: 760px; --page-gap: 12px; }
     header { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
     h1 { font-size: 24px; font-weight: 600; }
     .setting { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 16px 20px; }

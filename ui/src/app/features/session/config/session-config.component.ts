@@ -185,7 +185,7 @@ const COST_HINT = {
     :host { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
     .config-head { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
     .title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-    h2 { margin: 0; flex: none; font-size: 15px; font-weight: 600; }
+    h2 { flex: none; font-size: 15px; font-weight: 600; }
     .where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .actions { display: flex; align-items: center; gap: 6px; }
     .health { display: flex; align-items: center; gap: 8px; margin-inline-end: 6px; color: var(--text-2); }
@@ -193,8 +193,10 @@ const COST_HINT = {
     .health[data-state='warning'] .health-dot { background: var(--text-muted); box-shadow: 0 0 0 3px var(--surface-2); }
     .health[data-state='error'] .health-dot { background: var(--err); box-shadow: 0 0 0 3px var(--err-bg); }
 
-    .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
-    .nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-right: 1px solid var(--line); overflow-y: auto; }
+    /* Deux panneaux séparés sur le fond pointillé (décision 043) : navigation, contenu ; chacun défile seul. */
+    .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 10px; }
+    .nav, .pane { border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); }
+    .nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; overflow-y: auto; }
     .nav-item {
       display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent;
       color: var(--text-2); font: inherit; font-size: 13px; text-align: start;
@@ -206,15 +208,14 @@ const COST_HINT = {
     .nav-item[aria-current='page'] { background: var(--brand-bg); color: var(--text); font-weight: 500; box-shadow: inset 2px 0 0 var(--brand); }
     :is(.nav-item, .scope):focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
     .nav-item > span:first-child { margin-inline-end: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .count { font-family: var(--mono); font-size: 11px; color: var(--faint); font-weight: 400; }
-    .count { min-width: 3ch; text-align: end; }
+    .count { min-width: 3ch; font-family: var(--mono); font-size: 11px; color: var(--faint); font-weight: 400; text-align: end; }
     .pip { width: 7px; height: 7px; border-radius: 50%; flex: none; }
     .pip.error { background: var(--err); }
     .pip.warning { background: var(--text-muted); }
 
     .pane { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; }
     .pane-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
-    h3 { margin: 0; font-size: 15px; font-weight: 600; }
+    h3 { font-size: 15px; font-weight: 600; }
     .pane-head p { margin: 2px 0 0; }
     .scopes { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
     .scope {
@@ -238,7 +239,7 @@ const COST_HINT = {
     .head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .row-title.mono { font-size: 13px; }
     .row-meta { margin-inline-start: auto; flex: none; display: flex; gap: 10px; }
-    .row-desc { margin: 0; color: var(--text-2); line-height: 1.45; }
+    .row-desc { color: var(--text-2); line-height: 1.45; }
     .row-code { font-family: var(--mono); color: var(--text-muted); overflow-wrap: anywhere; }
     summary { display: flex; flex-direction: column; gap: 4px; list-style: none; cursor: pointer; border-radius: 6px; }
     summary::-webkit-details-marker { display: none; }
@@ -264,14 +265,16 @@ const COST_HINT = {
     .row-issue { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 0; }
     .row-issue[data-level='error'] { color: var(--err); }
     .row-issue[data-level='warning'] { color: var(--text-2); }
-    .empty { margin: 0; padding: 8px 0; font-size: 13px; color: var(--faint); }
+    .empty { padding: 8px 0; font-size: 13px; color: var(--faint); }
 
     @media (max-width: 820px) {
       .body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-      .nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .nav { flex-direction: row; overflow-x: auto; }
       .nav-item { flex: none; }
       .pane { padding: 14px; }
     }
+    /* Téléphone : le document défile seul, le contenu s'allonge sous la navigation (qui défile sur le côté). */
+    @media (max-width: 720px) { .pane { overflow: visible; } }
   `,
 })
 export class SessionConfigComponent {

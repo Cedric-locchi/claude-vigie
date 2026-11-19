@@ -1,8 +1,8 @@
 import { TestBed } from '@angular/core/testing';
-import { DOCUMENT, computed, signal } from '@angular/core';
+import { DOCUMENT, WritableSignal, computed, signal } from '@angular/core';
 import { describe, expect, it, vi } from 'vitest';
-import { Agent, SessionDetail, Terminal } from '../../../core/models';
-import { aMiseTasks, aSession, aSnapshot, anXcodeProject, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
+import { Agent, SessionDetail, Snapshot, Terminal } from '../../../core/models';
+import { aSession, aSnapshot, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
 import { OUTDATED, VigieService } from '../../../core/vigie.service';
 import { Router, provideRouter } from '@angular/router';
 import { provideConfirmServiceMock } from '../../../core/confirm.service.mock';
@@ -122,65 +122,83 @@ describe('SessionPageVm', () => {
     expect(new Set(versions).size).toBe(2); // fin de tour : nouvelle version
   });
 
-  it('tâches mise : onglet seulement si le projet en a, relues en entrant dans l’onglet, jamais à chaque événement', () => {
-    const urls: (string | undefined)[] = [];
-    const snapshot = signal(aSnapshot({ terminals: [term('t1', 'claude')] }));
-    const tasks = signal(aMiseTasks());
+  it('onglets de plugin : listés tant que des plugins sont actifs, jamais retenus comme dernière vue, retirés avec le plugin', () => {
+    const ids: (string | null)[] = [];
+    const snapshot = signal(aSnapshot({ terminals: [term('t1', 'claude')], plugins: ['mise'] }));
+    const list = signal([{ id: 'mise', name: 'Tâches mise', badge: '2' }]);
     TestBed.configureTestingModule({
       providers: [SessionPageVm, provideRouter([]), provideConfirmServiceMock(),
         provideVigieServiceMock({
           snapshot,
-          miseResource: ((id: () => string | null, version: () => number) => {
-            const value = computed(() => (urls.push(id() ? `${id()}?v=${version()}` : undefined), tasks()));
+          sessionPluginsResource: ((id: () => string | null) => {
+            const value = computed(() => (ids.push(id()), list()));
             return { hasValue: () => true, value, isLoading: () => false, reload: vi.fn() };
-          }) as unknown as VigieService['miseResource'],
+          }) as unknown as VigieService['sessionPluginsResource'],
         })],
     });
     const vm = TestBed.inject(SessionPageVm);
     vm.connect(signal('s1'));
-    expect([vm.hasMise(), vm.miseCount()]).toEqual([true, 1]); // la tâche globale ne compte pas
-    snapshot.set(aSnapshot({ terminals: [term('t1', 'claude')], sessions: [aSession({ lastTs: 99_000 })] }));
-    vm.mise();
-    expect(new Set(urls)).toEqual(new Set(['s1?v=0'])); // l'activité seule ne relance pas mise
-    vm.showView('mise');
-    vm.mise();
-    expect(urls.at(-1)).toBe('s1?v=1'); // retour sur l'onglet (après mise trust) : relue
-    vm.selectTab('t1'); // un terminal ouvert depuis l'onglet ramène au terminal
+    expect(vm.plugins()).toEqual([{ id: 'mise', name: 'Tâches mise', badge: '2' }]);
+    expect(ids.at(-1)).toBe('s1');
+    vm.showView('history');
+    TestBed.tick();
+    vm.showView('plugin:mise');
+    TestBed.tick();
+    expect(vm.view()).toBe('plugin:mise');
+    const next = TestBed.runInInjectionContext(() => new SessionPageVm());
+    next.connect(signal('s1'));
+    expect(next.view()).toBe('history'); // l'onglet du plugin n'a pas remplacé la dernière vue
+    list.set([]); // plugin désactivé, ou projet qui ne s'y prête plus : retour au terminal
+    TestBed.tick();
     expect(vm.view()).toBe('workspace');
-    tasks.set(aMiseTasks({ tasks: aMiseTasks().tasks.filter((t) => t.global) }));
-    expect(vm.hasMise()).toBe(false); // globales seulement : pas d'onglet
+    snapshot.set(aSnapshot({ terminals: [term('t1', 'claude')], plugins: [] }));
+    list.set([{ id: 'mise', name: 'Tâches mise', badge: '2' }]);
+    expect(vm.plugins()).toEqual([]); // aucun plugin actif : pas d'onglet, même avec une ancienne liste
   });
 
-  it('Xcode : onglet seulement avec un conteneur, relu en entrant dans l’onglet, jamais retenu comme dernière vue', () => {
-    const urls: (string | undefined)[] = [];
-    const project = signal(anXcodeProject());
+  /** VM avec plugins actifs et une détection espionnée (ids demandés au daemon). */
+  function pluginVm(snapshot: WritableSignal<Snapshot>, summary = aSession()) {
+    const ids: (string | null)[] = [];
     TestBed.configureTestingModule({
       providers: [SessionPageVm, provideRouter([]), provideConfirmServiceMock(),
         provideVigieServiceMock({
-          snapshot: signal(aSnapshot({ terminals: [term('t1', 'claude')] })),
-          xcodeResource: ((id: () => string | null, version: () => number) => {
-            const value = computed(() => (urls.push(id() ? `${id()}?v=${version()}` : undefined), project()));
-            return { hasValue: () => true, value, isLoading: () => false, reload: vi.fn() };
-          }) as unknown as VigieService['xcodeResource'],
+          snapshot,
+          sessionResource: (() => fakeResource({ summary, agents: [], timeline: { start: 0, end: 1 } })) as unknown as VigieService['sessionResource'],
+          sessionPluginsResource: ((id: () => string | null) => {
+            const value = computed(() => (ids.push(id()), id() ? [{ id: 'npm', name: 'npm' }] : undefined));
+            return { hasValue: () => !!id(), value, isLoading: () => false, reload: vi.fn() };
+          }) as unknown as VigieService['sessionPluginsResource'],
         })],
     });
     const vm = TestBed.inject(SessionPageVm);
     vm.connect(signal('s1'));
-    expect(vm.hasXcode()).toBe(true);
-    expect(urls.at(-1)).toBe('s1?v=0');
-    vm.showView('history');
+    return { vm, ids };
+  }
+
+  it('onglets de plugin : aussi pour une session lancée hors de Vigie ; une action y ouvre le terminal sans perdre les onglets', () => {
+    const snapshot = signal(aSnapshot({ terminals: [], plugins: ['npm'] }));
+    const { vm, ids } = pluginVm(snapshot);
+    expect(vm.isExternal()).toBe(true);
+    expect(vm.plugins()).toEqual([{ id: 'npm', name: 'npm' }]);
+    expect(ids.at(-1)).toBe('s1');
+    vm.showView('plugin:npm');
     TestBed.tick();
-    vm.showView('xcode');
+    // L'action répond avec le terminal ouvert (`opened`) avant ou après le snapshot qui le contient : il est sélectionné dans les deux cas.
+    vm.selectTab('t9');
+    expect(vm.view()).toBe('workspace');
+    snapshot.set(aSnapshot({ terminals: [{ ...term('t9', 'shell'), title: 'npm run test' }], plugins: ['npm'] }));
     TestBed.tick();
-    vm.xcode();
-    expect(urls.at(-1)).toBe('s1?v=1');
-    const next = TestBed.runInInjectionContext(() => new SessionPageVm());
-    next.connect(signal('s1'));
-    expect(next.view()).toBe('history'); // « xcode » n'a pas remplacé la dernière vue
-    next.showView('workspace');
-    TestBed.tick(); // remet la dernière vue du module pour les autres tests
-    project.set(anXcodeProject({ container: null }));
-    expect(vm.hasXcode()).toBe(false);
+    expect(vm.isExternal()).toBe(false); // la mise en page passe en mode terminal
+    expect(vm.activeTerminal()?.id).toBe('t9');
+    expect(vm.plugins()).toEqual([{ id: 'npm', name: 'npm' }]); // l'onglet du plugin reste
+    expect(new Set(ids.filter(Boolean))).toEqual(new Set(['s1']));
+  });
+
+  it('onglets de plugin : aucune détection pour une discussion', () => {
+    const { vm, ids } = pluginVm(signal(aSnapshot({ terminals: [term('t1', 'claude')], plugins: ['npm'] })), aSession({ cwd: '/Users/x/.vigie/chat' }));
+    expect(vm.isChat()).toBe(true);
+    expect(vm.plugins()).toEqual([]);
+    expect(ids.every((id) => id === null)).toBe(true);
   });
 
   it('filtre les agents par état ; recliquer retire le filtre', () => {
@@ -346,6 +364,19 @@ describe('SessionPageVm', () => {
     expect(vm.view()).toBe('history');
     vm.allow();
     expect(vm.view()).toBe('workspace');
+  });
+
+  it('gabarit : fill pour les vues en colonnes, scroll pour celles qui se lisent d’un trait', () => {
+    const { vm } = createVm();
+    const modes = (['workspace', 'diff', 'files', 'history', 'config', 'usage', 'plugin:npm'] as const).map((v) => (vm.showView(v), vm.pageMode()));
+    expect(modes).toEqual(['fill', 'fill', 'fill', 'fill', 'fill', 'scroll', 'scroll']);
+    vm.showView('workspace');
+    TestBed.tick(); // remet la dernière vue du module pour les autres tests
+
+    TestBed.resetTestingModule();
+    const external = createVm().vm;
+    (TestBed.inject(VigieService).snapshot as WritableSignal<Snapshot>).set(aSnapshot({ terminals: [] }));
+    expect([external.isExternal(), external.pageMode()]).toEqual([true, 'scroll']); // agents seuls, sans terminal : le corps défile
   });
 
   it('bouton Fichiers et Ctrl+Shift+E : la vue Fichiers puis retour à la vue précédente ; rien pour une discussion', () => {

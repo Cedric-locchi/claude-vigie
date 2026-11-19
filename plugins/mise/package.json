@@ -1,0 +1,12 @@
+{
+  "name": "@vigie/plugin-mise",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "vigie": {
+    "api": 2,
+    "id": "mise",
+    "name": "Tâches mise",
+    "description": "Lance les tâches mise du projet dans un terminal."
+  }
+}

@@ -34,7 +34,7 @@ describe('SessionFilesComponent', () => {
     expect(el.textContent).toContain('liste est incomplète');
     expect(rows().map((r) => r.querySelector('.name')!.textContent)).toEqual(['node_modules', 'src', '.env', 'README.md']);
     expect(rows().map((r) => r.tabIndex)).toEqual([0, -1, -1, -1]); // roving tabindex
-    expect(rows()[3].querySelector('app-file-icon')!.textContent!.trim()).toBe('MD');
+    expect(rows()[3].querySelector('app-file-icon')!.getAttribute('data-glyph')).toBe('md');
     rows()[1].click();
     await settle();
     expect(rows()[1].getAttribute('aria-expanded')).toBe('true');
@@ -43,7 +43,7 @@ describe('SessionFilesComponent', () => {
     await settle();
     expect(current()!.querySelector('.tn')!.textContent).toBe('a.ts');
     expect(current()!.classList).toContain('preview');
-    expect(current()!.querySelector('app-file-icon')!.textContent!.trim()).toBe('TS');
+    expect(current()!.querySelector('app-file-icon')!.getAttribute('data-glyph')).toBe('ts');
     current()!.dispatchEvent(new MouseEvent('dblclick'));
     await settle();
     expect(current()!.classList).not.toContain('preview');
@@ -141,7 +141,7 @@ describe('SessionFilesComponent', () => {
 
     await type(input, 'readme');
     const options = () => [...dialog.querySelectorAll('[role=option]')].map((o) => o.textContent!.replace(/\s+/g, ' ').trim());
-    expect(options()).toEqual(['MDREADME.md', 'Chercher « readme » dans le contenu']);
+    expect(options()).toEqual(['README.md', 'Chercher « readme » dans le contenu']);
     expect(input.getAttribute('aria-activedescendant')).toBe('finder-opt-0');
     await press(input, 'Enter');
     expect(dialog.hasAttribute('open')).toBe(false);

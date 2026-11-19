@@ -2,12 +2,12 @@ import { Component, ElementRef, Injector, afterNextRender, inject, viewChild } f
 import { HlmTooltip } from '@spartan-ng/helm/tooltip';
 import { Icon } from '../../../../core/icon.component';
 import { FilesClaudeHereComponent } from '../claude-here/files-claude-here.component';
-import { FileIconComponent } from '../file-icon/file-icon.component';
+import { FileIconComponent } from '../../../../core/file-icon.component';
 import { SessionFilesVm, base } from '../session-files.vm';
 
 /**
  * Fenêtre d'outil Projet : « Claude ici » sur une ligne quand Claude travaille, puis l'arbre du projet façon JetBrains
- * (lignes de 24 px, icônes de type monochromes, guides d'indentation discrets, sélection arrondie en retrait).
+ * (lignes de 24 px, icônes de type colorées (core/file-icon), guides d'indentation discrets, sélection arrondie en retrait).
  * Motif ARIA « tree » avec roving tabindex. Vue seule : la logique est dans `SessionFilesVm`.
  */
 @Component({
@@ -35,8 +35,8 @@ import { SessionFilesVm, base } from '../session-files.vm';
           [attr.tabindex]="r.path === vm.focusRow() ? 0 : -1" [attr.aria-level]="r.depth + 1"
           [attr.aria-expanded]="r.kind === 'dir' ? r.open : null" [attr.aria-selected]="r.kind === 'file' ? a?.path === r.path : null"
           [attr.aria-disabled]="r.kind === 'ignored' || null" (click)="vm.pick(r)" (dblclick)="r.kind === 'file' && vm.pin(r.path)">
-          @if (r.kind === 'file') { <span class="chev" aria-hidden="true"></span><app-file-icon [path]="r.path" /> }
-          @else { <svg appIcon="chevron" class="chev" [class.open]="r.open" [class.none]="r.kind === 'ignored'"></svg><app-file-icon [kind]="r.open ? 'open' : 'dir'" /> }
+          @if (r.kind === 'file') { <span class="chev" aria-hidden="true"></span><app-file-icon [name]="r.path" /> }
+          @else { <svg appIcon="chevron" class="chev" [class.open]="r.open" [class.none]="r.kind === 'ignored'"></svg><app-file-icon [name]="r.path" [dir]="true" [open]="r.open" /> }
           <!-- ponytail: infobulle native (title) : des milliers de lignes, pas une directive de tooltip par ligne. -->
           <span class="name" [attr.title]="r.name">{{ r.name }}</span>
           @if (tc) {
@@ -46,6 +46,7 @@ import { SessionFilesVm, base } from '../session-files.vm';
           }
           @if (r.kind === 'ignored') { <span class="sr-only">, ignoré, contenu non listé</span> }
           @if (r.kind === 'file' && ch.files.get(r.path); as f) {
+            @if (f.added) { <span class="add mono">+{{ f.added }}<span class="sr-only"> ligne{{ f.added > 1 ? 's' : '' }} ajoutée{{ f.added > 1 ? 's' : '' }}</span></span> }
             <span class="st mono" [attr.data-st]="f.status"><span aria-hidden="true">{{ vm.STATUS[f.status].label }}</span><span class="sr-only">, {{ vm.STATUS[f.status].hint }}</span></span>
           } @else if (r.kind === 'dir' && ch.dirs.has(r.path)) {
             <span class="dot" aria-hidden="true"></span><span class="sr-only">, contient des changements</span>
@@ -85,12 +86,13 @@ import { SessionFilesVm, base } from '../session-files.vm';
     .chev.none { visibility: hidden; }
     .name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; margin-left: 2px; }
     .touch { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--read); }
-    .touch.edit { background: var(--cmd); }
-    .touch-n { flex: none; font-size: 11px; color: var(--cmd); }
+    .touch.edit { background: var(--brand); }
+    .touch-n { flex: none; font-size: 11px; color: var(--brand); }
     .st { flex: none; width: 1ch; font-size: 11px; font-weight: 600; text-align: center; color: var(--text-muted); }
     .st[data-st='A'], .st[data-st='?'] { color: var(--ok); }
     .st[data-st='D'] { color: var(--err); }
-    .st[data-st='R'] { color: var(--cmd); }
+    .st[data-st='R'] { color: var(--text-2); }
+    .add { flex: none; font-size: 11px; color: var(--ok); }
     .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
     .empty { margin: 0; padding: 8px 12px; font-size: 13px; color: var(--faint); }
     @media (prefers-reduced-motion: reduce) { .chev { transition: none; } }

@@ -4,7 +4,7 @@
 const READ = new Set(['Read', 'NotebookRead']);
 const EDIT = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
-/** Fichier touché en ce moment ; `edit` : modification (lilas), sinon lecture (ardoise). */
+/** Fichier touché en ce moment ; `edit` : modification (principale, comme les éditions de la chronologie), sinon lecture (gris). */
 export interface Here { path: string; edit: boolean }
 
 /** Remplace la cible abrégée de `SessionSummary.tool` par le chemin complet `toolPath` quand le daemon le donne (sinon le libellé tel quel). */

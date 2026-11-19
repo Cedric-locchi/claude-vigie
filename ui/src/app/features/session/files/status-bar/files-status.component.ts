@@ -1,4 +1,5 @@
 import { Component, inject, output } from '@angular/core';
+import { FileIconComponent } from '../../../../core/file-icon.component';
 import { Icon } from '../../../../core/icon.component';
 import { SessionFilesVm } from '../session-files.vm';
 
@@ -9,12 +10,12 @@ import { SessionFilesVm } from '../session-files.vm';
  */
 @Component({
   selector: 'app-files-status',
-  imports: [Icon],
+  imports: [Icon, FileIconComponent],
   template: `
     <nav class="crumbs" aria-label="Chemin du fichier">
       @for (c of vm.crumbs(); track c.path; let last = $last) {
         <button type="button" class="crumb" [class.here]="last" [attr.aria-current]="last ? 'location' : null"
-          [attr.aria-label]="'Montrer ' + c.path + ' dans l’arbre'" (click)="reveal.emit(c.path)">{{ c.name }}</button>
+          [attr.aria-label]="'Montrer ' + c.path + ' dans l’arbre'" (click)="reveal.emit(c.path)">@if (last) { <app-file-icon [name]="c.path" /> }{{ c.name }}</button>
         @if (!last) { <svg appIcon="chevron" class="sep"></svg> }
       }
     </nav>
@@ -36,12 +37,13 @@ import { SessionFilesVm } from '../session-files.vm';
   styles: `
     :host {
       display: flex; align-items: center; gap: 16px; height: 24px; padding: 0 8px 0 4px; overflow: hidden; white-space: nowrap;
-      border-top: 1px solid var(--line); background: var(--nav); color: var(--faint); font-size: 12px;
+      border-top: 1px solid var(--line); color: var(--faint); font-size: 12px;
     }
     .crumbs { flex: 1 1 0; min-width: 0; display: flex; align-items: center; overflow: hidden; }
     .crumb { flex: none; height: 20px; padding: 0 4px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; cursor: pointer; transition: background-color var(--dur-fast) var(--ease); }
     .crumb:hover { background: var(--hover); color: var(--text); }
     .crumb.here { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+    .crumb app-file-icon { vertical-align: -3px; margin-right: 4px; }
     .crumb:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
     .sep { flex: none; width: 12px; height: 12px; stroke-width: 1.6; stroke-linecap: round; color: var(--faint); }
     .right { flex: none; display: flex; align-items: center; gap: 14px; }
@@ -49,7 +51,7 @@ import { SessionFilesVm } from '../session-files.vm';
     .ic { flex: none; width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .mono { font-size: 11px; }
     .on { color: var(--text); }
-    .busy { color: var(--brand); }
+    .busy { color: var(--run); }
     /* Étroit : le chemin, la position, « Non enregistré » et « Claude travaille » restent. */
     @media (max-width: 820px) { .opt { display: none; } }
   `,

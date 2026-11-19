@@ -6,8 +6,9 @@ Tour de contrôle locale des sessions Claude Code. Produit : `PRODUCT.md`. Syst�
 
 - `daemon/` : Node 24, ESM `.mjs`, sans framework (`node:http`, `ws`, `node-pty`). Possède les PTY, ingère les transcripts, pousse l'état par WebSocket.
   - Architecture, sens des dépendances et « où ajouter quoi » : **`daemon/ARCHITECTURE.md`** (à lire avant toute modification du daemon).
-  - `server.mjs` point d'entrée (câblage, effets de bord, `listen`) · `transport.mjs` HTTP, WebSocket, PTY · `store.mjs` état en mémoire (`history.mjs` fichier d'historique, `trace.mjs` trace en tours, pur) · `usage.mjs` consommation (pur) · `ingest.mjs` lecture des transcripts (pur) · `guard.mjs`, `launch.mjs` fonctions pures du transport · `platform.mjs` tout ce qui dépend de l'OS (pur, macOS/Linux/WSL) · `git.mjs`, `claude-config.mjs`, `xcode.mjs` adaptateurs · `hook.mjs`, `statusline.mjs` scripts lancés par Claude Code · `pricing.mjs` tarifs.
+  - `server.mjs` point d'entrée (câblage, effets de bord, `listen`) · `transport.mjs` HTTP, WebSocket, PTY · `store.mjs` état en mémoire (`history.mjs` fichier d'historique, `trace.mjs` trace en tours, pur) · `usage.mjs` consommation (pur) · `ingest.mjs` lecture des transcripts (pur) · `guard.mjs`, `launch.mjs` fonctions pures du transport · `platform.mjs` tout ce qui dépend de l'OS (pur, macOS/Linux/WSL) · `git.mjs`, `claude-config.mjs` adaptateurs · `plugins.mjs` chargeur et SDK des plugins · `hook.mjs`, `statusline.mjs` scripts lancés par Claude Code · `pricing.mjs` tarifs.
   - Ne jamais importer ni lancer `daemon/server.mjs` dans un test ou un script : il démarre un daemon, écrit dans `~/.vigie` et purge des discussions. Tester via `createTransport` / `createStore`.
+- `plugins/<id>/` : plugins locaux livrés avec l'app (mise, xcode, npm, nx ; décisions 034, 037, 038), désactivés par défaut. Back : `index.mjs` chargé par `daemon/plugins.mjs` ; schémas propres : `contract.mjs` ; front : `ui/index.ts` (composant Angular, compilé avec l'app, n'importe que `@vigie/plugin-sdk`), table générée par `scripts/plugin-uis.mjs` dans `ui/src/app/core/plugin-uis.generated.ts` (commitée).
 - `contract/` : workspace `@vigie/contract`, schémas **Zod** (`zod/mini`) du contrat daemon ↔ UI. Le daemon l'importe par chemin relatif (`../contract/index.mjs`, seul `transport.mjs`) ; l'UI par son nom de paquet.
 - `ui/` : Angular 22, signaux, spartan/ui (`ui/libs/ui`, alias `@spartan-ng/helm/*`), Tailwind v4, xterm.js.
 - `electron/main.mjs` : app de bureau, réutilise le daemon s'il tourne déjà, sinon l'embarque.
@@ -16,8 +17,8 @@ Tour de contrôle locale des sessions Claude Code. Produit : `PRODUCT.md`. Syst�
 ## Commandes
 
 - Workspaces npm (`ui`, `contract`) : `npm install` **uniquement à la racine** (un seul lockfile, une seule copie de zod).
-- Tout : `npm test` · daemon seul : `node --test daemon/*.test.mjs` · UI seule : `npm test -w ui -- --no-watch`
-- Dans le sandbox : `VIGIE_NO_PTY=1 node --test daemon/*.test.mjs` (le sandbox interdit posix_spawnp ; saute le seul test qui ouvre un vrai PTY, qui sinon doit passer).
+- Tout : `npm test` · daemon seul : `node --test daemon/*.test.mjs plugins/*/*.test.mjs scripts/*.test.mjs` · UI seule : `npm test -w ui -- --no-watch`
+- Dans le sandbox : `VIGIE_NO_PTY=1 node --test daemon/*.test.mjs plugins/*/*.test.mjs scripts/*.test.mjs` (le sandbox interdit posix_spawnp ; saute le seul test qui ouvre un vrai PTY, qui sinon doit passer).
 - Build UI : `npm run build` (dans le sandbox : `cd ui` puis `CI=1 npx ng build --progress=false`, sinon la sortie est muette).
 - Paquet de l'app : `npm run dist` (dans le sandbox : `CI=1 npm run dist`).
 - npm dans le sandbox : `--cache "$TMPDIR/npm-cache"` (le cache global n'est pas inscriptible).

@@ -3,7 +3,7 @@ import { HlmTooltip } from '@spartan-ng/helm/tooltip';
 import { SessionFilesVm } from '../session-files.vm';
 
 /**
- * Liste des fichiers touchés par Claude : fichiers lus (œil) ou modifiés (crayon lilas, comme les outils dans la chronologie),
+ * Liste des fichiers touchés par Claude : fichiers lus (œil) ou modifiés (crayon de la principale, comme les éditions dans la chronologie),
  * du plus récent au plus ancien. Vue seule : la logique est dans `SessionFilesVm` (fourni par l'onglet Fichiers).
  */
 @Component({
@@ -44,7 +44,7 @@ import { SessionFilesVm } from '../session-files.vm';
     .item.on { background: var(--brand-bg); color: var(--text); }
     .item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
     .ic { flex: none; width: 13px; height: 13px; fill: none; stroke: var(--read); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .ic.edit { stroke: var(--cmd); }
+    .ic.edit { stroke: var(--brand); }
     .path { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
     /* Le dossier se tronque avant le nom du fichier. */
     .path > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

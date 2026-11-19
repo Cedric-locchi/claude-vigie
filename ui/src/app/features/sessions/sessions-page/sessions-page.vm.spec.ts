@@ -1,7 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import { signal } from '@angular/core';
+import { Signal, signal } from '@angular/core';
 import { describe, expect, it, vi } from 'vitest';
-import { aSession, aSnapshot, provideVigieServiceMock } from '../../../core/vigie.service.mock';
+import { aSession, aSettings, aSnapshot, aUsageRows, anUsageRow, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
+import { VigieService } from '../../../core/vigie.service';
+import { addDays, startOfDay } from '../../usage/usage-series';
 import { provideConfirmServiceMock } from '../../../core/confirm.service.mock';
 import { ConfirmService } from '../../../core/confirm.service';
 import { Router, provideRouter } from '@angular/router';
@@ -17,15 +19,15 @@ function createVm(sessions = [aSession()], sendKeys = vi.fn(), deleteSession = v
 }
 
 describe('SessionsPageVm', () => {
-  it('trie par urgence : autorisations, fins de tour, en cours, terminées du jour', () => {
+  it('une seule liste par date de création décroissante, quel que soit l’état ; terminées du jour seulement', () => {
     const vm = createVm([
-      aSession({ id: 'turn', state: 'turn', lastTs: NOW - 1000 }),
-      aSession({ id: 'perm', state: 'waiting', reason: 'permission', lastTs: NOW - 5000 }),
-      aSession({ id: 'run', state: 'running' }),
+      aSession({ id: 'turn', state: 'turn', lastTs: NOW - 1000, firstTs: 3000 }),
+      aSession({ id: 'perm', state: 'waiting', reason: 'permission', lastTs: NOW - 5000, firstTs: 1000 }),
+      aSession({ id: 'run', state: 'running', firstTs: 2000 }),
       aSession({ id: 'old', state: 'done', lastTs: NOW - 86_400_000 }),
-      aSession({ id: 'today', state: 'done', lastTs: NOW - 60_000 }),
+      aSession({ id: 'today', state: 'done', lastTs: NOW - 60_000, firstTs: 4000 }),
     ]);
-    expect(vm.rows().map((r) => r.s.id)).toEqual(['perm', 'turn', 'run', 'today']);
+    expect(vm.rows().map((r) => r.s.id)).toEqual(['today', 'turn', 'run', 'perm']);
     expect(vm.kpis()).toMatchObject({ blocked: 1, turn: 1, running: 1, subagents: 3, todayCost: 48.5 });
   });
 
@@ -155,5 +157,68 @@ describe('SessionsPageVm', () => {
     expect(vm.selected().map((s) => s.id)).toEqual(['b']); // l'échec reste coché pour réessayer
     vm.clearSelection();
     expect(vm.selected()).toEqual([]);
+  });
+
+  it('la sélection porte sur toute la liste, attentes comprises', () => {
+    const vm = createVm([
+      aSession({ id: 'perm', state: 'waiting', reason: 'permission', lastTs: NOW - 5000 }),
+      aSession({ id: 'turn', state: 'turn', lastTs: NOW - 1000 }),
+      aSession({ id: 'run', state: 'running' }),
+      aSession({ id: 'today', state: 'done', lastTs: NOW - 60_000 }),
+    ]);
+    vm.toggleAll(true);
+    expect(vm.selected().map((s) => s.id)).toEqual(['perm', 'turn', 'run', 'today']);
+    expect(vm.kpis().sessionBar).toEqual(['wait', 'turn', 'on', 'ok']);
+  });
+
+  it('une session qui change d’état garde sa place dans la liste et sa sélection', () => {
+    const run = (state: 'running' | 'turn' | 'waiting') => [
+      aSession({ id: 'new', state: 'running', firstTs: 3000 }),
+      aSession({ id: 'mid', state, firstTs: 2000 }),
+      aSession({ id: 'old', state: 'running', firstTs: 1000 }),
+    ];
+    const snapshot = signal(aSnapshot({ now: NOW, sessions: run('running') }));
+    TestBed.configureTestingModule({ providers: [SessionsPageVm, provideRouter([]), provideConfirmServiceMock(), provideVigieServiceMock({ snapshot })] });
+    const vm = TestBed.inject(SessionsPageVm);
+    vm.toggle('mid', true);
+    for (const state of ['turn', 'waiting'] as const) {
+      snapshot.set(aSnapshot({ now: NOW, sessions: run(state) }));
+      expect(vm.rows().map((r) => r.s.id)).toEqual(['new', 'mid', 'old']);
+      expect(vm.selected().map((s) => s.id)).toEqual(['mid']);
+    }
+  });
+
+  it('historique : 53 semaines fixes (heatmap la plus large) ; moyenne 7 j', () => {
+    const today = startOfDay(NOW);
+    const rows = aUsageRows({
+      now: NOW,
+      rows: [
+        anUsageRow({ day: addDays(today, -1), model: 'claude-opus-5-5', input: 0, output: 7000, cacheCreate: 0, cacheRead: 0, cost: 14 }),
+        anUsageRow({ day: addDays(today, -3), model: 'claude-sonnet-5-5', input: 0, output: 21_000, cacheCreate: 0, cacheRead: 0, cost: 7 }),
+        anUsageRow({ day: addDays(today, -100), model: 'claude-opus-5-5', input: 0, output: 1000, cacheCreate: 0, cacheRead: 0, cost: 1 }),
+      ],
+    });
+    let days: Signal<number> | null = null;
+    TestBed.configureTestingModule({
+      providers: [SessionsPageVm, provideRouter([]), provideConfirmServiceMock(), provideVigieServiceMock({
+        snapshot: signal(aSnapshot({ now: NOW })),
+        usageResource: ((d: Signal<number>) => { days = d; return fakeResource(rows); }) as unknown as VigieService['usageResource'],
+        settingsResource: (() => fakeResource(aSettings({ alerts: { dailyCost: 40, windowPct: null } }))) as unknown as VigieService['settingsResource'],
+      })],
+    });
+    const vm = TestBed.inject(SessionsPageVm);
+    expect(days!()).toBe(371);
+    expect(vm.kpis().avg).toEqual({ cost: 3, tokens: 4000 });
+    expect(vm.kpis().costTrend).toBe('up'); // 48,50 $ aujourd'hui pour 3 $ de moyenne
+    // Coût du jour 48,50 $ au-dessus du seuil de 40 $ : toute la barre en rouge.
+    expect(new Set(vm.kpis().costBar)).toEqual(new Set(['hot']));
+    expect(vm.kpis().window?.bar.filter((x) => x === 'on')).toHaveLength(12); // 62 % de 20 tirets
+    expect(vm.activity()?.peak?.tokens).toBe(21_000);
+    // La heatmap suit la largeur : 26 semaines incluent le jour d'il y a 100 jours, 13 non ; même historique.
+    expect(vm.activity()?.activeDays).toBe(3);
+    vm.activityWeeks.set(13);
+    expect(vm.activity()?.activeDays).toBe(2);
+    expect(vm.activity()?.weeks).toHaveLength(13);
+    expect(days!()).toBe(371);
   });
 });

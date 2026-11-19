@@ -11,7 +11,7 @@ export const VIEWS: { id: SideView; label: string; icon: string }[] = [
 
 /**
  * Barre d'activité verticale, style JetBrains « New UI » : une icône par fenêtre d'outil (Projet, Rechercher, Claude).
- * La vue affichée a un fond appuyé et ne réagit pas au clic ; panneau masqué (ou tiroir fermé), le clic le rouvre.
+ * La vue affichée est dans une case lavée de violet et ne réagit pas au clic ; panneau masqué (ou tiroir fermé), le clic le rouvre.
  * Vue seule : l'état vient de `SessionFilesVm`.
  */
 @Component({
@@ -32,17 +32,19 @@ export const VIEWS: { id: SideView; label: string; icon: string }[] = [
     }
   `,
   styles: `
-    :host { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; background: var(--nav); border-right: 1px solid var(--line); }
+    /* Pilule verticale posée sur le fond pointillé (décision 043) : panneau à part, à la hauteur de ses icônes. */
+    :host { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; border: 1px solid var(--edge); border-radius: 22px; background: var(--surface); box-shadow: var(--elev-1); }
     .act {
-      position: relative; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 6px; background: none;
+      position: relative; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 10px; background: none;
       color: var(--faint); cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
     }
     .act:not([aria-current]):hover { background: var(--hover); color: var(--text); }
-    .act[aria-current='true'] { background: var(--press); color: var(--text); cursor: default; }
+    /* Vue affichée : case arrondie à fond lavé de la principale. */
+    .act[aria-current='true'] { background: var(--brand-bg); color: var(--brand); cursor: default; }
     .act:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
     svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
     /* Claude travaille : petit point bleu en coin (état « en cours »), absent au repos. */
-    .busy { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 2px var(--nav); }
+    .busy { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--run); box-shadow: 0 0 0 2px var(--surface); }
   `,
 })
 export class FilesActivityComponent {

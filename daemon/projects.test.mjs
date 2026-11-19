@@ -2,9 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { childDirs, describeDirs, projectKind } from './projects.mjs';
+import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
 
 test('projectKind : chaque marqueur, iOS prioritaire sur package.json, null sinon', () => {
   const cas = [
@@ -18,7 +18,7 @@ test('projectKind : chaque marqueur, iOS prioritaire sur package.json, null sino
 });
 
 function home() {
-  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-projects-'));
+  const h = tempDir('vigie-projects-');
   for (const d of ['ios-app', 'Infra', 'web', '.cache']) fs.mkdirSync(path.join(h, 'proj', d), { recursive: true });
   fs.writeFileSync(path.join(h, 'proj', 'fichier'), '');
   return h;
@@ -36,7 +36,7 @@ test('childDirs : sous-dossiers non cachés filtrés par préfixe (casse ignoré
 });
 
 test('childDirs : plafond de 50', async () => {
-  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'vigie-projects-'));
+  const h = tempDir('vigie-projects-');
   for (let i = 0; i < 60; i++) fs.mkdirSync(path.join(h, `d${i}`));
   assert.equal((await childDirs(h + path.sep, h)).length, 50);
 });

@@ -78,8 +78,8 @@ const RECENT_TOOLS = 30;
     .k { flex: none; width: 8px; height: 8px; border-radius: 2px; }
     .k-read { background: var(--read); }
     .k-edit { background: var(--brand); }
-    .k-command { background: var(--cmd); }
-    .k-agent { background: var(--ok); }
+    .k-command { background: var(--text-2); }
+    .k-agent { background: var(--data); }
     .k-other { background: var(--neutral); }
   `,
 })

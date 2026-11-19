@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { HlmTooltip } from '@spartan-ng/helm/tooltip';
 import { Icon } from '../../../../core/icon.component';
-import { FileIconComponent } from '../file-icon/file-icon.component';
+import { FileIconComponent } from '../../../../core/file-icon.component';
 import { SessionFilesVm, base, isDirty } from '../session-files.vm';
 
 /**
@@ -19,7 +19,7 @@ import { SessionFilesVm, base, isDirty } from '../session-files.vm';
       <div class="tab" [class.on]="tab.path === a" [class.preview]="tab.preview" (dblclick)="vm.pin(tab.path)"
         (auxclick)="$event.button === 1 && vm.close(tab.path)" (mousedown)="$event.button === 1 && $event.preventDefault()">
         <button type="button" class="tab-name" [attr.aria-current]="tab.path === a ? 'page' : null" [hlmTooltip]="tab.path + (tab.preview ? ' (aperçu : double-clic pour le garder)' : '')" [showDelay]="500" (click)="vm.activate(tab.path)">
-          <app-file-icon [path]="tab.path" /><span class="tn">{{ name(tab.path) }}</span>@if (tab.preview) { <span class="sr-only">, aperçu</span> }
+          <app-file-icon [name]="tab.path" /><span class="tn">{{ name(tab.path) }}</span>@if (tab.preview) { <span class="sr-only">, aperçu</span> }
         </button>
         <button type="button" class="tab-x" [class.dirty]="dirty(tab)" [attr.aria-label]="'Fermer ' + name(tab.path) + (dirty(tab) ? ', modifié' : '')" (click)="vm.close(tab.path)">
           <span class="dot" aria-hidden="true"></span><svg appIcon="close" class="ic"></svg>

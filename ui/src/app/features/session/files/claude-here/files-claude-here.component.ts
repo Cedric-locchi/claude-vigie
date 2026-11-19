@@ -1,6 +1,6 @@
 import { Component, inject, input } from '@angular/core';
 import { HlmTooltip } from '@spartan-ng/helm/tooltip';
-import { FileIconComponent } from '../file-icon/file-icon.component';
+import { FileIconComponent } from '../../../../core/file-icon.component';
 import { FilesTouchedComponent } from '../touched/files-touched.component';
 import { SessionFilesVm, base } from '../session-files.vm';
 
@@ -22,7 +22,7 @@ import { SessionFilesVm, base } from '../session-files.vm';
           <button type="button" class="here" [class.on]="vm.active()?.path === h.path" [attr.title]="h.path" (click)="vm.open(h.path, true)">
             <span class="pulse" aria-hidden="true"></span>
             <span class="verb">Claude {{ h.edit ? 'modifie' : 'lit' }}</span>
-            <app-file-icon [path]="h.path" />
+            <app-file-icon [name]="h.path" />
             <span class="name">{{ name(h.path) }}</span>
             <span class="sr-only">{{ h.path }}</span>
           </button>
@@ -53,9 +53,9 @@ import { SessionFilesVm, base } from '../session-files.vm';
     }
     .here:hover { background: var(--hover); color: var(--text); }
     .here.on .name { color: var(--text); }
-    .pulse { flex: none; width: 7px; height: 7px; margin-right: 2px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px var(--brand-bg); animation: pulse 1.6s var(--ease) infinite; }
-    @keyframes pulse { 50% { box-shadow: 0 0 0 5px var(--brand-bg); background: var(--brand-hover); } }
-    .verb { flex: none; font-size: 12px; color: var(--brand); }
+    .pulse { flex: none; width: 7px; height: 7px; margin-right: 2px; border-radius: 50%; background: var(--run); box-shadow: 0 0 0 3px var(--data-bg); animation: pulse 1.6s var(--ease) infinite; }
+    @keyframes pulse { 50% { box-shadow: 0 0 0 5px var(--data-bg); } }
+    .verb { flex: none; font-size: 12px; color: var(--run); }
     .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .idle { flex: 1; min-width: 0; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--faint); }
     .follow {

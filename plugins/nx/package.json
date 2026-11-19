@@ -1,0 +1,12 @@
+{
+  "name": "@vigie/plugin-nx",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "vigie": {
+    "api": 2,
+    "id": "nx",
+    "name": "Nx",
+    "description": "Liste les projets et cibles de l'espace Nx (nx graph, qui exécute le code du dépôt) et lance une cible dans un terminal."
+  }
+}

@@ -7,14 +7,14 @@ import { VigieService } from '../../../core/vigie.service';
 const THEMES: Record<Theme, ITheme> = {
   dark: {
     // Mêmes valeurs que les variables de styles.css (xterm veut des couleurs fixes) ; ANSI calées sur la même clarté que les accents.
-    background: '#070a0f', foreground: '#cdd1d8', cursor: '#e8ebef', selectionBackground: '#273e5c',
-    black: '#232932', red: '#fc7a79', green: '#78c89e', yellow: '#ffbb49', blue: '#79b1f9', magenta: '#bb99e3', cyan: '#65d0dc', white: '#e8ebef',
-    brightBlack: '#9299a2', brightRed: '#ffa4a1', brightGreen: '#95e6bb', brightYellow: '#ffd57e', brightBlue: '#a3ceff', brightMagenta: '#d8bcfa', brightCyan: '#96e7f1', brightWhite: '#ffffff',
+    background: '#050b0d', foreground: '#cad3d4', cursor: '#e6eced', selectionBackground: '#36366b',
+    black: '#1e2b2e', red: '#fc7a79', green: '#78c89e', yellow: '#ffbb49', blue: '#79b1f9', magenta: '#bb99e3', cyan: '#65d0dc', white: '#e6eced',
+    brightBlack: '#8e9b9d', brightRed: '#ffa4a1', brightGreen: '#95e6bb', brightYellow: '#ffd57e', brightBlue: '#a3ceff', brightMagenta: '#d8bcfa', brightCyan: '#96e7f1', brightWhite: '#ffffff',
   },
   light: {
-    background: '#ffffff', foreground: '#333840', cursor: '#161b22', selectionBackground: '#c2daf9',
-    black: '#161b22', red: '#ba2b2e', green: '#0b7643', yellow: '#9c5400', blue: '#145ec1', magenta: '#7945ab', cyan: '#00737e', white: '#7b8187',
-    brightBlack: '#4f565e', brightRed: '#d74745', brightGreen: '#249057', brightYellow: '#bb731b', brightBlue: '#3778d7', brightMagenta: '#8f5fc0', brightCyan: '#1597aa', brightWhite: '#cdd1d8',
+    background: '#ffffff', foreground: '#303a3c', cursor: '#0c0c0c', selectionBackground: '#d0d4ff',
+    black: '#0c0c0c', red: '#ba2b2e', green: '#0b7643', yellow: '#9c5400', blue: '#145ec1', magenta: '#7945ab', cyan: '#00737e', white: '#7e888a',
+    brightBlack: '#4c585a', brightRed: '#d74745', brightGreen: '#249057', brightYellow: '#bb731b', brightBlue: '#3778d7', brightMagenta: '#8f5fc0', brightCyan: '#1597aa', brightWhite: '#cbd3d4',
   },
 };
 

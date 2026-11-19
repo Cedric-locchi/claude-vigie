@@ -1,0 +1,12 @@
+{
+  "name": "@vigie/plugin-npm",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "vigie": {
+    "api": 2,
+    "id": "npm",
+    "name": "Scripts npm",
+    "description": "Lance les scripts du package.json (racine et workspaces) avec le gestionnaire du dépôt (npm, pnpm, yarn ou bun)."
+  }
+}

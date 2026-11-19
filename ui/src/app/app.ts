@@ -26,7 +26,7 @@ import { ThemeService } from './core/theme.service';
   host: { '(document:keydown.meta.n)': 'vm.newSession($event)' },
   template: `
     <div hlmSidebarWrapper [class.offline]="!!vm.offline()">
-      <hlm-sidebar collapsible="icon">
+      <hlm-sidebar collapsible="icon" variant="floating">
         <div hlmSidebarHeader>
           <div class="brand">
             <svg class="logo" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg>
@@ -50,9 +50,9 @@ import { ThemeService } from './core/theme.service';
           <div hlmSidebarGroup>
             <ul hlmSidebarMenu>
               <li hlmSidebarMenuItem>
-                <a hlmSidebarMenuButton routerLink="/" [isActive]="vm.page() === '/'" [attr.aria-current]="vm.page() === '/' ? 'page' : null" tooltip="Sessions">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M9 10v10" /></svg>
-                  <span>Sessions</span>
+                <a hlmSidebarMenuButton routerLink="/" [isActive]="vm.page() === '/'" [attr.aria-current]="vm.page() === '/' ? 'page' : null" tooltip="Dashboard">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>
+                  <span>Dashboard</span>
                 </a>
                 <span hlmSidebarMenuBadge>{{ vm.active().length }}</span>
               </li>
@@ -149,6 +149,12 @@ import { ThemeService } from './core/theme.service';
             </li>
             @if (vm.chatError(); as err) { <li class="chat-error expanded-only" role="alert">{{ err }}</li> }
             <li hlmSidebarMenuItem>
+              <a hlmSidebarMenuButton routerLink="/plugins" [isActive]="vm.page() === '/plugins'" [attr.aria-current]="vm.page() === '/plugins' ? 'page' : null" tooltip="Plugins de Vigie : des onglets en plus dans les sessions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3v4M15 3v4M6 7h12v4a6 6 0 0 1-12 0zM12 17v4" /></svg>
+                <span>Plugins</span>
+              </a>
+            </li>
+            <li hlmSidebarMenuItem>
               <a hlmSidebarMenuButton routerLink="/settings" [isActive]="vm.page() === '/settings'" [attr.aria-current]="vm.page() === '/settings' ? 'page' : null" tooltip="Réglages">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
                 <span>Réglages</span>
@@ -182,6 +188,11 @@ import { ThemeService } from './core/theme.service';
     <app-toast-host />
   `,
   styles: `
+    /* Barre latérale en panneau détaché (décision 043) : marge autour (variante floating de spartan), rayon 12px, relief de repos,
+       posée comme la zone principale sur le fond pointillé ; en mobile, le panneau coulissant de spartan est inchangé. */
+    [hlmSidebarWrapper] { background: var(--dots); }
+    :host ::ng-deep [data-variant='floating'] [data-slot='sidebar-inner'] { border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); }
+    main { background: transparent; }
     .brand { display: flex; align-items: center; gap: 10px; padding: 4px 6px; min-height: 32px; font-weight: 700; font-size: 16px; color: var(--text); }
     .logo { flex: none; color: var(--brand); }
     /* Mode icônes : seul ce qui sert à la navigation reste. */
@@ -216,7 +227,7 @@ import { ThemeService } from './core/theme.service';
     [data-collapsible='icon'] .session { position: relative; justify-content: center; padding: 0 !important; }
     [data-collapsible='icon'] .session .lines { display: none; }
     [data-collapsible='icon'] .session .initial { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line-strong); font-size: 11px; font-weight: 600; color: var(--text-2); }
-    [data-collapsible='icon'] .session .dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; box-shadow: 0 0 0 2px var(--nav); }
+    [data-collapsible='icon'] .session .dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; box-shadow: 0 0 0 2px var(--sidebar); }
     [data-collapsible='icon'] .session[data-active='true'] .initial { border-color: var(--brand); color: var(--brand); }
     [data-collapsible='icon'] .session.urgent .initial { border-color: var(--wait); color: var(--wait); }
     /* Replié : un trait sépare la nav des sessions, les libellés de groupe étant masqués. */
@@ -226,7 +237,7 @@ import { ThemeService } from './core/theme.service';
     @media (prefers-reduced-motion: reduce) { .pulse-dot { animation: none; } }
     .meta { color: var(--faint); font-size: 11px; }
     .spark { display: flex; align-items: flex-end; gap: 1px; height: 12px; }
-    .spark i { width: 2px; height: 100%; border-radius: 1px; background: var(--brand); transform: scaleY(var(--h, 0)); transform-origin: bottom; transition: transform var(--dur) var(--ease); }
+    .spark i { width: 2px; height: 100%; border-radius: 1px; background: var(--data); transform: scaleY(var(--h, 0)); transform-origin: bottom; transition: transform var(--dur) var(--ease); }
     .spark.stale i { background: var(--neutral); }
     .allow { color: var(--wait); }
     .allow { transition: background-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease); }
@@ -247,12 +258,18 @@ import { ThemeService } from './core/theme.service';
     [data-collapsible='icon'] .claude-status { align-items: center; padding-inline: 0; }
     .chat-error, .row-error { padding: 2px 8px; font-size: 11px; line-height: 1.4; color: var(--err); }
     .bell { display: flex; }
+    /* Règle de défilement (DESIGN.md, Layout ; gabarit shell/page) : au bureau la coque fait la hauteur de la fenêtre et le document ne défile
+       jamais (clip : ni barre, ni scrollIntoView) ; la page routée prend la hauteur sous les bandeaux. Téléphone : le document défile. */
+    main { overflow-x: clip; }
+    @media (min-width: 721px) { main { height: 100dvh; overflow: clip; } }
+    :host ::ng-deep main > router-outlet + * { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .mobile-bar, .incompat, .offline-bar { flex: none; }
     /* Replié : logo puis cloche, l'un sous l'autre (la largeur ne tient qu'une icône). */
     [data-collapsible='icon'] .brand { flex-direction: column; padding-inline: 0; }
-    /* Hauteur fixe = --chrome-top (styles.css). Collée en haut : le bouton du menu reste à portée en bas d'une longue page. */
+    /* Hauteur fixe (52px, reprise par --chrome-top et --sticky-top). Collée en haut : le bouton du menu reste à portée en bas d'une longue page. */
     .mobile-bar { display: none; position: sticky; top: 0; z-index: 10; height: 52px; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--bg); font-weight: 600; }
     @media (max-width: 767px) { .mobile-bar { display: flex; } }
-    /* Bandeau de version : hauteur fixe, ajoutée à --chrome-top pour que les vues pleine hauteur ne débordent pas. */
+    /* Bandeau de version : hauteur fixe, ajoutée à --chrome-top (hauteur propre du terminal et de l'éditeur sur téléphone). */
     .incompat { display: flex; align-items: center; gap: 8px; height: 36px; margin: 0; padding: 0 16px; border-bottom: 1px solid var(--err-line); background: var(--err-bg); color: var(--err); font-size: 12px; }
     .incompat svg { flex: none; }
     .incompat span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

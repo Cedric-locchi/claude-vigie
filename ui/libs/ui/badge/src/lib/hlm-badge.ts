@@ -17,7 +17,7 @@ const badgeVariants = cva(
         /** Vigie : états de session / d'agent. « À toi » en contour : le fond ambre reste réservé à « Attend ». */
         waiting: 'bg-wait-bg text-wait font-semibold',
         turn: 'border-wait-line text-wait font-semibold',
-        running: 'bg-[var(--brand-bg)] text-brand font-semibold',
+        running: 'bg-[var(--data-bg)] text-run font-semibold',
         done: 'bg-ok-bg text-ok font-semibold',
         issue: 'bg-err-bg text-err font-semibold',
       },

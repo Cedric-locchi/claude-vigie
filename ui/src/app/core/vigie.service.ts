@@ -1,8 +1,9 @@
-import { DOCUMENT, DestroyRef, Injector, Service, Signal, inject, signal } from '@angular/core';
+import { DOCUMENT, DestroyRef, Injector, Service, Signal, computed, inject, signal } from '@angular/core';
 import { HttpClient, HttpResourceRef, httpResource } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import * as C from '@vigie/contract';
-import { FileBody, ProjectFiles, SearchResults, SessionCost, SessionLog, SessionSummary, Settings, SettingsBody, Snapshot, Terminal, TerminalBody, WriteBody } from './models';
+import { OUTDATED } from '../../plugin-sdk/host';
+import { FileBody, PluginActionBody, PluginActionResult, PluginCallBody, PluginInfo, ProjectFiles, SearchResults, SessionCost, SessionLog, SessionSummary, Settings, SettingsBody, Snapshot, Terminal, TerminalBody, WriteBody } from './models';
 
 /** Touches envoyées au PTY par les réponses rapides : le terminal reste la seule source d'interaction. */
 /** Discussion sans projet : lancée par Vigie dans ~/.vigie/chat. */
@@ -35,8 +36,8 @@ const STALE_MS = 40_000;
 /** Écart entre deux tours du chien de garde (5 s attendues) qui trahit une mise en veille. */
 const WAKE_GAP_MS = 20_000;
 
-/** Réponse hors contrat : message lisible plutôt que le détail zod (affiché tel quel par certains écrans). */
-export const OUTDATED = 'Réponse inattendue du daemon : est-il à jour ? (redémarre-le après une mise à jour)';
+/** Réponse hors contrat : message lisible plutôt que le détail zod (affiché tel quel par certains écrans). Partagé avec les plugins. */
+export { OUTDATED };
 
 /** Valide une réponse du daemon contre un schéma du contrat ; lève une erreur lisible si elle n'y correspond pas. */
 const check = <T>(schema: { parse(v: unknown): T }) => (v: unknown): T => {
@@ -157,29 +158,55 @@ export class VigieService {
     return this.startSession({ cwd: s.cwd, command: `claude --resume ${s.id}` });
   }
 
-  /** Nouveau terminal dans le dossier de la session : shell nu, tâche mise (`miseTask`), `mise trust` (`miseTrust`), action Xcode (`xcode`) ou script du projet (`script`). 400 si la tâche est inconnue. */
+  /** Nouveau terminal (shell nu) dans le dossier de la session. */
   openShell(sessionId: string, body: TerminalBody = {}): Promise<Terminal> {
     return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/terminals`, body)).then(check(C.Terminal));
   }
 
-  /** Tâches mise du dossier de la session ; `version` déclenche le rechargement (jamais à chaque snapshot : mise tasks coûte). */
-  miseResource(sessionId: Signal<string | null>, version: Signal<number>) {
-    return httpResource(() => (sessionId() ? `/api/sessions/${sessionId()}/mise?v=${version()}` : undefined), { parse: check(C.MiseTasks) });
+  /** Plugins livrés avec Vigie (page Plugins), actifs ou non. */
+  pluginsResource() {
+    return httpResource(() => '/api/plugins', { parse: check(C.Plugins) });
   }
 
-  /** Projet Xcode du dossier (rapide, sans process) : `container` null = pas d'onglet Xcode. */
-  xcodeResource(sessionId: Signal<string | null>, version: Signal<number>) {
-    return httpResource(() => (sessionId() ? `/api/sessions/${sessionId()}/xcode?v=${version()}` : undefined), { parse: check(C.XcodeProject) });
+  /** Active ou désactive un plugin ; le daemon pousse ensuite un snapshot (`plugins`), les onglets se relisent. */
+  togglePlugin(id: string, enabled: boolean): Promise<PluginInfo> {
+    return firstValueFrom(this.http.post(`/api/plugins/${id}`, { enabled })).then(check(C.PluginInfo));
   }
 
-  /** Schemes et simulateurs (lent, jusqu'à 30 s : xcodebuild + simctl) ; chargé à l'entrée dans l'onglet, rechargé par `reload()`. */
-  xcodeTargetsResource(sessionId: Signal<string | null>) {
-    return httpResource(() => (sessionId() ? `/api/sessions/${sessionId()}/xcode/targets` : undefined), { parse: check(C.XcodeTargets) });
+  /**
+   * Plugins qui s'appliquent au dossier de la session (un onglet chacun). Relus quand la liste des plugins actifs change,
+   * jamais à chaque snapshot (chaque plugin lance sa détection). Aucun plugin actif, ou daemon sans plugins : aucune requête.
+   */
+  sessionPluginsResource(sessionId: Signal<string | null>) {
+    // computed : l'URL ne change pas à chaque snapshot, la ressource non plus (elle relirait sinon à chaque événement).
+    const url = computed(() => {
+      const id = sessionId();
+      const active = this.snapshot()?.plugins;
+      return id && active?.length ? `/api/sessions/${id}/plugins?p=${encodeURIComponent(active.join(','))}` : undefined;
+    });
+    return httpResource(() => url(), { parse: check(C.SessionPlugins) });
   }
 
-  /** Ouvre le projet dans Xcode (`open` côté daemon). */
-  openXcode(sessionId: string): Promise<unknown> {
-    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/xcode/open`, {}));
+  /** Méthode du backend d'un plugin : JSON libre (`null` possible), validé ensuite par le schéma du plugin ; `{ error }` en 4xx/5xx. */
+  pluginCall(sessionId: string, pluginId: string, method: string, params?: unknown, signal?: AbortSignal): Promise<unknown> {
+    const body: PluginCallBody = params === undefined ? {} : { params };
+    const req = this.http.post(`/api/sessions/${sessionId}/plugins/${pluginId}/call/${method}`, body);
+    if (!signal) return firstValueFrom(req);
+    // HttpClient n'a pas d'AbortSignal : se désabonner annule la requête XHR/fetch. Rejet avec `signal.reason` (AbortError).
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) return reject(signal.reason);
+      const abort = () => { sub.unsubscribe(); reject(signal.reason); };
+      const sub = req.subscribe({
+        next: (v) => { signal.removeEventListener('abort', abort); resolve(v); },
+        error: (e) => { signal.removeEventListener('abort', abort); reject(e); },
+      });
+      signal.addEventListener('abort', abort, { once: true });
+    });
+  }
+
+  /** Action terminal d'un plugin : le terminal ouvert ; `{ error }` en 4xx/5xx. */
+  pluginAction(sessionId: string, pluginId: string, action: string, body: PluginActionBody): Promise<PluginActionResult> {
+    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/plugins/${pluginId}/actions/${action}`, body)).then(check(C.PluginActionResult));
   }
 
   /** Tue le process du terminal et retire son onglet. */
