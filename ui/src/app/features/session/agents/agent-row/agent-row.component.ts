@@ -20,6 +20,9 @@ import { agentLabel } from '../../../../core/session-view';
         <span class="line">{{ a.reason === 'question' ? (a.detail || 'Pose une question') : 'Veut lancer' }}@if (a.reason !== 'question') { <span class="mono">{{ a.detail ?? a.lastAction }}</span> }</span>
       } @else if (a.issue) {
         <span class="line issue">{{ a.issue }}</span>
+      } @else if (a.sub && a.description) {
+        <!-- Pourquoi l'agent est là (description donnée au lancement, ex. « Dev front pan 2a ») plutôt que sa commande en cours. -->
+        <span class="line mission" [title]="a.description">{{ a.description }}</span>
       } @else if (a.lastAction && a.state !== 'done') {
         <span class="line mono">{{ a.lastAction }}</span>
       } @else if (a.lastText) {
@@ -53,6 +56,7 @@ import { agentLabel } from '../../../../core/session-view';
     .name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .line { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .line.mono, .line .mono { font-size: 12px; }
+    .mission { color: var(--text); }
     .issue { color: var(--err); }
     .stats { display: flex; gap: 12px; font-size: 11px; color: var(--faint); }
   `,

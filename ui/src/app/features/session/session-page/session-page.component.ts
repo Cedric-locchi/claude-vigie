@@ -260,7 +260,7 @@ import { PageComponent } from '../../../shell/page/page.component';
       </app-page>
       </div>
 
-      <app-agent-panel [agent]="vm.openAgent()" [canAnswer]="!vm.openAgent()?.sub && !!vm.claudeTerminal()" [error]="vm.replyError()" (closed)="vm.showAgent(null)" (allow)="vm.allow()" (refuse)="vm.refuse()" (focusTerminal)="vm.goToTerminal()" />
+      <app-agent-panel [agent]="vm.openAgent()" [sessionId]="s.id" [canAnswer]="!vm.openAgent()?.sub && !!vm.claudeTerminal()" [error]="vm.replyError()" (closed)="vm.showAgent(null)" (allow)="vm.allow()" (refuse)="vm.refuse()" (focusTerminal)="vm.goToTerminal()" />
     } @else {
       <app-page>
         @if (vm.notFound()) {
