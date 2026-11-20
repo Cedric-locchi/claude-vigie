@@ -1,6 +1,6 @@
 import * as C from '@vigie/contract';
 import { TestBed } from '@angular/core/testing';
-import { aConfig, aGitDiff, aProjectFiles, aSessionUsage, fakeResource, aSearchResults, aSessionSearch, PROJECTS, aSession, aSessionCost, aSettings, aSnapshot, aTerminal, aUsageRows, anAgent, anUsage, provideVigieServiceMock, somePlugins } from './vigie.service.mock';
+import { aConfig, aPlan, aGitDiff, aProjectFiles, aSessionUsage, fakeResource, aSearchResults, aSessionSearch, PROJECTS, aSession, aSessionCost, aSettings, aSnapshot, aTerminal, aUsageRows, anAgent, anUsage, provideVigieServiceMock, somePlugins } from './vigie.service.mock';
 import { VigieService } from './vigie.service';
 
 // Les fabriques de test suivent le contrat : un mock qui diverge du daemon ferait passer des tests à tort.
@@ -8,6 +8,8 @@ describe('mocks du daemon', () => {
   it('respectent les schémas du contrat', () => {
     expect(() => C.SessionSummary.parse(aSession())).not.toThrow();
     expect(() => C.SessionSummary.parse(aSession({ state: 'waiting', reason: 'permission', detail: 'Bash' }))).not.toThrow();
+    expect(() => C.SessionSummary.parse(aSession({ planTs: 1 }))).not.toThrow();
+    expect(() => C.SessionPlan.parse(aPlan())).not.toThrow();
     expect(() => C.Usage.parse(anUsage())).not.toThrow();
     expect(() => C.Snapshot.parse(aSnapshot())).not.toThrow();
     expect(() => C.ClaudeConfig.parse(aConfig())).not.toThrow();

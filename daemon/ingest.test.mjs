@@ -157,6 +157,14 @@ test('vrais transcripts : décodage sans erreur', { skip: !fs.existsSync(path.jo
   }
 });
 
+test('plan : dernier ExitPlanMode non vide retenu, input {} ou plan blanc ignorés', () => {
+  const plan = (s, id, input) => ({ type: 'assistant', timestamp: at(s), sessionId: 'S', message: { id, content: [{ type: 'tool_use', id: `p${id}`, name: 'ExitPlanMode', input }] } });
+  assert.equal(trackFrom(LINES).plan, null);
+  const t = trackFrom([...LINES, plan(30, 'a', { plan: '# Plan A' }), plan(31, 'b', {}), plan(32, 'c', { plan: '  ' })]);
+  assert.deepEqual(t.plan, { text: '# Plan A', ts: T0 + 30_000 });
+  assert.deepEqual(trackFrom([...LINES, plan(30, 'a', { plan: '# Plan A' }), plan(40, 'd', { plan: '# Plan B' })]).plan, { text: '# Plan B', ts: T0 + 40_000 });
+});
+
 test('batchWatch : un lot 250 ms après le premier événement, noms accumulés, sans nom = scan complet', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const dir = path.join(path.sep, 'p');

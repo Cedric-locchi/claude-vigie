@@ -1,7 +1,7 @@
 import { Provider, Signal, computed, isSignal, signal, untracked } from '@angular/core';
 import type { HttpResourceRef } from '@angular/common/http';
 import { vi } from 'vitest';
-import { Agent, ClaudeConfig, GitDiff, PluginInfo, Project, ProjectFiles, SearchResults, SessionCost, SessionSearch, SessionSummary, SessionUsage, Settings, SettingsBody, Snapshot, Terminal, Usage, UsageRow, UsageRows } from './models';
+import { Agent, ClaudeConfig, GitDiff, PluginInfo, Project, ProjectFiles, SearchResults, SessionCost, SessionPlan, SessionSearch, SessionSummary, SessionUsage, Settings, SettingsBody, Snapshot, Terminal, Usage, UsageRow, UsageRows } from './models';
 import { VigieService } from './vigie.service';
 
 export function aSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -9,8 +9,12 @@ export function aSession(overrides: Partial<SessionSummary> = {}): SessionSummar
     id: 's1', project: 'meeplebox', cwd: '/dev/meeplebox', branch: 'feat/suggestions', model: 'claude-opus-5-5',
     title: 'Moteur de suggestions', lastText: 'Tests verts.', tool: 'Bash · xcodebuild test', toolPath: null,
     state: 'running', subagents: 2, activeSubagents: 1, tokens: 312_000, cost: 4.2, activity: [0, 0, 1, 3, 2, 0, 0, 0, 4, 5, 2, 1, 0, 3, 6],
-    firstTs: 1_000, lastTs: 60_000, terminalId: null, ...overrides,
+    firstTs: 1_000, lastTs: 60_000, terminalId: null, planTs: null, ...overrides,
   };
+}
+
+export function aPlan(overrides: Partial<SessionPlan> = {}): SessionPlan {
+  return { text: '# Plan\n\n1. Lire le code\n2. Écrire les tests', ts: 50_000, ...overrides };
 }
 
 export function anUsage(overrides: Partial<Usage> = {}): Usage {
@@ -200,6 +204,7 @@ export function provideVigieServiceMock(overrides: Partial<VigieService> = {}): 
     sessionLog: vi.fn(async () => ({ entries: [] })),
     configResource: () => fakeResource(undefined),
     traceResource: () => fakeResource(undefined),
+    planResource: () => fakeResource(undefined),
     gitResource: () => fakeResource(undefined),
     pluginsResource: () => fakeResource(somePlugins()),
     togglePlugin: vi.fn(async (id: string, enabled: boolean) => ({ ...somePlugins().find((p) => p.id === id)!, enabled })),

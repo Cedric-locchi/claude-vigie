@@ -201,6 +201,24 @@ describe('VigieService', () => {
     expect(res.error()?.message).toBe(OUTDATED); // lu tel quel par les écrans (« le daemon est-il à jour ? »)
   });
 
+  it('plan : relu par ?v=<planTs>, aucune requête sans plan, réponse hors contrat en erreur', async () => {
+    const service = TestBed.inject(VigieService);
+    const http = TestBed.inject(HttpTestingController);
+    const ts = signal<number | null>(null);
+    const res = runInInjectionContext(TestBed.inject(Injector), () => service.planResource(signal('s1'), ts));
+    TestBed.tick();
+    http.expectNone((r) => r.url.startsWith('/api/sessions/s1/plan'));
+    ts.set(5);
+    TestBed.tick();
+    http.expectOne('/api/sessions/s1/plan?v=5').flush({ text: '# Plan', ts: 5 });
+    await vi.waitFor(() => expect(res.hasValue() && res.value()).toEqual({ text: '# Plan', ts: 5 }));
+    ts.set(6);
+    TestBed.tick();
+    http.expectOne('/api/sessions/s1/plan?v=6').flush({ text: 42 });
+    await vi.waitFor(() => expect(res.status()).toBe('error'));
+    expect(res.error()?.message).toBe(OUTDATED);
+  });
+
   it('rejette une réponse hors contrat avec un message lisible', async () => {
     const service = TestBed.inject(VigieService);
     const http = TestBed.inject(HttpTestingController);

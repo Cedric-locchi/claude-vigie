@@ -165,6 +165,11 @@ export class VigieService {
     return httpResource(() => (sessionId() ? `/api/sessions/${sessionId()}/config` : undefined), { parse: check(C.ClaudeConfig) });
   }
 
+  /** Dernier plan proposé (ExitPlanMode) ; `ts` (`planTs` du résumé) déclenche le rechargement, null = pas de plan, pas de requête. */
+  planResource(sessionId: Signal<string | null>, ts: Signal<number | null>) {
+    return httpResource(() => (sessionId() && ts() !== null ? `/api/sessions/${sessionId()}/plan?v=${ts()}` : undefined), { parse: check(C.SessionPlan) });
+  }
+
   /** Fichiers modifiés dans le dépôt de la session, avec leur patch ; `version` (dernière activité) déclenche le rechargement. */
   gitResource(sessionId: Signal<string | null>, version: Signal<number>) {
     return httpResource(() => (sessionId() ? `/api/sessions/${sessionId()}/git?v=${version()}` : undefined), { parse: check(C.GitDiff) });

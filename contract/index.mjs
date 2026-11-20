@@ -37,6 +37,7 @@ export const SessionSummary = z.object({
   firstTs: num,
   lastTs: num,
   terminalId: nstr,
+  planTs: nnum, // date du dernier plan proposé (ExitPlanMode) de l'agent principal, null sans plan ; texte : GET /api/sessions/:id/plan
 });
 
 export const Terminal = z.object({
@@ -159,6 +160,10 @@ export const SessionCost = z.object({
   step: num,
   points: z.array(z.object({ ts: num, agent: str, cost: num, tokens: num })),
 });
+
+// ── Plan proposé (GET /api/sessions/:id/plan) ─────────────────────────────
+// Markdown brut écrit par Claude : rendu côté UI par core/markdown.ts seulement (décision 044).
+export const SessionPlan = z.object({ text: str, ts: num });
 
 // ── Journal (GET /api/sessions/:id/log) ──────────────────────────────────
 export const LogKind = z.enum(['prompt', 'assistant', 'thinking', 'tool', 'result', 'error', 'system']);

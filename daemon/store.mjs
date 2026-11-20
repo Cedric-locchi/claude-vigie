@@ -311,6 +311,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
       firstTs: main.firstTs,
       lastTs: lastOf(main),
       terminalId: term?.id ?? null,
+      planTs: main.plan?.ts ?? null,
     };
   }
 
@@ -335,7 +336,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
     return {
       id: term.sessionId, project: projectName(term.cwd), cwd: term.cwd, branch: null, model: null,
       title: 'Nouvelle session', lastText: '', tool: null, toolPath: null, state: term.exited ? 'done' : 'turn',
-      subagents: 0, activeSubagents: 0, tokens: 0, cost: 0, activity: new Array(ACTIVITY_MIN).fill(0), firstTs: term.startedAt ?? now, lastTs: term.startedAt ?? now, terminalId: term.id,
+      subagents: 0, activeSubagents: 0, tokens: 0, cost: 0, activity: new Array(ACTIVITY_MIN).fill(0), firstTs: term.startedAt ?? now, lastTs: term.startedAt ?? now, terminalId: term.id, planTs: null,
     };
   }
 
@@ -421,6 +422,11 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
   function sessionCost(sessionId) {
     const main = mains().find((t) => t.sessionId === sessionId);
     return main ? costSeries([main, ...subagentsOf(main)]) : null;
+  }
+
+  /** Dernier plan proposé (ExitPlanMode) par l'agent principal : {text, ts} ; null si session inconnue ou sans plan. */
+  function sessionPlan(sessionId) {
+    return mains().find((t) => t.sessionId === sessionId)?.plan ?? null;
   }
 
   function detail(sessionId, terminals) {
@@ -541,7 +547,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
     return buildTrace({ main, subs, summary: summary(main, now, terminals), now });
   }
 
-  return { scan, scanFiles, onHook, snapshot, detail, usageRows: rows, saveHistory, sessionCost, sessionLog, searchSessions, sessionTrace, hide, purge, purgeChats, isChat, cwdOf, idle, recentDirs, tracks };
+  return { scan, scanFiles, onHook, snapshot, detail, usageRows: rows, saveHistory, sessionCost, sessionPlan, sessionLog, searchSessions, sessionTrace, hide, purge, purgeChats, isChat, cwdOf, idle, recentDirs, tracks };
 }
 
 /** Ligne du journal trouvée (SessionSearchHit) : extrait de la première ligne du texte qui contient le terme, sinon texte vide (terme dans le titre seul). */

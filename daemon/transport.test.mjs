@@ -186,6 +186,23 @@ test('config et git d’une session inconnue : 404', async () => {
   assert.equal((await request(server, 'GET', '/api/sessions/inconnue/git')).status, 404);
 });
 
+test('GET /plan : 200 conforme (paramètres de requête ignorés), 404 sans plan ou session inconnue', async () => {
+  const { SessionPlan } = await import('../contract/index.mjs');
+  const { server, dir, store, proj } = fixture();
+  fs.appendFileSync(path.join(dir, 'S.jsonl'), JSON.stringify({
+    type: 'assistant', timestamp: new Date(Date.now() - 30_000).toISOString(), sessionId: 'S', cwd: proj,
+    message: { id: 'p', content: [{ type: 'tool_use', id: 'tp', name: 'ExitPlanMode', input: { plan: '# Plan' } }] },
+  }) + '\n');
+  store.scan();
+  const r = await request(server, 'GET', '/api/sessions/S/plan?v=1');
+  assert.equal(r.status, 200);
+  const body = JSON.parse(r.body);
+  assert.deepStrictEqual(SessionPlan.parse(body), body);
+  assert.equal(body.text, '# Plan');
+  assert.equal((await request(server, 'GET', '/api/sessions/C/plan')).status, 404);
+  assert.equal((await request(server, 'GET', '/api/sessions/inconnue/plan')).status, 404);
+});
+
 test('upgrade : origine étrangère ou terminal inconnu, connexion coupée', () => {
   const { server } = fixture();
   for (const [url, origin] of [['/ws', 'http://evil.com'], ['/pty/inconnu', undefined]]) {

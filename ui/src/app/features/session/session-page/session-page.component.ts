@@ -18,6 +18,7 @@ import { SessionFilesComponent } from '../files/session-files.component';
 import { SessionConfigComponent } from '../config/session-config.component';
 import { SessionCostComponent } from '../cost/session-cost.component';
 import { SessionLogComponent } from '../log/session-log.component';
+import { SessionPlanComponent } from '../plan/session-plan.component';
 import { SessionPageVm } from './session-page.vm';
 import { PluginTabComponent } from '../plugin-tab/plugin-tab.component';
 import { TimelineComponent } from '../timeline/timeline.component';
@@ -27,7 +28,7 @@ import { PageComponent } from '../../../shell/page/page.component';
 
 @Component({
   selector: 'app-session-page',
-  imports: [PageComponent, Icon, RouterLink, HlmBadge, HlmButton, HlmCardImports, HlmEmptyImports, HlmPopoverImports, HlmProgressImports, HlmTabsImports, HlmToggleGroupImports, HlmTooltip, TerminalComponent, AgentRowComponent, AgentPanelComponent, SessionConfigComponent, SessionCostComponent, SessionDiffComponent, SessionFilesComponent, SessionLogComponent, PluginTabComponent, TimelineComponent, WaitBarComponent],
+  imports: [PageComponent, Icon, RouterLink, HlmBadge, HlmButton, HlmCardImports, HlmEmptyImports, HlmPopoverImports, HlmProgressImports, HlmTabsImports, HlmToggleGroupImports, HlmTooltip, TerminalComponent, AgentRowComponent, AgentPanelComponent, SessionConfigComponent, SessionCostComponent, SessionDiffComponent, SessionFilesComponent, SessionLogComponent, SessionPlanComponent, PluginTabComponent, TimelineComponent, WaitBarComponent],
   providers: [SessionPageVm],
   host: { '(document:keydown)': 'vm.shortcut($event)', '(window:beforeunload)': 'vm.beforeUnload($event)' },
   template: `
@@ -106,6 +107,8 @@ import { PageComponent } from '../../../shell/page/page.component';
             <button hlmTabsTrigger="workspace">
               {{ vm.isChat() ? 'Discussion' : vm.isExternal() ? 'Agents' : 'Terminal & agents' }}@if (vm.agentStats().waiting) { <span class="dot dot-waiting" aria-hidden="true"></span><span class="sr-only">, agent en attente</span> }
             </button>
+            <!-- Hors du test de discussion : une discussion tourne en mode plan. -->
+            @if (vm.hasPlan()) { <button hlmTabsTrigger="plan">Plan</button> }
             @if (vm.isChat()) {
               <button hlmTabsTrigger="usage">Consommation</button>
             } @else {
@@ -181,6 +184,10 @@ import { PageComponent } from '../../../shell/page/page.component';
             }
             </div>
           </section>
+        </div>
+
+        <div hlmTabsContent="plan" class="view">
+          @if (vm.view() === 'plan') { <app-session-plan [sessionId]="s.id" [planTs]="s.planTs" /> }
         </div>
 
         <div hlmTabsContent="history" class="view history">

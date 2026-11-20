@@ -3,7 +3,7 @@ import { Router, provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { aTerminal, provideVigieServiceMock } from '../../core/vigie.service.mock';
 import { CLIENT_OS, ClientOs } from '../../core/platform';
-import { NewSessionVm, ago, buildCommand, fuzzy } from './new-session.vm';
+import { NewSessionVm, buildCommand, fuzzy } from './new-session.vm';
 
 function createVm(startSession = vi.fn(async () => aTerminal()), os: ClientOs = 'mac') {
   TestBed.configureTestingModule({
@@ -24,18 +24,6 @@ describe('buildCommand', () => {
     expect(buildCommand({ model: 'opus', permission: 'default', git: 'branch', branch: 'feat/x', template: '' })).toBe("git switch -c 'feat/x' && claude --model opus");
     expect(buildCommand({ model: 'opus', permission: 'default', git: 'branch', branch: ' ', template: '' })).toBe('claude --model opus');
   });
-});
-
-describe('ago', () => {
-  it("écrit l'ancienneté", () => {
-    expect(ago(20_000)).toBe("à l'instant");
-    expect(ago(12 * 60_000)).toBe('il y a 12 min');
-    expect(ago(2.5 * 3_600_000)).toBe('il y a 2 h');
-    expect(ago(3 * 86_400_000)).toBe('il y a 3 j');
-    expect(ago(65 * 86_400_000)).toBe('il y a 2 mois');
-    expect(ago(400 * 86_400_000)).toBe('il y a 1 an');
-  });
-
 });
 
 describe('fuzzy', () => {

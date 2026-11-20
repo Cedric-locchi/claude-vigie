@@ -32,7 +32,7 @@ Vigie possède les PTY et injecte des hooks et une statusline relais dans les se
 ## Capabilities and Constraints
 
 - États d'une session : attend (autorisation / question), à toi (fin de tour), en cours, terminé.
-- Vues d’une session : Terminal & agents, Diff, Fichiers, Historique (chronologie / journal), Consommation, Config, et un onglet par plugin activé qui s'applique au projet (mise, Xcode, npm, Nx ; désactivés par défaut) ; terminaux détachables dans une fenêtre ; « Discussion » temporaire en mode plan, sans projet.
+- Vues d’une session : Terminal & agents, Plan (dernier plan proposé par Claude, rendu en Markdown, s'il y en a un), Diff, Fichiers, Historique (chronologie / journal), Consommation, Config, et un onglet par plugin activé qui s'applique au projet (mise, Xcode, npm, Nx ; désactivés par défaut) ; terminaux détachables dans une fenêtre ; « Discussion » temporaire en mode plan, sans projet.
 - Local uniquement : le daemon écoute sur 127.0.0.1 et refuse les origines web étrangères ; pas de compte, pas de cloud. Deux sorties seulement : le statut public de Claude (status.claude.com), en lecture, sans rien envoyer (décision 024) ; sur ton clic dans l'onglet Diff, la suggestion de message de commit passe le diff, les noms des fichiers non suivis et les derniers titres de commit à `claude -p`, avec ton compte Claude (décision 046).
 - Ne modifie jamais la config Claude Code globale de l'utilisateur ; hooks et statusline sont injectés via `claude --settings` uniquement dans les sessions lancées par Vigie.
 - Sessions externes : suivies par le transcript seulement (pas d'état temps réel, pas de réponse rapide).
