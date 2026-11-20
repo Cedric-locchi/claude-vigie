@@ -161,6 +161,8 @@
   /* Arrivée assurée (décélération franche) : réservée au moment où une session ou un agent se met à attendre. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-arrive: 900ms;
+  /* Rayures « en cours » posées sur une barre colorée (chronologie, Gantt) : même voile clair dans les deux thèmes. */
+  --stripe: rgb(255 255 255 / 0.25);
   /* Survol / pression sur une surface : léger mélange vers la couleur du texte, juste en clair comme en sombre. */
   --hover: color-mix(in oklch, var(--surface-2), var(--text) 4%);
   --press: color-mix(in oklch, var(--surface-2), var(--text) 9%);
@@ -259,9 +261,19 @@
   .dot-running { background: var(--run); }
   .dot-done { background: var(--ok); }
 
-  /* Jauge (fenêtre 5 h) : nom spécifique, pour ne pas entrer en collision avec les classes des composants. */
+  /* Panneau (DESIGN.md, Cards / Containers) : fond plein, filet --edge, 12px, relief de repos. Le padding reste à chaque vue. */
+  .panel { border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); }
+
+  /* Jauge (fenêtre 5 h) : nom spécifique, pour ne pas entrer en collision avec les classes des composants.
+     Le remplissage bouge en transform (--p, fraction 0–1), jamais en largeur. */
   .meter { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; position: relative; }
-  .meter > span { display: block; height: 100%; border-radius: 4px; background: var(--data); transition: width var(--dur) var(--ease); }
+  .meter > span { display: block; height: 100%; background: var(--data); transform: scaleX(var(--p, 0)); transform-origin: left; transition: transform var(--dur) var(--ease); }
+
+  /* Étape en cours (chronologie, Gantt) : rayures qui glissent, calque translaté (composite) plutôt qu'un fond repeint à chaque image.
+     Coupées par « réduire les animations » (règle globale). L'élément est positionné (absolute) par son composant. */
+  .stripes { overflow: hidden; }
+  .stripes::after { content: ''; position: absolute; inset: 0 0 0 -14px; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--stripe) 5px 10px) 0 0 / 14px 14px; animation: stripes 0.8s linear infinite; }
+  @keyframes stripes { to { transform: translateX(14px); } }
 
   /* Gabarit des pages et règle de défilement : shell/page (app-page). --sticky-top y est défini. */
   /* Hauteur de la barre mobile et des bandeaux (app.ts) : retranchée par les vues à hauteur propre sur téléphone (terminal, éditeur). */

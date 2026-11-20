@@ -1,6 +1,7 @@
-import { Provider, computed, signal } from '@angular/core';
+import { Provider, Signal, computed, isSignal, signal, untracked } from '@angular/core';
+import type { HttpResourceRef } from '@angular/common/http';
 import { vi } from 'vitest';
-import { Agent, ClaudeConfig, PluginInfo, Project, ProjectFiles, SearchResults, SessionCost, SessionSummary, Settings, Snapshot, Terminal, Usage, UsageRow, UsageRows } from './models';
+import { Agent, ClaudeConfig, GitDiff, PluginInfo, Project, ProjectFiles, SearchResults, SessionCost, SessionSummary, SessionUsage, Settings, SettingsBody, Snapshot, Terminal, Usage, UsageRow, UsageRows } from './models';
 import { VigieService } from './vigie.service';
 
 export function aSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -21,7 +22,7 @@ export function anUsage(overrides: Partial<Usage> = {}): Usage {
 }
 
 export function aSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
-  return { now: 120_000, sessions: [aSession()], usage: anUsage(), terminals: [], claudeStatus: { indicator: 'none', incidents: [] }, ...overrides };
+  return { now: 120_000, sessions: [aSession()], usage: anUsage(), terminals: [], claudeStatus: { indicator: 'none', incidents: [] }, plugins: [], ...overrides };
 }
 
 export function anAgent(overrides: Partial<Agent> = {}): Agent {
@@ -29,6 +30,11 @@ export function anAgent(overrides: Partial<Agent> = {}): Agent {
     id: 'main', name: 'Claude', sub: false, description: '', state: 'running', lastAction: null, lastText: '', lastTextTruncated: false,
     tokens: 120_000, toolCount: 4, firstTs: 1_000, lastTs: 60_000, bars: [], cost: 1.8, ...overrides,
   };
+}
+
+/** Consommation d'une session (détail) : contexte de l'agent principal sur sa fenêtre de 200 k. */
+export function aSessionUsage(overrides: Partial<SessionUsage> = {}): SessionUsage {
+  return { input: 100, output: 200, cacheCreate: 300, cacheRead: 400, calls: 3, context: 800, contextMax: 200_000, ...overrides };
 }
 
 export function anUsageRow(overrides: Partial<UsageRow> = {}): UsageRow {
@@ -64,6 +70,12 @@ export function aTerminal(overrides: Partial<Terminal> = {}): Terminal {
     id: 't1', sessionId: 's1', kind: 'claude', title: 'claude', cwd: '/dev/meeplebox', shell: '/bin/zsh',
     pid: 4242, cols: 120, rows: 40, exited: false, startedAt: 1_000, ...overrides,
   };
+}
+
+/** Réponse de GET /api/sessions/:id/git : dépôt propre sur `main` (fichiers à fournir). */
+export function aGitDiff(overrides: Partial<GitDiff> = {}): GitDiff {
+  const files = overrides.files ?? [];
+  return { cwd: '/dev/meeplebox', repo: true, root: '/dev/meeplebox', branch: 'main', files, total: files.length, ...overrides };
 }
 
 export function aProjectFiles(overrides: Partial<ProjectFiles> = {}): ProjectFiles {
@@ -105,72 +117,100 @@ export const PROJECTS: Project[] = [
 
 /** GET /api/projects simulé : récents sans '/', sinon enfants directs du chemin qui commencent par son dernier segment. */
 export function fakeProjects(list: Project[] = PROJECTS) {
-  return (q: () => string | undefined = () => '') => {
-    const value = computed(() => {
-      const v = q();
-      if (v === undefined) return [];
-      if (!v.includes('/')) return list;
-      const dir = v.slice(0, v.lastIndexOf('/') + 1), seg = v.slice(dir.length);
-      return list.filter((p) => p.path.startsWith(dir) && !p.path.slice(dir.length).includes('/') && p.path.slice(dir.length).startsWith(seg));
-    });
-    return { value, hasValue: () => true, status: signal('resolved'), error: signal(undefined), isLoading: signal(false), reload: vi.fn() };
-  };
+  return (q: () => string | undefined = () => '') => fakeResource(computed(() => {
+    const v = q();
+    if (v === undefined) return [];
+    if (!v.includes('/')) return list;
+    const dir = v.slice(0, v.lastIndexOf('/') + 1), seg = v.slice(dir.length);
+    return list.filter((p) => p.path.startsWith(dir) && !p.path.slice(dir.length).includes('/') && p.path.slice(dir.length).startsWith(seg));
+  }));
 }
 
-/** Resource figée : assez pour les VM qui lisent value()/hasValue()/status(). */
-export function fakeResource<T>(value: T | undefined, status: 'resolved' | 'error' | 'loading' = 'resolved', error?: Error) {
-  return { value: signal(value), hasValue: () => value !== undefined, status: signal(status), error: signal(error), isLoading: signal(status === 'loading'), reload: vi.fn() };
+/** États d'une fausse ressource ; un signal les fait changer en cours de spec (chargement, échec). */
+type FakeStatus = 'resolved' | 'error' | 'loading';
+
+/**
+ * Resource figée, typée comme celle d'`httpResource` : assez pour les VM qui lisent value()/hasValue()/status()/error(), et
+ * `set` / `reload` comme la vraie. Comme Angular, `value()` lève en état d'erreur (ResourceValueError) : une lecture non gardée
+ * par `hasValue()` fait échouer le spec au lieu de passer à tort. `value` peut être un signal (valeur dérivée, lectures espionnées).
+ */
+export function fakeResource<T>(value: T | Signal<T>, status: FakeStatus | Signal<FakeStatus> = 'resolved', error?: Error): HttpResourceRef<T> {
+  const derived = (v: T | Signal<T>): v is Signal<T> => isSignal(v);
+  const own = signal<T>(derived(value) ? untracked(value) : value);
+  const current = derived(value) ? value : own;
+  const state = isSignal(status) ? status : signal(status);
+  const read = () => {
+    if (state() === 'error') throw new Error(`Resource is currently in an error state: ${error?.message ?? 'erreur'}`);
+    return current();
+  };
+  const set = (v: T) => own.set(v);
+  const update = (fn: (v: T) => T) => own.update(fn);
+  const ref = {
+    value: Object.assign(read, { set, update, asReadonly: () => read }),
+    hasValue: () => state() !== 'error' && current() !== undefined,
+    status: computed(() => state()), error: signal(error).asReadonly(), isLoading: computed(() => state() === 'loading'),
+    headers: signal(undefined), statusCode: signal(undefined), progress: signal(undefined),
+    set, update, asReadonly: () => ref, reload: vi.fn(() => true), destroy: vi.fn(),
+  };
+  // Seul cast des fausses ressources : l'objet a la forme d'une HttpResourceRef sans en être une (pas de nœud réactif interne).
+  return ref as unknown as HttpResourceRef<T>;
 }
 
 export function provideVigieServiceMock(overrides: Partial<VigieService> = {}): Provider {
-  return {
-    provide: VigieService,
-    useValue: {
-      snapshot: signal(aSnapshot()),
-      connected: signal(true),
-      incompatible: signal(false),
-      wakes: signal(0),
-      projectsResource: fakeProjects() as unknown as VigieService['projectsResource'],
-      sessionResource: (() => fakeResource(undefined)) as unknown as VigieService['sessionResource'],
-      usageResource: (() => fakeResource(undefined)) as unknown as VigieService['usageResource'],
-      settingsResource: (() => fakeResource(aSettings())) as unknown as VigieService['settingsResource'],
-      saveSettings: vi.fn(async (body) => aSettings({ ...body, locale: body.locale ?? null, alerts: body.alerts ?? { dailyCost: null, windowPct: null } })),
-      sessionCost: vi.fn(async () => aSessionCost()),
-      startSession: vi.fn(),
-      openShell: vi.fn(),
-      startChat: vi.fn(async () => ({ sessionId: 'chat1' }) as Terminal),
-      purgeChat: vi.fn(async () => ({})),
-      resumeSession: vi.fn(async () => ({}) as Terminal),
-      sessionLog: vi.fn(async () => ({ entries: [] })),
-      configResource: (() => fakeResource(undefined)) as unknown as VigieService['configResource'],
-      traceResource: (() => fakeResource(undefined)) as unknown as VigieService['traceResource'],
-      gitResource: (() => fakeResource(undefined)) as unknown as VigieService['gitResource'],
-      pluginsResource: (() => fakeResource(somePlugins())) as unknown as VigieService['pluginsResource'],
-      togglePlugin: vi.fn(async (id: string, enabled: boolean) => ({ ...somePlugins().find((p) => p.id === id)!, enabled })),
-      sessionPluginsResource: (() => fakeResource([{ id: 'mise', name: 'Tâches mise' }])) as unknown as VigieService['sessionPluginsResource'],
-      // ponytail: `null` pour toute méthode ; des réponses par plugin et méthode quand une spec du cœur en aura besoin
-      // (les specs des plugins passent par fakePluginHost, pas par ce mock).
-      pluginCall: vi.fn(async () => null),
-      // Une action ouvre un terminal (201 du daemon).
-      pluginAction: vi.fn(async () => ({ terminal: aTerminal({ id: 't9', kind: 'shell', title: 'test' }) })),
-      gitFile: vi.fn(async (_id: string, path: string) => ({ path, content: 'export const a = 1;\n', hash: 'a'.repeat(64) })),
-      writeFile: vi.fn(async () => ({ ok: true })),
-      files: vi.fn(async () => aProjectFiles()),
-      readProjectFile: vi.fn(async (_id: string, path: string) => ({ path, content: 'export const a = 1;\n', hash: 'a'.repeat(64) })),
-      writeProjectFile: vi.fn(async () => ({ ok: true })),
-      searchFiles: vi.fn(async () => aSearchResults()),
-      closeTerminal: vi.fn(async () => ({ ok: true })),
-      sendKeys: vi.fn(async () => ({ ok: true })),
-      deleteSession: vi.fn(async () => ({ ok: true })),
-      ...overrides,
-    } satisfies Partial<VigieService>,
+  // Comme le vrai service : une seule ressource de réglages (sauf celle d'un spec), mise à jour par saveSettings.
+  const settings = fakeResource<Settings | undefined>(aSettings());
+  const mock: Partial<VigieService> = {
+    snapshot: signal(aSnapshot()),
+    connected: signal(true),
+    incompatible: signal(false),
+    wakes: signal(0),
+    projectsResource: fakeProjects(),
+    sessionResource: () => fakeResource(undefined),
+    usageResource: () => fakeResource(undefined),
+    settingsResource: () => settings,
+    saveSettings: vi.fn(async (body: SettingsBody) => {
+      const res = mock.settingsResource!();
+      const saved = aSettings({ ...(res.hasValue() ? res.value() : {}), ...body });
+      res.set(saved);
+      return saved;
+    }),
+    sessionCost: vi.fn(async () => aSessionCost()),
+    startSession: vi.fn(),
+    openShell: vi.fn(),
+    startChat: vi.fn(async () => aTerminal({ id: 't-chat', sessionId: 'chat1' })),
+    purgeChat: vi.fn(async () => ({})),
+    resumeSession: vi.fn(async () => aTerminal()),
+    sessionLog: vi.fn(async () => ({ entries: [] })),
+    configResource: () => fakeResource(undefined),
+    traceResource: () => fakeResource(undefined),
+    gitResource: () => fakeResource(undefined),
+    pluginsResource: () => fakeResource(somePlugins()),
+    togglePlugin: vi.fn(async (id: string, enabled: boolean) => ({ ...somePlugins().find((p) => p.id === id)!, enabled })),
+    sessionPluginsResource: () => fakeResource([{ id: 'mise', name: 'Tâches mise' }]),
+    // ponytail: `null` pour toute méthode ; des réponses par plugin et méthode quand une spec du cœur en aura besoin
+    // (les specs des plugins passent par fakePluginHost, pas par ce mock).
+    pluginCall: vi.fn(async () => null),
+    // Une action ouvre un terminal (201 du daemon).
+    pluginAction: vi.fn(async () => ({ terminal: aTerminal({ id: 't9', kind: 'shell', title: 'test' }) })),
+    gitFile: vi.fn(async (_id: string, path: string) => ({ path, content: 'export const a = 1;\n', hash: 'a'.repeat(64) })),
+    writeFile: vi.fn(async () => ({ ok: true })),
+    files: vi.fn(async () => aProjectFiles()),
+    readProjectFile: vi.fn(async (_id: string, path: string) => ({ path, content: 'export const a = 1;\n', hash: 'a'.repeat(64) })),
+    writeProjectFile: vi.fn(async () => ({ ok: true })),
+    searchFiles: vi.fn(async () => aSearchResults()),
+    closeTerminal: vi.fn(async () => ({ ok: true })),
+    sendKeys: vi.fn(async () => ({ ok: true })),
+    deleteSession: vi.fn(async () => ({ ok: true })),
+    ...overrides,
   };
+  return { provide: VigieService, useValue: mock };
 }
 
 /** Config Claude de démo pour les tests de l'onglet Config. */
 export const aConfig = (extra: Partial<ClaudeConfig> = {}): ClaudeConfig => ({
-  cwd: '~/dev/revu', model: 'opus', settings: [], instructions: [], skills: [], agents: [], commands: [], hooks: [],
+  cwd: '~/dev/revu', model: 'opus', settings: [], instructions: [], skills: [], agents: [], hooks: [],
   permissions: [{ scope: 'projet', kind: 'allow', rule: 'Bash(npm test)' }, { scope: 'utilisateur', kind: 'deny', rule: 'Read(./.env*)' }],
+  commands: [{ scope: 'projet', name: 'revue', description: 'Relit le diff en cours', path: '~/dev/revu/.claude/commands/revue.md', body: 'Relis le diff et liste les risques.' }],
   mcp: [], plugins: [], env: [],
   checks: [{ level: 'error', area: 'Skills', message: '« revue » : description manquante', path: '~/dev/revu/.claude/skills/revue/SKILL.md' }],
   ...extra,

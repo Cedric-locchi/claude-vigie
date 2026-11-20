@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { headBranch } from './git.mjs';
+import { expandHome, tildePath } from './paths.mjs';
 
 const MAX_CHILDREN = 50;
 
@@ -24,7 +25,7 @@ export function projectKind(names) {
  */
 export async function childDirs(q, home) {
   if (!q.includes(path.sep)) return [];
-  const abs = q.replace(/^~(?=$|\/)/, home);
+  const abs = expandHome(q, home);
   if (!path.isAbsolute(abs)) return []; // relatif : se résoudrait contre le cwd du daemon (`/` sous launchd)
   const [parent, prefix] = abs.endsWith(path.sep) ? [abs, ''] : [path.dirname(abs), path.basename(abs).toLowerCase()];
   let entries;
@@ -44,4 +45,14 @@ export function describeDirs(dirs, lastTsMap) {
       return { path: d, kind: projectKind(names), branch, lastTs };
     } catch { return { path: d, kind: null, branch: null, lastTs }; }
   }));
+}
+
+/**
+ * Choix du sélecteur (GET /api/projects?q=) : chemin tapé (contient un séparateur) → ses sous-dossiers, sinon les dossiers
+ * récents (`recent` : store.recentDirs()) ; chemins rendus en `~/…`.
+ */
+export async function listProjects(q, home, recent) {
+  const dirs = q.includes(path.sep) ? await childDirs(q, home) : recent.map((r) => r.dir);
+  const projects = await describeDirs(dirs, new Map(recent.map((r) => [r.dir, r.lastTs])));
+  return projects.map((p) => ({ ...p, path: tildePath(p.path, home) }));
 }

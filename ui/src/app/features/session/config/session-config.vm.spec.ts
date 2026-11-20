@@ -1,9 +1,10 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { Router, provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
-import { aConfig, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { VigieService } from '../../../core/vigie.service';
+import { aConfig, aTerminal, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
+import { ClaudeConfig } from '../../../core/models';
 import { SessionConfigVm, auditCommand } from './session-config.vm';
 
 
@@ -17,12 +18,21 @@ describe('auditCommand', () => {
 });
 
 describe('SessionConfigVm', () => {
+  it('configuration illisible : la raison, daemon injoignable compris', () => {
+    TestBed.configureTestingModule({
+      providers: [SessionConfigVm, provideRouter([]), provideVigieServiceMock({ configResource: () => fakeResource<ClaudeConfig | undefined>(undefined, 'error', new HttpErrorResponse({ status: 0 })) })],
+    });
+    const vm = TestBed.inject(SessionConfigVm);
+    vm.connect(signal('s1'), signal('/x'));
+    expect([vm.config(), vm.loadError()]).toEqual([null, 'Le daemon ne répond pas']);
+  });
+
   it("lance l'audit dans le dossier de la session et ouvre la nouvelle session", async () => {
-    const startSession = vi.fn(async () => ({ sessionId: 'audit-1' }));
+    const startSession = vi.fn(async () => aTerminal({ sessionId: 'audit-1' }));
     TestBed.configureTestingModule({
       providers: [SessionConfigVm, provideRouter([]), provideVigieServiceMock({
-        configResource: (() => fakeResource(aConfig())) as unknown as VigieService['configResource'],
-        startSession: startSession as unknown as VigieService['startSession'],
+        configResource: () => fakeResource(aConfig()),
+        startSession,
       })],
     });
     const vm = TestBed.inject(SessionConfigVm);
@@ -52,7 +62,7 @@ describe('SessionConfigVm', () => {
     const instructions = [{ scope: 'projet' as const, path: '~/dev/revu/CLAUDE.md', lines: 40, bytes: 8400, imports: [{ ref: 'docs/a.md', ok: false }], body: '# Revu' }];
     TestBed.configureTestingModule({
       providers: [SessionConfigVm, provideRouter([]), provideVigieServiceMock({
-        configResource: (() => fakeResource(aConfig({ instructions, checks: [{ level: 'info', area: 'Skills', message: 'note' }] }))) as unknown as VigieService['configResource'],
+        configResource: () => fakeResource(aConfig({ instructions, checks: [{ level: 'info', area: 'Skills', message: 'note' }] })),
       })],
     });
     const vm = TestBed.inject(SessionConfigVm);
@@ -74,7 +84,7 @@ describe('SessionConfigVm', () => {
     ];
     TestBed.configureTestingModule({
       providers: [SessionConfigVm, provideRouter([]), provideVigieServiceMock({
-        configResource: (() => fakeResource(aConfig({ skills, checks: [] }))) as unknown as VigieService['configResource'],
+        configResource: () => fakeResource(aConfig({ skills, checks: [] })),
       })],
     });
     const vm = TestBed.inject(SessionConfigVm);
@@ -97,7 +107,7 @@ describe('SessionConfigVm', () => {
     ];
     TestBed.configureTestingModule({
       providers: [SessionConfigVm, provideRouter([]), provideVigieServiceMock({
-        configResource: (() => fakeResource(aConfig({ agents, checks: [] }))) as unknown as VigieService['configResource'],
+        configResource: () => fakeResource(aConfig({ agents, checks: [] })),
       })],
     });
     const vm = TestBed.inject(SessionConfigVm);

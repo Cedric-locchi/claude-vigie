@@ -1,9 +1,9 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { describe, expect, it, vi } from 'vitest';
 import { SessionTrace } from '../../../core/models';
 import { fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { VigieService } from '../../../core/vigie.service';
 import { TimelineVm } from './timeline.vm';
 
 const S = 1000, MIN = 60_000;
@@ -11,13 +11,13 @@ const TRACE: SessionTrace = {
   now: 30 * MIN, state: 'running', waiting: null,
   turns: [
     { index: 1, start: 0, end: MIN, prompt: 'Corrige', live: false, steps: [
-      { id: 'r1', name: 'Read', kind: 'read', label: 'a.ts', start: 0, end: S, error: false, agent: null },
-      { id: 'r2', name: 'Read', kind: 'read', label: 'b.ts', start: 2 * S, end: 3 * S, error: false, agent: null },
-      { id: 'b1', name: 'Bash', kind: 'command', label: 'npm test', start: 4 * S, end: 40 * S, error: true, agent: null },
+      { id: 'r1', name: 'Read', kind: 'read', label: 'a.ts', start: 0, end: S, error: false, interrupted: false, agent: null },
+      { id: 'r2', name: 'Read', kind: 'read', label: 'b.ts', start: 2 * S, end: 3 * S, error: false, interrupted: false, agent: null },
+      { id: 'b1', name: 'Bash', kind: 'command', label: 'npm test', start: 4 * S, end: 40 * S, error: true, interrupted: false, agent: null },
     ] },
     { index: 2, start: 20 * MIN, end: 30 * MIN, prompt: 'Explore', live: true, steps: [
-      { id: 't1', name: 'Task', kind: 'agent', label: 'explorer', start: 20 * MIN, end: 25 * MIN, error: false,
-        agent: { id: 'x', name: 'Explore', description: 'explorer le code', state: 'done', steps: [{ id: 'g1', name: 'Grep', kind: 'other', label: 'timeline', start: 21 * MIN, end: 21 * MIN + 500, error: false }] } },
+      { id: 't1', name: 'Task', kind: 'agent', label: 'explorer', start: 20 * MIN, end: 25 * MIN, error: false, interrupted: false,
+        agent: { id: 'x', name: 'Explore', description: 'explorer le code', state: 'done', steps: [{ id: 'g1', name: 'Grep', kind: 'other', label: 'timeline', start: 21 * MIN, end: 21 * MIN + 500, error: false, interrupted: false }] } },
     ] },
   ],
 };
@@ -25,8 +25,8 @@ const TRACE: SessionTrace = {
 function createVm() {
   const sessionLog = vi.fn(async () => ({ entries: [] }));
   TestBed.configureTestingModule({ providers: [TimelineVm, provideVigieServiceMock({
-    traceResource: (() => fakeResource(TRACE)) as unknown as VigieService['traceResource'],
-    sessionLog: sessionLog as unknown as VigieService['sessionLog'],
+    traceResource: () => fakeResource(TRACE),
+    sessionLog: sessionLog,
   })] });
   const vm = TestBed.inject(TimelineVm);
   vm.connect(signal('S'), signal(1));
@@ -34,6 +34,16 @@ function createVm() {
 }
 const turn = (vm: TimelineVm, index: number) => vm.turns().find((t) => t.index === index)!;
 const blocks = (vm: TimelineVm, lane = 0) => vm.gantt()!.lanes[lane].blocks;
+
+describe('TimelineVm · lecture', () => {
+  it('trace illisible : la raison (session inconnue du daemon), pas de chargement sans fin', () => {
+    const error = new HttpErrorResponse({ status: 404, error: { error: 'session inconnue' } });
+    TestBed.configureTestingModule({ providers: [TimelineVm, provideVigieServiceMock({ traceResource: () => fakeResource<SessionTrace | undefined>(undefined, 'error', error) })] });
+    const vm = TestBed.inject(TimelineVm);
+    vm.connect(signal('S'), signal(1));
+    expect([vm.trace(), vm.loading(), vm.loadError()]).toEqual([null, false, 'Session inconnue']);
+  });
+});
 
 describe('TimelineVm · Gantt', () => {
   it('clic sur une étape groupée : ouvre son tour, déplie le groupe, la sélectionne', async () => {

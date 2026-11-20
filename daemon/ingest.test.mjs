@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { applyRecord, deriveState, newTrack, readTrack, trackTokens } from './ingest.mjs';
+import { applyRecord, batchWatch, deriveState, newTrack, readTrack, trackTokens } from './ingest.mjs';
+import { buildTrace } from './trace.mjs';
+import { SessionTrace } from '../contract/index.mjs';
 import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
 
 const T0 = Date.parse('2026-11-07T10:00:00Z');
@@ -67,6 +69,69 @@ test("les hooks priment sur le transcript : demande d'autorisation", () => {
   assert.equal(deriveState(trackFrom(LINES), T0 + 30_000, { event: 'PreToolUse', ts: T0 }).state, 'turn');
 });
 
+// Échap dans Claude Code : forme relevée dans de vrais transcripts (message « user », seul bloc texte, aucun hook Stop).
+const interrupt = (s, forTool = false, extra = {}) => ({ type: 'user', timestamp: at(s), sessionId: 'S', ...extra, message: { role: 'user', content: [{ type: 'text', text: `[Request interrupted by user${forTool ? ' for tool use' : ''}]` }] } });
+
+test('interruption pendant une réponse : à toi (plus « en cours » 10 min), pas un message de l’humain', () => {
+  const t = trackFrom([...LINES.slice(0, 2), interrupt(8)]);
+  assert.equal(deriveState(t, T0 + 10_000).state, 'turn');
+  assert.equal(deriveState(t, T0 + 45 * 60_000).state, 'done');
+  assert.deepEqual(t.prompts.map((p) => p.text), ['ajoute des tests']);
+  assert.equal(t.firstPrompt, 'ajoute des tests');
+  // Un nouveau message de l'humain relance le tour.
+  applyRecord(t, { type: 'user', timestamp: at(30), sessionId: 'S', message: { content: 'reprends' } });
+  assert.equal(deriveState(t, T0 + 31_000).state, 'running');
+});
+
+test('interruption d’un outil sans résultat : outil clos et marqué interrompu, à toi, sans « souci »', () => {
+  // Claude Code écrit d'abord le refus de l'outil en erreur (forme réelle), puis le marqueur.
+  const refused = { type: 'user', timestamp: at(8), sessionId: 'S', message: { content: [{ type: 'tool_result', tool_use_id: 'tu0', is_error: true, content: 'refusé' }] } };
+  const t = trackFrom([...LINES.slice(0, 5), refused, interrupt(9, true)]);
+  assert.equal(t.lastError, null);
+  assert.equal(t.pending, null);
+  assert.deepEqual([t.tools.get('tu1').end, t.tools.get('tu1').interrupted], [T0 + 9000, true]);
+  assert.equal(deriveState(t, T0 + 10_000).state, 'turn');
+  const trace = buildTrace({ main: t, subs: [], summary: { state: 'turn', lastTs: t.lastTs }, now: T0 + 10_000 });
+  assert.deepEqual(trace.turns[0].steps.map((x) => [x.end, x.interrupted]), [[T0 + 9000, true]]);
+  // Conforme : `interrupted` toujours émis (booléen requis par le contrat).
+  const j = JSON.parse(JSON.stringify(trace));
+  assert.deepStrictEqual(SessionTrace.parse(j), j);
+  delete j.turns[0].steps[0].interrupted;
+  assert.equal(SessionTrace.safeParse(j).success, false);
+});
+
+test('interruption : un hook d’avant (PreToolUse à moins de 2 s) ne la masque pas ; un hook d’après compte', () => {
+  const t = trackFrom([...LINES.slice(0, 5), interrupt(6, true)]);
+  assert.equal(deriveState(t, T0 + 7000, { event: 'PreToolUse', ts: T0 + 5500 }).state, 'turn');
+  assert.equal(deriveState(t, T0 + 7000, { event: 'PreToolUse', ts: T0 + 6000 }).state, 'turn'); // même milliseconde
+  assert.equal(deriveState(t, T0 + 8000, { event: 'UserPromptSubmit', ts: T0 + 7000 }).state, 'running');
+});
+
+test('interruption d’un sous-agent (isSidechain) : à toi, plus compté actif', () => {
+  const sub = trackFrom([
+    { type: 'user', timestamp: at(0), sessionId: 'S', isSidechain: true, message: { content: 'cherche les tests' } },
+    { type: 'assistant', timestamp: at(1), sessionId: 'S', isSidechain: true, message: { id: 'a1', content: [{ type: 'tool_use', id: 'g1', name: 'Grep', input: { pattern: 'x' } }] } },
+    interrupt(2, false, { isSidechain: true }),
+  ]);
+  assert.equal(deriveState(sub, T0 + 3000).state, 'turn');
+  assert.equal(sub.firstPrompt, 'cherche les tests');
+});
+
+test('le marqueur tapé à la main (promptSource) reste un message de l’humain', () => {
+  const typed = { type: 'user', timestamp: at(8), sessionId: 'S', promptSource: 'user', message: { content: '[Request interrupted by user]' } };
+  const t = trackFrom([...LINES.slice(0, 2), typed]);
+  assert.equal(t.lastStop, null);
+  assert.equal(t.interruptTs, 0);
+  assert.deepEqual(t.prompts.map((p) => p.text), ['ajoute des tests', '[Request interrupted by user]']);
+  assert.equal(deriveState(t, T0 + 9000).state, 'running');
+});
+
+test('un texte qui ressemble au marqueur sans l’être reste un message de l’humain', () => {
+  const t = trackFrom([...LINES.slice(0, 2), interrupt(8), { type: 'user', timestamp: at(9), sessionId: 'S', message: { content: '[Request interrupted by user] ? que veut dire ce message' } }]);
+  assert.equal(t.lastStop, null);
+  assert.equal(t.prompts.length, 2);
+});
+
 test('lecture incrémentale : une ligne coupée est reprise au passage suivant', () => {
   const file = path.join(tempDir('vigie-'), 's.jsonl');
   const text = LINES.map((l) => JSON.stringify(l)).join('\n') + '\n';
@@ -90,4 +155,23 @@ test('vrais transcripts : décodage sans erreur', { skip: !fs.existsSync(path.jo
     readTrack(t);
     assert.ok(t.offset > 0 || fs.statSync(f).size === 0, f);
   }
+});
+
+test('batchWatch : un lot 250 ms après le premier événement, noms accumulés, sans nom = scan complet', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const dir = path.join(path.sep, 'p');
+  const lots = [];
+  const on = batchWatch(dir, (b) => lots.push(b));
+  on('change', 'a.jsonl');
+  t.mock.timers.tick(200);
+  on('change', path.join('S', 'subagents', 'x.jsonl'));
+  on('change', 'a.jsonl');
+  t.mock.timers.tick(49);
+  assert.equal(lots.length, 0);
+  t.mock.timers.tick(1); // 250 ms après le premier : pas repoussé par les suivants
+  assert.deepEqual(lots, [{ files: [path.join(dir, 'a.jsonl'), path.join(dir, 'S', 'subagents', 'x.jsonl')], full: false }]);
+  on('rename', null);
+  on('change', Buffer.from('b.jsonl')); // fs.watch peut rendre un Buffer
+  t.mock.timers.tick(250);
+  assert.deepEqual(lots[1], { files: [path.join(dir, 'b.jsonl')], full: true });
 });

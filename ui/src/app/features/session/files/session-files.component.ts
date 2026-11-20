@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, Injector, afterNextRender, inject, input, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, Injector, afterNextRender, inject, input, output, viewChild } from '@angular/core';
 import { HlmButton } from '@spartan-ng/helm/button';
 import { HlmTooltip } from '@spartan-ng/helm/tooltip';
 import { FilesActivityComponent, VIEWS } from './activity/files-activity.component';
@@ -11,6 +11,7 @@ import { FilesProjectComponent } from './project/files-project.component';
 import { FilesSearchComponent } from './search/files-search.component';
 import { FilesSearchVm } from './search/files-search.vm';
 import { FilesStatusComponent } from './status-bar/files-status.component';
+import { SessionSummary } from '../../../core/models';
 import { SessionFilesVm } from './session-files.vm';
 
 const NARROW = '(max-width: 820px)';
@@ -32,7 +33,7 @@ const NARROW = '(max-width: 820px)';
     <div #ide class="ide" [class.drawer]="vm.drawer()" [class.collapsed]="!vm.panelShown()" [style.--w.px]="vm.width()">
       <app-files-activity />
 
-      <aside class="side" id="files-side" [attr.aria-label]="title(side)" [inert]="!vm.panelShown()" (keydown.escape)="escape()">
+      <aside class="side panel" id="files-side" [attr.aria-label]="title(side)" [inert]="!vm.panelShown()" (keydown.escape)="escape()">
         <header class="tw-head">
           <h2 class="tw-title">{{ title(side) }}</h2>
           @switch (side) {
@@ -64,7 +65,7 @@ const NARROW = '(max-width: 820px)';
           aria-valuemin="180" aria-valuemax="560" [attr.aria-valuenow]="vm.width()" (pointerdown)="drag($event)" (keydown)="sizeKey($event)" (dblclick)="vm.resize(280)"></div>
       </aside>
 
-      <section class="main" aria-label="Éditeur" tabindex="-1">
+      <section class="main panel" aria-label="Éditeur" tabindex="-1">
         <app-files-editor-header />
         @if (a) {
           @if (a.error; as e) { <p class="note" role="alert">{{ e }}</p> }
@@ -112,7 +113,7 @@ const NARROW = '(max-width: 820px)';
     .ide.collapsed { grid-template-columns: 44px 0 minmax(0, 1fr); column-gap: calc(var(--gap) / 2); }
     .ide.dragging { transition: none; }
     app-files-activity { align-self: start; }
-    .side, .main { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--edge); border-radius: 12px; background: var(--surface); box-shadow: var(--elev-1); }
+    .side, .main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     .side { position: relative; }
     .ide.collapsed .side { overflow: hidden; border: 0; box-shadow: none; }
     app-files-status { margin-top: auto; }
@@ -168,6 +169,12 @@ export class SessionFilesComponent {
   readonly sessionId = input.required<string>();
   /** Claude ne travaille pas : l'édition est permise (le daemon applique la même règle). */
   readonly idle = input(false);
+  /** Résumé en direct de la session (outil en cours, sous-agents) : « Claude ici » et relecture de la trace. */
+  readonly summary = input<SessionSummary | null>(null);
+  /** « Voir dans l'historique » : la page ouvre son journal filtré sur le fichier. */
+  readonly openLog = output<string>();
+  /** Saisie non enregistrée dans un onglet (lue par la page) : quitter la vue demande confirmation. */
+  readonly unsaved = this.vm.unsaved;
   private readonly ide = viewChild.required<ElementRef<HTMLElement>>('ide');
   private readonly finder = viewChild.required(FilesFinderComponent);
   private readonly project = viewChild(FilesProjectComponent);
@@ -175,7 +182,7 @@ export class SessionFilesComponent {
   protected readonly title = (v: string): string => VIEWS.find((x) => x.id === v)!.label;
 
   constructor() {
-    this.vm.connect(this.sessionId, this.idle);
+    this.vm.connect(this.sessionId, this.idle, { summary: this.summary, openLog: (q) => this.openLog.emit(q) });
     // Tiroir sur écran étroit : le VM suit la media query.
     const mq = globalThis.matchMedia?.(NARROW);
     if (mq) {

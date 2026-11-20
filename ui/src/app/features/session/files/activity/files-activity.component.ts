@@ -17,7 +17,7 @@ export const VIEWS: { id: SideView; label: string; icon: string }[] = [
 @Component({
   selector: 'app-files-activity',
   imports: [HlmTooltip],
-  host: { role: 'navigation', 'aria-label': 'Fenêtres d’outils' },
+  host: { class: 'panel', role: 'navigation', 'aria-label': 'Fenêtres d’outils' },
   template: `
     @for (v of views; track v.id) {
       @let search = v.id === 'search';
@@ -33,7 +33,7 @@ export const VIEWS: { id: SideView; label: string; icon: string }[] = [
   `,
   styles: `
     /* Pilule verticale posée sur le fond pointillé (décision 043) : panneau à part, à la hauteur de ses icônes. */
-    :host { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; border: 1px solid var(--edge); border-radius: 22px; background: var(--surface); box-shadow: var(--elev-1); }
+    :host { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; border-radius: 22px; }
     .act {
       position: relative; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 10px; background: none;
       color: var(--faint); cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);

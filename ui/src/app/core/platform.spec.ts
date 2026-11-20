@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clientOs, isMac, isShortcut } from './platform';
+import { clientOs, isShortcut, restartCommand } from './platform';
 
 const nav = (platform: string, userAgent = '') => ({ platform, userAgent });
 const key = (k: string, mods: KeyboardEventInit = {}) => new KeyboardEvent('keydown', { key: k, ...mods });
@@ -11,7 +11,11 @@ describe('platform', () => {
     expect(clientOs(nav('Win32'))).toBe('windows');
     expect(clientOs(nav('Linux x86_64'))).toBe('linux');
     expect(clientOs(nav('', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'))).toBe('mac');
-    expect(isMac(nav('Linux x86_64'))).toBe(false);
+  });
+
+  it('commande de redémarrage du daemon selon l’OS du client', () => {
+    expect(restartCommand('mac')).toBe('launchctl kickstart -k gui/$UID/dev.vigie.daemon');
+    expect([restartCommand('linux'), restartCommand('windows')]).toEqual(['systemctl --user restart vigie', 'systemctl --user restart vigie']);
   });
 
   it('raccourci : Cmd sur mac, Ctrl ailleurs, sans autre modificateur', () => {

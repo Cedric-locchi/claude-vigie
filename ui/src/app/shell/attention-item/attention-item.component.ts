@@ -1,11 +1,11 @@
 import { Component, inject, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { HlmButton } from '@spartan-ng/helm/button';
-import { UsageAlert } from './attention';
-import { AttentionService } from './attention.service';
-import * as f from './format';
-import { Icon } from './icon.component';
-import { SessionView } from './session-view';
+import { UsageAlert } from '../../core/attention';
+import { AttentionService } from '../../core/attention.service';
+import * as f from '../../core/format';
+import { Icon } from '../../core/icon.component';
+import { SessionView } from '../../core/session-view';
 
 /** Une entrée à traiter (panneau de la cloche et toasts) : session (ce qu'elle attend, depuis quand, de quoi la débloquer) ou alerte de conso. */
 @Component({

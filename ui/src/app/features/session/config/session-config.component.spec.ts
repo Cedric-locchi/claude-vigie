@@ -2,13 +2,12 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { describe, expect, it } from 'vitest';
 import { aConfig, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { VigieService } from '../../../core/vigie.service';
 import { ClaudeConfig } from '../../../core/models';
 import { SessionConfigComponent } from './session-config.component';
 
-function render(skills: ClaudeConfig['skills'] = [{ scope: 'projet', name: 'revue', description: '', path: '~/dev/revu/.claude/skills/revue/SKILL.md' }]) {
+function render(skills: ClaudeConfig['skills'] = [{ scope: 'projet', name: 'revue', description: '', path: '~/dev/revu/.claude/skills/revue/SKILL.md', body: 'Relis le diff.' }]) {
   const config = aConfig({ skills, env: [{ scope: 'utilisateur', name: 'GITHUB_TOKEN' }] });
-  TestBed.configureTestingModule({ providers: [provideRouter([]), provideVigieServiceMock({ configResource: (() => fakeResource(config)) as unknown as VigieService['configResource'] })] });
+  TestBed.configureTestingModule({ providers: [provideRouter([]), provideVigieServiceMock({ configResource: () => fakeResource(config) })] });
   const fixture = TestBed.createComponent(SessionConfigComponent);
   fixture.componentRef.setInput('sessionId', 's1');
   fixture.componentRef.setInput('cwd', '/dev/revu');
@@ -31,10 +30,13 @@ describe('SessionConfigComponent', () => {
   });
 
   it('une rubrique à la fois, chaque élément avec ses propres problèmes', () => {
-    const { el, open } = render();
+    const { el, open, fixture } = render();
     open('Skills');
     const row = el.querySelector('.pane .row')!;
     expect(row.textContent).toContain('revue');
+    // Le daemon envoie toujours le corps : la ligne est un accordéon, la description se lit une fois dépliée.
+    row.querySelector('details')!.dispatchEvent(Object.assign(new Event('toggle'), { newState: 'open' }));
+    fixture.detectChanges();
     expect(row.textContent).toContain('Pas de description');
     expect(row.querySelector('.row-issue[data-level=error]')!.textContent).toContain('description manquante');
     // Le problème est rattaché à la skill : il ne s'affiche pas une seconde fois en tête de rubrique.

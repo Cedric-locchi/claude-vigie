@@ -126,3 +126,19 @@ test('remote-settings.json : réglages de l\'organisation, ses deny comptent', (
   assert.deepEqual(c.env, [{ scope: 'organisation', name: 'SECRET_X' }]);
   assert.ok(!JSON.stringify(c).includes('valeur'));
 });
+
+test('CLAUDE_CONFIG_DIR : .claude.json lu dans ce dossier (MCP), plus celui du home ; import @~/… sous le home', () => {
+  const { home, cwd, managed } = setup({
+    'home/proj/CLAUDE.md': 'Voir @~/notes.md et @~autre/x.md\n',
+    'home/notes.md': 'n',
+    'home/.claude.json': { mcpServers: { ancien: { command: 'a' } } },
+    'cfg/.claude.json': { mcpServers: { choisi: { command: 'b' } } },
+    'cfg/CLAUDE.md': '# Profil choisi',
+  });
+  const c = readClaudeConfig(cwd, home, managed, null, { CLAUDE_CONFIG_DIR: path.join(path.dirname(home), 'cfg') });
+  conforme(ClaudeConfig, c);
+  assert.deepEqual(c.mcp.map((m) => [m.scope, m.name]), [['utilisateur', 'choisi']]);
+  assert.deepEqual(c.instructions.find((i) => i.scope === 'utilisateur').body, '# Profil choisi');
+  // `~autre` n'est pas le home d'un autre compte : relatif au fichier, donc introuvable ici.
+  assert.deepEqual(c.instructions.find((i) => i.scope === 'projet').imports, [{ ref: '~/notes.md', ok: true }, { ref: '~autre/x.md', ok: false }]);
+});

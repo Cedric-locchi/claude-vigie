@@ -4,11 +4,11 @@ import { describeSession, waitLabel } from './session-view';
 import * as f from './format';
 
 /** Ce qui a demandé ton attention, pour le journal : la raison d'une attente, ou une fin de tour. */
-export type LogKind = 'permission' | 'question' | 'turn';
+export type AttentionKind = 'permission' | 'question' | 'turn';
 /** Ligne du journal « Plus tôt » (localStorage) : titre de session seulement, jamais le détail d'une commande. */
-export interface LogEntry { sessionId: string; title: string; kind: LogKind; ts: number }
+export interface AttentionEntry { sessionId: string; title: string; kind: AttentionKind; ts: number }
 
-export const LOG_LABELS: Record<LogKind, string> = { permission: waitLabel('permission', 'short'), question: waitLabel('question', 'short'), turn: 'Fin de tour' };
+export const LOG_LABELS: Record<AttentionKind, string> = { permission: waitLabel('permission', 'short'), question: waitLabel('question', 'short'), turn: 'Fin de tour' };
 
 /** Alerte de consommation active : `dismissKey` sert à « Ignorer » (jour pour le coût, fin de fenêtre pour la 5 h). */
 export interface UsageAlert { key: 'cost' | 'window'; dismissKey: string; title: string; body: string; dismissLabel: string }
@@ -42,7 +42,7 @@ export function pendingSessions(sessions: SessionSummary[], now: number) {
     .map((s) => describeSession(s, now, 1, 0));
 }
 
-/** Cloche : la pastille ambre ne compte que ce qui bloque ; le reste se dit dans l'aria-label et par un point neutre. */
+/** Cloche : le compteur orange ne compte que ce qui bloque ; le reste se dit dans l'aria-label et par un point neutre. */
 export function bell(sessions: SessionSummary[], usageCount: number, pausedUntil: number | null) {
   const waiting = sessions.filter((s) => s.state === 'waiting');
   const turn = sessions.filter((s) => s.state === 'turn').length;
@@ -58,8 +58,8 @@ export function bell(sessions: SessionSummary[], usageCount: number, pausedUntil
 }
 
 /** Journal regroupé par session : dernière issue, ses heures (la plus récente d'abord) et leur nombre. */
-export function groupLog(entries: LogEntry[]) {
-  const groups = new Map<string, { sessionId: string; title: string; kind: LogKind; times: number[] }>();
+export function groupLog(entries: AttentionEntry[]) {
+  const groups = new Map<string, { sessionId: string; title: string; kind: AttentionKind; times: number[] }>();
   for (const e of [...entries].sort((a, b) => b.ts - a.ts)) {
     const g = groups.get(e.sessionId);
     if (g) g.times.push(e.ts);
@@ -95,11 +95,11 @@ export function deliver(kind: 'waiting' | 'turn' | 'usage', ctx: { focused: bool
 }
 
 /** Relit le journal mémorisé : toute ligne mal formée est ignorée (stockage local, éditable à la main). */
-export function parseLog(raw: string | null): LogEntry[] {
+export function parseLog(raw: string | null): AttentionEntry[] {
   try {
     const list: unknown = JSON.parse(raw ?? '[]');
     if (!Array.isArray(list)) return [];
-    return list.filter((e): e is LogEntry => typeof e?.sessionId === 'string' && typeof e.title === 'string' && typeof e.ts === 'number' && e.kind in LOG_LABELS);
+    return list.filter((e): e is AttentionEntry => typeof e?.sessionId === 'string' && typeof e.title === 'string' && typeof e.ts === 'number' && e.kind in LOG_LABELS);
   } catch {
     return [];
   }

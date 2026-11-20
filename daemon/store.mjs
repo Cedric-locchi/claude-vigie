@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  newTrack, readTrack, trackTokens, projectName, deriveState, readNewLines, logEntriesOf,
+  newTrack, readTrack, trackTokens, projectName, deriveState, readNewLines, logEntriesOf, WORKTREES,
 } from './ingest.mjs';
 import { openHistory, writeHistory } from './history.mjs';
 import { costOf } from './pricing.mjs';
@@ -15,6 +15,8 @@ import {
 } from './usage.mjs';
 
 const ACTIVITY_MIN = 15;
+/** Journaux gardés en mémoire (onglet Journal) : au-delà, le moins récemment lu est oublié (relu en entier s'il est rouvert). */
+const MAX_LOGS = 50;
 /** Premier démarrage sans historique : on relit un mois de transcripts pour l'amorcer. */
 const SEED_DAYS = 31;
 // Aucun texte d'une discussion n'est écrit dans l'historique (elle est effacée de ~/.claude en la quittant).
@@ -37,7 +39,11 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
 
   function hide(sessionId) {
     hidden[sessionId] = Date.now();
-    try { fs.writeFileSync(hiddenFile, JSON.stringify(hidden)); } catch { /* reste masquée jusqu'au redémarrage */ }
+    // tmp + rename : un arrêt pendant l'écriture ne laisse pas un fichier tronqué (toutes les sessions masquées réapparaîtraient).
+    try {
+      fs.writeFileSync(hiddenFile + '.tmp', JSON.stringify(hidden));
+      fs.renameSync(hiddenFile + '.tmp', hiddenFile);
+    } catch { /* reste masquée jusqu'au redémarrage */ }
   }
   // Une session supprimée qui reprend de l'activité (claude --resume) réapparaît.
   const isHidden = (s) => hidden[s.id] && s.lastTs <= hidden[s.id];
@@ -52,6 +58,24 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
   let horizon = null;
   // Plus haut % réel vu par fenêtre (clé : fin) : la statusline écrase son relevé à chaque fenêtre, on garde le pic pour l'historique.
   const peaks = new Map();
+
+  /** Lit la suite d'un transcript (piste créée au besoin) ; faux s'il est trop vieux, disparu ou inchangé. */
+  function visit(f, since) {
+    let st;
+    try { st = fs.statSync(f); } catch { return false; }
+    if (st.mtimeMs < since) return false;
+    let t = tracks.get(f);
+    if (!t) {
+      t = newTrack(f);
+      tracks.set(f, t);
+      if (isSub(t)) {
+        const k = path.dirname(path.dirname(f)); // <session>/subagents/x.jsonl → <session> = sessionDir(principale)
+        if (!subsByDir.has(k)) subsByDir.set(k, []);
+        subsByDir.get(k).push(t);
+      }
+    }
+    return readTrack(t) && (dirty = true);
+  }
 
   function scan() {
     const days = horizon === null && seed ? SEED_DAYS : HISTORY_DAYS;
@@ -71,22 +95,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
           const sub = path.join(dir, e.name, 'subagents');
           try { for (const f of fs.readdirSync(sub)) if (f.endsWith('.jsonl')) files.push(path.join(sub, f)); } catch { /* pas de sous-agents */ }
         }
-        for (const f of files) {
-          let st;
-          try { st = fs.statSync(f); } catch { continue; }
-          if (st.mtimeMs < since) continue;
-          let t = tracks.get(f);
-          if (!t) {
-            t = newTrack(f);
-            tracks.set(f, t);
-            if (isSub(t)) {
-              const k = path.dirname(path.dirname(f)); // <session>/subagents/x.jsonl → <session> = sessionDir(principale)
-              if (!subsByDir.has(k)) subsByDir.set(k, []);
-              subsByDir.get(k).push(t);
-            }
-          }
-          if (readTrack(t)) changed = dirty = true;
-        }
+        for (const f of files) if (visit(f, since)) changed = true;
       }
     }
     // Transcript disparu : Claude Code le déplace en quittant un worktree (enregistrement `relocated`), on le relit
@@ -96,6 +105,24 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
       saveHistory(); // un transcript vraiment effacé garde ainsi sa consommation
       for (const f of gone) forget(f);
       changed = dirty = true;
+    }
+    return changed;
+  }
+
+  /**
+   * Relit seulement les transcripts nommés (chemins absolus, ceux que signale fs.watch) : pendant qu'une session écrit,
+   * le scan complet (readdir + stat de tous les transcripts) n'est pas refait à chaque ligne. Le scan complet (toutes les 5 s)
+   * rattrape le reste : fichiers effacés, déplacés, événements perdus.
+   */
+  function scanFiles(files) {
+    if (horizon === null) return scan();
+    const since = Date.now() - HISTORY_DAYS * DAY;
+    let changed = false;
+    for (const f of files) {
+      // Même forme que ce que scan parcourt : <projet>/<session>.jsonl ou <projet>/<session>/subagents/<agent>.jsonl.
+      const n = path.relative(projectsDir, f).split(path.sep);
+      const shape = n.length === 2 || (n.length === 4 && n[2] === 'subagents');
+      if (shape && n[0] !== '..' && f.endsWith('.jsonl') && visit(f, since)) changed = true;
     }
     return changed;
   }
@@ -123,17 +150,31 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
   const isSub = (t) => t.file.includes(`${path.sep}subagents${path.sep}`);
   const sessionDir = (t) => t.file.replace(/\.jsonl$/, '');
 
-  /** Efface une session du disque (transcript + dossier des sous-agents) et de la mémoire : réservé aux discussions. */
-  /** `save` : enregistre d'abord l'historique (sa consommation y reste, sans titre : CHAT_META) ; faux quand l'appelant vient de le faire. */
+  /**
+   * Efface une discussion du disque (transcript + dossier des sous-agents) et de la mémoire.
+   * `save` : enregistre d'abord l'historique (sa consommation y reste, sans titre : CHAT_META) ; faux quand l'appelant vient de le faire.
+   */
   function purge(sessionId, { save = true } = {}) {
+    // Garde ici, pas chez chaque appelant (route, deuxième passe à 3 s, purgeChats) : la boucle efface tout `<id>.jsonl`
+    // quel que soit le projet, donc un vrai transcript qui partage l'id d'une discussion ne doit jamais l'atteindre.
+    // Sans transcript connu (discussion en attente : isChat faux sans terminaux), il n'y a rien à effacer : on oublie l'état vivant.
+    if (!isChat(sessionId, [])) { live.delete(sessionId); return; }
     if (save) saveHistory();
-    for (const [f, t] of [...tracks]) {
-      const mine = isSub(t) ? f.includes(`${path.sep}${sessionId}${path.sep}`) : path.basename(f, '.jsonl') === sessionId;
-      if (!mine) continue;
-      if (!isSub(t)) {
-        fs.rmSync(f, { force: true });
-        fs.rmSync(sessionDir(t), { recursive: true, force: true });
+    const mine = [...tracks].filter(([f, t]) => (isSub(t) ? f.includes(`${path.sep}${sessionId}${path.sep}`) : path.basename(f, '.jsonl') === sessionId));
+    // Ne lève jamais (route, timer de la deuxième passe, démarrage) : un effacement refusé (EACCES, EBUSY, claude qui écrit
+    // encore) est journalisé et les pistes restent, pour la passe suivante (deuxième passe à 3 s, puis purgeChats au démarrage).
+    // Dossier des sous-agents d'abord : s'il résiste, le transcript reste aussi, donc la piste qui permet de réessayer.
+    try {
+      for (const [f, t] of mine) {
+        if (isSub(t)) continue;
+        fs.rmSync(sessionDir(t), { recursive: true, force: true, maxRetries: 3 });
+        fs.rmSync(f, { force: true, maxRetries: 3 });
       }
+    } catch (e) {
+      console.error(`[vigie] discussion ${sessionId} pas encore effacée (${e.code ?? e.message}) : nouvel essai à la prochaine passe`);
+      return;
+    }
+    for (const [f, t] of mine) {
       // Même clé pour la principale et ses sous-agents (utile si seule la piste d'un sous-agent est connue).
       subsByDir.delete(isSub(t) ? path.dirname(path.dirname(f)) : sessionDir(t));
       tracks.delete(f);
@@ -177,7 +218,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
    */
   function recentDirs(limit = 30) {
     const last = new Map(); // tri décroissant : la première piste vue d'un dossier porte son max
-    for (const t of [...tracks.values()].filter((t) => t.cwd && t.cwd !== chatDir && !t.cwd.includes('/.claude/worktrees/')).sort((a, b) => b.lastTs - a.lastTs)) {
+    for (const t of [...tracks.values()].filter((t) => t.cwd && t.cwd !== chatDir && !t.cwd.includes(WORKTREES)).sort((a, b) => b.lastTs - a.lastTs)) {
       if (!last.has(t.cwd)) last.set(t.cwd, t.lastTs || null);
     }
     return [...last].filter(([d]) => fs.existsSync(d)).slice(0, limit).map(([dir, lastTs]) => ({ dir, lastTs }));
@@ -290,12 +331,21 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
       .filter((s) => !isHidden(s))
       .sort((a, b) => b.lastTs - a.lastTs);
     const open = readings(now).filter((r) => r.end > now);
+    // ponytail: usageSummary reparcourt toutes les consommations des 14 jours à chaque snapshot (jusqu'à ~2,5 par seconde en
+    // activité, quelques ms) ; une mémoïsation ne servirait qu'au repos, quand le snapshot ne part que toutes les 15 s.
+    // Suite : agrégats par jour tenus à jour par scan si le coût se voit.
     return { now, sessions, usage: usageSummary(tracks.values(), now, open.length ? quotaWindow(open, now) : null), terminals };
   }
 
+  // Relevés relus seulement si le dossier a changé (la statusline écrit par tmp + rename, ce qui change sa date) ou toutes les
+  // minutes (ménage des relevés périmés) : un snapshot ne relit pas tous les fichiers de limits/ à chaque fois.
+  let readCache = null; // { mtime, at, list }
   /** Relevés de la statusline (cf. readReadings), en retenant au passage le pic de chaque fenêtre. */
   function readings(now) {
-    const list = readReadings(now, limitsDir);
+    let mtime = null;
+    try { mtime = fs.statSync(limitsDir).mtimeMs; } catch { /* pas encore de relevé */ }
+    if (!readCache || readCache.mtime !== mtime || Math.abs(now - readCache.at) > 60_000) readCache = { mtime, at: now, list: readReadings(now, limitsDir) };
+    const list = readCache.list;
     for (const r of list) if (!(peaks.get(r.end)?.pct >= r.pct)) peaks.set(r.end, { end: r.end, pct: r.pct });
     // Au-delà, saveHistory (toutes les 10 min) a déjà archivé le pic avec sa fenêtre.
     for (const end of peaks.keys()) if (now - end > 2 * DAY) peaks.delete(end);
@@ -404,7 +454,11 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
 
   function logOf(t) {
     let c = logs.get(t.file);
-    if (!c) logs.set(t.file, (c = freshLog(t.file)));
+    if (!c) c = freshLog(t.file);
+    // Ordre d'insertion de la Map = ordre de lecture : le premier est le moins récemment lu.
+    logs.delete(t.file);
+    logs.set(t.file, c);
+    if (logs.size > MAX_LOGS) logs.delete(logs.keys().next().value);
     const id = path.basename(t.file, '.jsonl');
     readNewLines(c, (o) => {
       for (const e of logEntriesOf(o, c.tools)) c.entries.push({ ...e, id: `${id}:${c.n++}` });
@@ -430,7 +484,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
     return buildTrace({ main, subs, summary: summary(main, now, terminals), now });
   }
 
-  return { scan, onHook, snapshot, detail, usageRows: rows, saveHistory, sessionCost, sessionLog, sessionTrace, hide, purge, purgeChats, isChat, cwdOf, idle, recentDirs, tracks };
+  return { scan, scanFiles, onHook, snapshot, detail, usageRows: rows, saveHistory, sessionCost, sessionLog, sessionTrace, hide, purge, purgeChats, isChat, cwdOf, idle, recentDirs, tracks };
 }
 
 const LIMITS_DIR = path.join(os.homedir(), '.vigie', 'limits');

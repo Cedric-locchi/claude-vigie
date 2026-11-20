@@ -1,5 +1,5 @@
-// Contrat daemon ↔ UI en schémas zod : miroir exact de ui/src/app/core/models.ts (mêmes noms, même ordre,
-// optional et nullable à l'identique). Sert au daemon à valider ses entrées et aux tests à vérifier ses sorties.
+// Contrat daemon ↔ UI en schémas zod : source unique (décision 004). ui/src/app/core/models.ts n'en contient que des z.infer.
+// Sert au daemon à valider ses entrées et aux tests à vérifier ses sorties, à l'UI à valider tout ce qu'elle reçoit.
 // Toujours `zod/mini` : `import { z } from 'zod'` tire l'API chaînable complète (~454 Ko) dans l'app empaquetée.
 // Côté daemon, seul transport.mjs l'importe (chemin relatif) ; jamais hook.mjs ni statusline.mjs,
 // qui tournent depuis app.asar.unpacked/daemon où ../contract n'existe pas.
@@ -25,7 +25,7 @@ export const SessionSummary = z.object({
   title: str,
   lastText: str,
   tool: nstr,
-  toolPath: z.optional(nstr), // chemin complet du fichier visé par l'outil en cours, null hors outil à fichier ; absent sur un daemon plus ancien
+  toolPath: nstr, // chemin complet du fichier visé par l'outil en cours, null hors outil à fichier
   state: SessionState,
   reason: z.optional(Reason),
   detail: z.optional(str),
@@ -84,7 +84,7 @@ export const Snapshot = z.object({
   terminals: z.array(Terminal),
   // Absent jusqu'au premier relevé ; 'unknown' en cas d'échec.
   claudeStatus: z.optional(ClaudeStatus),
-  plugins: z.optional(z.array(str)), // ids des plugins actifs (décision 034) ; absent sur un daemon plus ancien
+  plugins: z.array(str), // ids des plugins actifs (décision 034)
 });
 
 // ── Détail d'une session ──────────────────────────────────────────────────
@@ -108,13 +108,13 @@ export const Agent = z.object({
   issue: z.optional(str),
   lastAction: nstr,
   lastText: str,
-  lastTextTruncated: z.optional(bool), // vrai si lastText est coupé à 20 000 caractères ; absent sur un daemon plus ancien
+  lastTextTruncated: bool, // vrai si lastText est coupé à 20 000 caractères
   tokens: num,
   toolCount: num,
   firstTs: num,
   lastTs: num,
   bars: z.array(ToolBar),
-  cost: z.optional(num), // coût estimé de cet agent, en $ ; absent sur un daemon plus ancien
+  cost: num, // coût estimé de cet agent, en $
 });
 
 export const SessionUsage = z.object({
@@ -124,7 +124,7 @@ export const SessionUsage = z.object({
   cacheRead: num,
   calls: num,
   context: num,
-  contextMax: z.optional(num), // absent sur un daemon plus ancien
+  contextMax: num,
 });
 
 export const SessionDetail = z.object({
@@ -151,8 +151,7 @@ export const UsageRow = z.object({
 // Fenêtre de 5 h close (historique) : `pct` = plus haut % réel relevé par la statusline pendant la fenêtre, null sans relevé.
 export const QuotaBlock = z.object({ start: num, end: num, tokens: num, cost: num, pct: nnum });
 
-// `windows` : absent sur un daemon plus ancien.
-export const UsageRows = z.object({ now: num, since: num, rows: z.array(UsageRow), windows: z.optional(z.array(QuotaBlock)) });
+export const UsageRows = z.object({ now: num, since: num, rows: z.array(UsageRow), windows: z.array(QuotaBlock) });
 
 // ── Coût d'une session au fil du temps (GET /api/sessions/:id/cost) ───────
 // Non cumulé : un point par agent (`agent` = Agent.id) et par pas de `step` ms où il a consommé ; ≤ 500 points par agent.
@@ -188,10 +187,10 @@ export const ClaudeConfig = z.object({
   cwd: str,
   model: nstr,
   settings: z.array(scoped({ path: str })),
-  instructions: z.array(scoped({ path: str, lines: num, bytes: num, imports: z.array(z.object({ ref: str, ok: bool })), body: z.optional(str) })),
-  skills: z.array(scoped({ name: str, description: str, path: str, body: z.optional(str) })),
-  agents: z.array(scoped({ name: str, description: str, tools: nstr, model: nstr, path: str, body: z.optional(str) })),
-  commands: z.array(scoped({ name: str, description: str, path: str, body: z.optional(str) })),
+  instructions: z.array(scoped({ path: str, lines: num, bytes: num, imports: z.array(z.object({ ref: str, ok: bool })), body: str })),
+  skills: z.array(scoped({ name: str, description: str, path: str, body: str })),
+  agents: z.array(scoped({ name: str, description: str, tools: nstr, model: nstr, path: str, body: str })),
+  commands: z.array(scoped({ name: str, description: str, path: str, body: str })),
   hooks: z.array(scoped({ event: str, matcher: nstr, command: str })),
   permissions: z.array(scoped({ kind: z.enum(['allow', 'ask', 'deny', 'mode']), rule: str })),
   mcp: z.array(scoped({ name: str, type: str, target: str, env: z.array(str), path: z.optional(str) })),
@@ -212,7 +211,7 @@ export const TraceStep = z.object({
   start: num,
   end: nnum,
   error: bool,
-  interrupted: z.optional(bool),
+  interrupted: bool, // toujours émis par trace.mjs (Échap, ou sans résultat dans une session terminée)
 });
 
 export const TraceAgent = z.object({
@@ -286,6 +285,7 @@ export const Projects = z.array(Project);
 
 // ── Petites réponses ──────────────────────────────────────────────────────
 export const CommitSuggestion = z.object({ message: str }); // POST …/git/commit-message
+export const ErrorBody = z.object({ error: str }); // toute réponse d'erreur du daemon (4xx, 5xx)
 
 // ── Réglages du daemon (GET /api/settings) ──────────────────────────────
 // Seuils d'alerte (stockés seulement) : `dailyCost` en $ par jour, `windowPct` en fraction de la fenêtre de 5 h ; null = pas d'alerte.
@@ -295,8 +295,7 @@ export const Alerts = z.object({
 }, { error: 'Seuils d’alerte invalides' });
 
 // `locale` : choisie dans Vigie (null = automatique) ; `defaultLocale` : celle qu'auraient les terminaux sans choix.
-// `alerts` : absent sur un daemon plus ancien.
-export const Settings = z.object({ locale: nstr, defaultLocale: str, alerts: z.optional(Alerts) });
+export const Settings = z.object({ locale: nstr, defaultLocale: str, alerts: Alerts });
 
 // ── Plugins (décisions 034, 037) : socle seulement ; les schémas propres à un plugin vivent dans plugins/<id>/contract.mjs ──
 // Le front d'un plugin est un composant Angular (décision 037) : plus de vue déclarative. La réponse d'une méthode (`call`)
@@ -345,6 +344,12 @@ export const SearchQuery = z.object({
   q: text('Indique le texte à chercher').check(z.minLength(2, 'Au moins 2 caractères'), z.maxLength(200, '200 caractères au plus')),
   case: z.boolean(),
 }, body);
+// GET …/log?since=N (paramètre d'URL, absent = 0) : seulement les lignes à partir de cette date (ms).
+export const LogQuery = z.object({
+  since: z.number({ error: 'since doit être une date en ms' }).check(z.gte(0, 'since doit être une date en ms')),
+}, body);
+// GET /api/projects?q= (paramètre d'URL, absent = '') : texte tapé dans le sélecteur, chemin ou non.
+export const ProjectsQuery = z.object({ q: text('q doit être un texte').check(z.maxLength(4096, 'Chemin trop long')) }, body);
 // GET /api/usage?days=N (paramètre d'URL, absent = 14) ; 400 = RETENTION_DAYS du daemon.
 export const UsageQuery = z.object({
   days: z.int({ error: 'Nombre de jours invalide' }).check(z.gte(1, 'Entre 1 et 400 jours'), z.lte(400, 'Entre 1 et 400 jours')),
@@ -356,9 +361,11 @@ export const WriteBody = z.object({
   hash: text('Empreinte manquante').check(z.regex(/^[0-9a-f]{64}$/, 'Empreinte invalide')),
 }, body); // POST …/git/write ou …/files/write
 export const CommitBody = z.object({ message: text('Le message de commit est vide').check(z.refine((s) => s.trim() !== '', 'Le message de commit est vide')) }, body);
+// POST sans paramètre (/api/chat, /api/chat/:id/delete, …/delete, …/git/commit-message, /api/terminals/:id/close) : `{}` seulement.
+export const EmptyBody = z.strictObject({}, body);
 // POST …/terminals : corps `{}` = un shell, rien d'autre (une UI d'avant les plugins qui envoie `miseTask` prend un 400).
-// Les terminaux d'un outil (mise, Xcode…) passent par l'action d'un plugin.
-export const TerminalBody = z.strictObject({}, body);
+// Les terminaux d'un outil (mise, Xcode…) passent par l'action d'un plugin. Même schéma qu'EmptyBody, nom gardé pour l'UI.
+export const TerminalBody = EmptyBody;
 // POST /api/plugins/:id
 export const PluginToggleBody = z.object({ enabled: z.boolean({ error: 'enabled doit être un booléen' }) }, body);
 // POST …/plugins/:pid/call/:method : `params` libre ici, validé ensuite par le schéma de la méthode (dans le plugin).

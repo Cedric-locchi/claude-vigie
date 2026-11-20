@@ -13,7 +13,7 @@ const draw = () => () => document.createElementNS('http://www.w3.org/2000/svg', 
 function render(overrides: Record<string, unknown> = {}) {
   const usage = anUsage();
   const vm = {
-    now: signal(0), window: signal(usage.window), windowBar: signal({ used: 62, projected: 24 }), loaded: signal(true), failed: signal(false), noWindows: signal(false),
+    now: signal(0), window: signal(usage.window), windowBar: signal({ used: 62, projected: 24 }), loaded: signal(true), loadError: signal(null),
     periods: PERIODS, period: signal('14'), metric: signal('cost'), metricLabel: signal('Coût'), family: signal(null), families: signal(['opus', 'sonnet']),
     rangeLabel: signal('14 derniers jours'), custom: signal(false),
     daily: signal([{ day: 1, family: 'opus', value: 40 }]), heroDraw: signal(draw()), heroLabel: signal('Coût par jour : 40 $'),
@@ -95,12 +95,10 @@ describe('UsagePageComponent', () => {
     expect(vm.brushEnd).toHaveBeenCalled();
   });
 
-  it('graphiques vides et daemon sans historique des fenêtres', () => {
+  it('graphiques vides', () => {
     const { el } = render({ daily: signal([]), topSessions: signal([]) });
     expect(el.querySelectorAll('app-plot-chart')).toHaveLength(0);
     expect(el.textContent).toContain('lance une session');
-    TestBed.resetTestingModule();
-    expect(render({ noWindows: signal(true) }).el.textContent).toContain('redémarre-le après la mise à jour');
   });
 
   it('filtres : période, mesure, modèle ; sélection à la main réinitialisable', () => {
@@ -118,7 +116,9 @@ describe('UsagePageComponent', () => {
     expect(vm.resetSelection).toHaveBeenCalled();
   });
 
-  it('dit quand le daemon ne fournit pas le détail', () => {
-    expect(render({ failed: signal(true) }).el.textContent).toContain('redémarre-le');
+  it('lecture en échec : la raison, puis la commande qui relance le daemon', () => {
+    const alert = render({ loadError: signal('Le daemon ne répond pas') }).el.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain('Le daemon ne répond pas');
+    expect(alert.textContent).toContain('Redémarre le daemon');
   });
 });

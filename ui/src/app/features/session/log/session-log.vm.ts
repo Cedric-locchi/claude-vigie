@@ -1,7 +1,8 @@
-import { Injectable, Signal, computed, effect, inject, signal, untracked } from '@angular/core';
-import { LogEntry, LogKind } from '../../../core/models';
+import { Injectable, Signal, computed, inject, linkedSignal, signal } from '@angular/core';
+import { clockSeconds } from '../../../core/format';
+import { LogKind } from '../../../core/models';
 import { CLIENT_OS, isShortcut } from '../../../core/platform';
-import { VigieService } from '../../../core/vigie.service';
+import { logFeed } from './log-feed';
 
 export type LogFilter = 'all' | 'talk' | 'tools' | 'errors' | 'system';
 
@@ -22,63 +23,33 @@ export interface TextPart { text: string; hit: boolean }
 
 @Injectable()
 export class SessionLogVm {
-  private readonly vigie = inject(VigieService);
   private readonly mac = inject(CLIENT_OS) === 'mac';
-  private readonly source = signal<{ id: Signal<string>; lastTs: Signal<number> } | null>(null);
+  private readonly source = signal<{ id: Signal<string>; lastTs: Signal<number>; query: Signal<string> } | null>(null);
 
-  /** Toutes les lignes reçues, sans doublon (le rafraîchissement redemande la dernière seconde). */
-  readonly entries = signal<LogEntry[]>([]);
-  readonly loading = signal(false);
-  readonly error = signal<string | null>(null);
+  /** Session changée : on repart de zéro. Activité nouvelle (lastTs) : on ne demande que la suite. */
+  private readonly feed = logFeed(() => {
+    const src = this.source();
+    src?.lastTs();
+    return src?.id() ?? null;
+  }, 'Journal indisponible.');
+  /** Toutes les lignes reçues, sans doublon, de la plus ancienne à la plus récente. */
+  readonly entries = this.feed.entries;
+  readonly loading = this.feed.loading;
+  readonly error = this.feed.error;
 
   /** Raccourci de la recherche : Cmd+F sur mac, Ctrl+F ailleurs. */
   readonly searchKey = this.mac ? '⌘F' : 'Ctrl+F';
 
-  readonly query = signal('');
+  /** Recherche : celle imposée par la page (« Voir dans le journal ») tant qu'on ne la retape pas. */
+  readonly query = linkedSignal(() => this.source()?.query() ?? '');
   readonly filter = signal<LogFilter>('all');
   /** null : tous les agents. */
   readonly agent = signal<string | null>(null);
   readonly limit = signal(PAGE);
   private readonly expandedIds = signal<ReadonlySet<string>>(new Set());
 
-  private loadedFor: string | null = null;
-
-  constructor() {
-    // Session changée : on repart de zéro. Activité nouvelle (lastTs) : on ne demande que la suite.
-    effect(() => {
-      const src = this.source();
-      if (!src) return;
-      const id = src.id();
-      src.lastTs();
-      untracked(() => this.load(id));
-    });
-  }
-
-  connect(id: Signal<string>, lastTs: Signal<number>): void {
-    this.source.set({ id, lastTs });
-  }
-
-  private async load(id: string): Promise<void> {
-    const fresh = this.loadedFor !== id;
-    if (fresh) {
-      this.loadedFor = id;
-      this.entries.set([]);
-      this.loading.set(true);
-    }
-    const since = fresh ? 0 : (this.entries().at(-1)?.ts ?? 0);
-    try {
-      const { entries } = await this.vigie.sessionLog(id, since);
-      if (this.loadedFor !== id) return; // réponse d'une session quittée entre-temps
-      this.error.set(null);
-      if (!entries.length) return;
-      const known = new Set(this.entries().map((e) => e.id));
-      const added = entries.filter((e) => !known.has(e.id));
-      if (added.length) this.entries.update((list) => [...list, ...added].sort((a, b) => a.ts - b.ts));
-    } catch {
-      this.error.set('Journal indisponible : le daemon est-il à jour ? (redémarre-le après une mise à jour)');
-    } finally {
-      this.loading.set(false);
-    }
+  connect(id: Signal<string>, lastTs: Signal<number>, query: Signal<string> = signal('')): void {
+    this.source.set({ id, lastTs, query });
   }
 
   readonly agents = computed(() => [...new Set(this.entries().map((e) => e.agent))]);
@@ -110,7 +81,7 @@ export class SessionLogVm {
   readonly visible = computed(() =>
     this.matches().slice(0, this.limit()).map((e) => ({
       ...e,
-      time: new Date(e.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      time: clockSeconds(e.ts),
       label: KIND_LABELS[e.kind],
       long: e.text.length > LONG || e.text.split('\n').length > 8,
       /** Déplié à la main, ou parce que la recherche trouve quelque chose dans le texte. */

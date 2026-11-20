@@ -1,9 +1,10 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { AttentionService } from '../../../core/attention.service';
 import { SessionSummary } from '../../../core/models';
 import { ConfirmService } from '../../../core/confirm.service';
 import { CLIENT_OS } from '../../../core/platform';
-import { KEYS, VigieService, sendReply } from '../../../core/vigie.service';
+import { VigieService } from '../../../core/vigie.service';
 import { activityMax, describeSession } from '../../../core/session-view';
 import { keepLast } from '../../../core/signals';
 import { ACTIVITY_DAYS, WEEKS, activityGrid } from '../activity-grid/activity-grid';
@@ -57,7 +58,7 @@ export class SessionsPageVm {
 
   /** Seuil du coût du jour (Réglages), null sans seuil. */
   private readonly settings = this.vigie.settingsResource();
-  private readonly dailyCost = computed(() => (this.settings.hasValue() ? this.settings.value()?.alerts?.dailyCost ?? null : null));
+  private readonly dailyCost = computed(() => (this.settings.hasValue() ? this.settings.value().alerts.dailyCost : null));
 
   private readonly sessions = computed(() => {
     const q = this.search().trim().toLowerCase();
@@ -152,22 +153,16 @@ export class SessionsPageVm {
     this.search.set(term);
   }
 
+  private readonly attention = inject(AttentionService);
   /** Échec de la dernière réponse rapide, affiché sur la ligne de la session concernée. */
-  readonly replyError = signal<{ id: string; message: string } | null>(null);
+  readonly replyError = this.attention.replyError.asReadonly();
 
   allow(s: SessionSummary): Promise<void> {
-    return this.reply(s, KEYS.allow);
+    return this.attention.reply(s.id, 'allow');
   }
 
   refuse(s: SessionSummary): Promise<void> {
-    return this.reply(s, KEYS.refuse);
-  }
-
-  private async reply(s: SessionSummary, keys: string): Promise<void> {
-    if (!s.terminalId) return;
-    this.replyError.set(null);
-    const message = await sendReply(this.vigie, s.terminalId, keys);
-    if (message) this.replyError.set({ id: s.id, message });
+    return this.attention.reply(s.id, 'refuse');
   }
 
   /** Clic n'importe où sur une ligne : ouvre la session, sauf sur ses boutons/liens ou après une sélection de texte. */

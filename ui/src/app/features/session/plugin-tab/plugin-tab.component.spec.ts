@@ -13,6 +13,24 @@ class FakePlugin {
 }
 
 describe('PluginTabComponent', () => {
+  const render = (table: unknown) => {
+    TestBed.configureTestingModule({ providers: [provideVigieServiceMock(), { provide: PLUGIN_UI_TABLE, useValue: table }] });
+    const fixture = TestBed.createComponent(PluginTabComponent);
+    fixture.componentRef.setInput('sessionId', 's1');
+    fixture.componentRef.setInput('cwd', '/dev/app');
+    fixture.componentRef.setInput('pluginId', 'mise');
+    return { fixture, el: fixture.nativeElement as HTMLElement };
+  };
+
+  it("chargement en échec : l'écran d'échec, avec Réessayer", async () => {
+    const { fixture, el } = render({ mise: async () => { throw new Error('chunk introuvable'); } });
+    await vi.waitFor(async () => {
+      await fixture.whenStable();
+      expect(el.querySelector('[role=alert]')?.textContent).toContain('Impossible de charger l’interface de ce plugin.');
+    });
+    expect([...el.querySelectorAll('button')].map((b) => b.textContent!.trim())).toEqual(['Réessayer', 'Recharger la page']);
+  });
+
   it('rend le composant du plugin avec PluginHost injecté et l’input sessionId', async () => {
     TestBed.configureTestingModule({ providers: [provideVigieServiceMock(), { provide: PLUGIN_UI_TABLE, useValue: { mise: async () => ({ default: FakePlugin }) } }] });
     const fixture = TestBed.createComponent(PluginTabComponent);

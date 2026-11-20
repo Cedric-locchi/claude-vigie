@@ -1,9 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { Agent } from '../../../../core/models';
+import { anAgent } from '../../../../core/vigie.service.mock';
 import { AgentRowComponent } from './agent-row.component';
 
-const base: Agent = { id: 'a', name: 'test-runner', sub: true, description: '', state: 'running', lastAction: 'Bash · npm test', lastText: '', tokens: 37_000, toolCount: 4, firstTs: 0, lastTs: 300_000, bars: [] };
+const base = anAgent({ id: 'a', name: 'test-runner', sub: true, description: '', state: 'running', lastAction: 'Bash · npm test', lastText: '', tokens: 37_000, toolCount: 4, firstTs: 0, lastTs: 300_000 });
 
 function render(agent: Partial<Agent>) {
   const fixture = TestBed.createComponent(AgentRowComponent);

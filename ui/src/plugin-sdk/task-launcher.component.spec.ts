@@ -131,6 +131,6 @@ describe('TaskLauncherComponent', () => {
   it('deux panneaux qui défilent chacun : navigation et contenu', () => {
     const { el } = render();
     const scrollers = [...el.querySelectorAll('*')].filter((n) => /auto|scroll/.test(getComputedStyle(n).overflowY)).map((n) => n.className);
-    expect(scrollers).toEqual(['nav', 'pane']);
+    expect(scrollers).toEqual(['nav panel', 'pane panel']);
   });
 });

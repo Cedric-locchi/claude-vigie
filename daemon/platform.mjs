@@ -38,11 +38,54 @@ export function findOnPath(name, { env = {}, isExecutable }) {
 /** Version de `node --version` (« v22.3.0 ») assez récente pour hook.mjs et statusline.mjs (ESM, imports `node:`). */
 export const nodeVersionOk = (out) => Number(/^v(\d+)\./.exec(String(out).trim())?.[1]) >= 18;
 
+/** L'app de bureau quitte quand sa dernière fenêtre se ferme, sauf sous macOS (elle reste dans le Dock, comme les apps du système). */
+export const quitsWithLastWindow = ({ platform }) => platform !== 'darwin';
+
+/**
+ * Arguments de `$SHELL` pour lire le PATH et CLAUDE_CONFIG_DIR du shell de connexion (app lancée depuis le Finder ou le bureau,
+ * environnement minimal). Valeurs encadrées d'octets nuls, qu'aucune variable d'environnement ne peut contenir : ce qu'un
+ * .zshrc ou un .bash_logout affiche avant ou après est écarté par `parseLoginShellEnv`.
+ */
+export const LOGIN_SHELL_ENV_ARGS = ['-ilc', "printf '\\0%s\\0%s\\0' \"$PATH\" \"$CLAUDE_CONFIG_DIR\""];
+
+/** Sortie de LOGIN_SHELL_ENV_ARGS → `{ PATH, configDir }` (vides si non définies) ; null si les délimiteurs manquent ou sont en trop. */
+export function parseLoginShellEnv(out) {
+  const parts = String(out).split('\0');
+  return parts.length === 4 ? { PATH: parts[1], configDir: parts[2] } : null;
+}
+
 /** Gestionnaire de services pour `vigie install` ; null : aucun (WSL sans systemd), l'appelant explique les options. */
 export function startupMethod({ platform, hasSystemd }) {
   if (platform === 'darwin') return 'launchd';
   if (platform === 'linux' && hasSystemd) return 'systemd';
   return null;
+}
+
+/**
+ * systemd --user utilisable : Linux démarré par systemd (WSL sans `[boot] systemd=true` ne l'est pas : pas de /run/systemd/system)
+ * et bus utilisateur joignable. `exists(chemin)` et `userBus()` sont les effets, injectés ; appelés seulement sous Linux.
+ */
+export const hasSystemd = ({ platform, exists, userBus }) => platform === 'linux' && exists('/run/systemd/system') && userBus();
+
+/** Agent launchd de l'utilisateur (macOS). */
+export const launchAgentFile = ({ home, label }) => path.join(home, 'Library', 'LaunchAgents', `${label}.plist`);
+
+/** Explication de `vigie install` sans gestionnaire de services : les instructions de WSL seulement sous WSL. */
+export function noServiceHelp({ platform, wsl }) {
+  const profile = `Démarrer le daemon à l'ouverture d'un shell : ajouter à ~/.profile
+       vigie start >/dev/null 2>&1
+     (sans relance automatique s'il tombe).`;
+  if (wsl) return `systemd utilisateur injoignable : WSL démarré sans systemd ? Deux options :
+  1. Activer systemd dans WSL : ajouter dans /etc/wsl.conf
+       [boot]
+       systemd=true
+     puis, côté Windows : wsl --shutdown ; rouvrir le terminal et relancer vigie install.
+  2. ${profile}`;
+  if (platform === 'linux') return `systemd utilisateur injoignable (lancé avec sudo, session sans bus comme SSH, ou système sans systemd ?).
+  Relance vigie install depuis ta session graphique, ou :
+  ${profile}`;
+  return `Pas de gestionnaire de services pris en charge ici.
+  ${profile}`;
 }
 
 /**
@@ -77,15 +120,19 @@ export const systemdUserDir = ({ env = {}, home }) => path.join(env.XDG_CONFIG_H
 
 const xml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** Agent launchd : démarre le daemon à la connexion et le relance s'il tombe. */
-export function launchdPlist({ label, node, server, path: PATH, shell, log }) {
+/**
+ * Agent launchd : démarre le daemon à la connexion et le relance s'il tombe. `configDir` : CLAUDE_CONFIG_DIR de `vigie install`
+ * (absent : le daemon lit ~/.claude), sans quoi un dossier posé dans le profil du shell manquerait au service.
+ */
+export function launchdPlist({ label, node, server, path: PATH, shell, log, configDir = null }) {
   const [l, n, s, p, sh, lg] = [label, node, server, PATH, shell, log].map(xml);
+  const cfg = configDir ? `<key>CLAUDE_CONFIG_DIR</key><string>${xml(configDir)}</string>` : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>${l}</string>
   <key>ProgramArguments</key><array><string>${n}</string><string>${s}</string></array>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>${p}</string><key>SHELL</key><string>${sh}</string></dict>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>${p}</string><key>SHELL</key><string>${sh}</string>${cfg}</dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>${lg}</string>
@@ -99,10 +146,10 @@ export function launchdPlist({ label, node, server, path: PATH, shell, log }) {
 const unitQuote = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`;
 const execQuote = (s) => unitQuote(s).replace(/\$/g, '$$$$');
 
-/** Unité systemd --user : équivalent du plist (démarrage à la connexion, relance si le daemon tombe). */
+/** Unité systemd --user : équivalent du plist (démarrage à la connexion, relance si le daemon tombe, `configDir` compris). */
 // StartLimitIntervalSec=0 : si le port est déjà pris (daemon lancé par `vigie start` ou l'app), on réessaie indéfiniment
 // comme launchd, au lieu de passer en failed pour toujours après 5 échecs en 10 s.
-export function systemdUnit({ node, server, path: PATH, shell, log }) {
+export function systemdUnit({ node, server, path: PATH, shell, log, configDir = null }) {
   return `[Unit]
 Description=Vigie, daemon de monitoring des sessions Claude Code
 StartLimitIntervalSec=0
@@ -110,7 +157,7 @@ StartLimitIntervalSec=0
 [Service]
 ExecStart=${execQuote(node)} ${execQuote(server)}
 Environment=${unitQuote(`PATH=${PATH}`)}
-${shell ? `Environment=${unitQuote(`SHELL=${shell}`)}\n` : ''}Restart=always
+${shell ? `Environment=${unitQuote(`SHELL=${shell}`)}\n` : ''}${configDir ? `Environment=${unitQuote(`CLAUDE_CONFIG_DIR=${configDir}`)}\n` : ''}Restart=always
 RestartSec=2
 StandardOutput=append:${String(log).replace(/%/g, '%%')}
 StandardError=append:${String(log).replace(/%/g, '%%')}

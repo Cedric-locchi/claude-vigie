@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, model, output, signal } from '@angular/core';
+import { Component, computed, inject, input, output } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
 import { HlmButton } from '@spartan-ng/helm/button';
 import { HlmInput } from '@spartan-ng/helm/input';
@@ -16,7 +16,7 @@ import { SessionDiffVm, STATUS } from './session-diff.vm';
     <div class="diff-head">
       <div class="summary">
         @if (!d) {
-          <span>{{ vm.failed() ? 'État git indisponible : le daemon est-il à jour ? (redémarre-le après une mise à jour)' : 'Lecture du dépôt…' }}</span>
+          <span role="status">{{ vm.loadError() ?? 'Lecture du dépôt…' }}</span>
         } @else if (!d.repo) {
           <span class="muted">Le dossier de la session n'est pas un dépôt git.</span>
         } @else {
@@ -54,7 +54,7 @@ import { SessionDiffVm, STATUS } from './session-diff.vm';
         <textarea class="mono" rows="5" aria-label="Message de commit proposé" [formField]="vm.commitForm.message" [attr.aria-invalid]="messageInvalid()"></textarea>
         <div class="commit-actions">
           @if (messageInvalid()) { <span class="small text-err" role="alert">Écris un message</span> }
-          <button hlmBtn variant="ghost" size="sm" (click)="copy(vm.commitModel().message)">{{ copied() ? 'Copié' : 'Copier' }}</button>
+          <button hlmBtn variant="ghost" size="sm" aria-live="polite" (click)="vm.copyMessage()">{{ vm.copied() ? 'Copié' : 'Copier' }}</button>
           <button hlmBtn variant="ghost" size="sm" [disabled]="vm.generating()" (click)="vm.generateCommitMessage()">Régénérer</button>
           <button hlmBtn variant="ghost" size="sm" (click)="vm.closeCommit()">Fermer</button>
           <button hlmBtn size="sm" [disabled]="vm.committing() || vm.generating() || vm.commitForm.message().invalid()" (click)="vm.commit()">{{ vm.committing() ? 'Commit…' : 'Commiter' }}</button>
@@ -65,7 +65,7 @@ import { SessionDiffVm, STATUS } from './session-diff.vm';
     @if (d?.repo) {
       @if (d!.files.length) {
         <div class="body">
-          <nav class="files" aria-label="Fichiers modifiés">
+          <nav class="files panel" aria-label="Fichiers modifiés">
             @for (f of d!.files; track f.path) {
               <button type="button" class="file" [attr.aria-current]="vm.file().path === f.path ? 'page' : null" (click)="vm.select(f.path)" [hlmTooltip]="(f.from ? f.from + ' → ' : '') + f.path" [showDelay]="500">
                 <span class="st mono" [attr.data-st]="f.status"><span aria-hidden="true">{{ STATUS[f.status].label }}</span><span class="sr-only">{{ STATUS[f.status].hint }}</span></span>
@@ -76,7 +76,7 @@ import { SessionDiffVm, STATUS } from './session-diff.vm';
             }
             @if (d!.total > d!.files.length) { <p class="small faint more">+ {{ d!.total - d!.files.length }} autres fichiers non affichés</p> }
           </nav>
-          <section class="pane" aria-label="Différences du fichier">
+          <section class="pane panel" aria-label="Différences du fichier">
             @if (vm.file(); as f) {
               <div class="pane-head">
                 <div class="pane-title">
@@ -142,7 +142,6 @@ import { SessionDiffVm, STATUS } from './session-diff.vm';
 
     /* Deux panneaux séparés sur le fond pointillé (décision 043) : liste des fichiers, patch ; chacun défile seul. */
     .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 10px; }
-    .files, .pane { border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); }
     /* relative : les libellés sr-only (absolus) restent dans la liste au lieu d'agrandir la page. */
     .files { position: relative; display: flex; flex-direction: column; gap: 1px; padding: 8px; overflow-y: auto; }
     .file {
@@ -210,8 +209,8 @@ export class SessionDiffComponent {
   readonly lastTs = input.required<number>();
   /** Claude ne travaille pas : l'édition d'un fichier est permise (le daemon applique la même règle). */
   readonly idle = input(false);
-  /** Saisie non enregistrée : la page garde cet onglet monté et demande confirmation avant de quitter. */
-  readonly unsaved = model(false);
+  /** Saisie non enregistrée (lue par la page) : elle garde cet onglet monté et demande confirmation avant de quitter. */
+  readonly unsaved = this.vm.dirty;
   /** Claude tourne dans un terminal Vigie et n'attend pas de réponse : on peut lui taper la demande de worktree. */
   readonly canWorktree = input(false);
   /** Nom du worktree (vide : choisi par Claude) ; la page le tape dans le terminal claude. */
@@ -225,19 +224,10 @@ export class SessionDiffComponent {
 
   constructor() {
     this.vm.connect(this.sessionId, this.lastTs, this.idle);
-    effect(() => this.unsaved.set(this.vm.dirty()));
   }
 
-  protected readonly copied = signal(false);
   /** Message vidé à la main : erreur affichée dès que le champ a été touché. */
   protected readonly messageInvalid = computed(() => this.vm.commitForm.message().touched() && this.vm.commitForm.message().invalid());
-
-  protected copy(text: string): void {
-    void navigator.clipboard?.writeText(text).then(() => {
-      this.copied.set(true);
-      setTimeout(() => this.copied.set(false), 1500);
-    });
-  }
 
   protected base(p: string): string {
     return p.slice(p.lastIndexOf('/') + 1);

@@ -2,8 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Signal, signal } from '@angular/core';
 import { describe, expect, it, vi } from 'vitest';
 import { aSession, aSettings, aSnapshot, aUsageRows, anUsageRow, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { VigieService } from '../../../core/vigie.service';
-import { addDays, startOfDay } from '../../usage/usage-series';
+import { addDays, startOfDay } from '../../../core/usage-rows';
 import { provideConfirmServiceMock } from '../../../core/confirm.service.mock';
 import { ConfirmService } from '../../../core/confirm.service';
 import { Router, provideRouter } from '@angular/router';
@@ -48,22 +47,25 @@ describe('SessionsPageVm', () => {
     expect(vm.running().map((s) => s.id)).toEqual(['b']);
   });
 
-  it('envoie la touche au terminal de la session', () => {
+  it('envoie la touche au terminal de la session qui attend', async () => {
     const sendKeys = vi.fn();
-    const vm = createVm([], sendKeys);
-    vm.allow(aSession({ terminalId: 't1' }));
-    vm.refuse(aSession({ terminalId: 't1' }));
-    vm.allow(aSession({ terminalId: null }));
+    const waiting = aSession({ id: 'a', state: 'waiting', reason: 'permission', terminalId: 't1' });
+    const external = aSession({ id: 'b', state: 'waiting', reason: 'permission', terminalId: null });
+    const vm = createVm([waiting, external], sendKeys);
+    await vm.allow(waiting);
+    await vm.refuse(waiting);
+    await vm.allow(external);
     expect(sendKeys.mock.calls).toEqual([['t1', '\r'], ['t1', '\x1b']]);
   });
 
   it('Autoriser / Refuser en échec : erreur sur la ligne de la session, effacée au nouvel essai', async () => {
     const sendKeys = vi.fn(async () => { throw { status: 500, error: { error: 'PTY fermé' } }; });
-    const vm = createVm([], sendKeys);
-    await vm.allow(aSession({ id: 'a', terminalId: 't1' }));
+    const waiting = aSession({ id: 'a', state: 'waiting', reason: 'permission', terminalId: 't1' });
+    const vm = createVm([waiting], sendKeys);
+    await vm.allow(waiting);
     expect(vm.replyError()).toEqual({ id: 'a', message: "Impossible d'envoyer la réponse au terminal : PTY fermé. Réessaie." });
     sendKeys.mockResolvedValueOnce({ ok: true } as never);
-    await vm.refuse(aSession({ id: 'a', terminalId: 't1' }));
+    await vm.refuse(waiting);
     expect(vm.replyError()).toBeNull();
   });
 
@@ -202,8 +204,8 @@ describe('SessionsPageVm', () => {
     TestBed.configureTestingModule({
       providers: [SessionsPageVm, provideRouter([]), provideConfirmServiceMock(), provideVigieServiceMock({
         snapshot: signal(aSnapshot({ now: NOW })),
-        usageResource: ((d: Signal<number>) => { days = d; return fakeResource(rows); }) as unknown as VigieService['usageResource'],
-        settingsResource: (() => fakeResource(aSettings({ alerts: { dailyCost: 40, windowPct: null } }))) as unknown as VigieService['settingsResource'],
+        usageResource: (d: Signal<number>) => { days = d; return fakeResource(rows); },
+        settingsResource: () => fakeResource(aSettings({ alerts: { dailyCost: 40, windowPct: null } })),
       })],
     });
     const vm = TestBed.inject(SessionsPageVm);

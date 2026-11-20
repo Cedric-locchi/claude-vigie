@@ -16,8 +16,8 @@ import { SessionsPageVm } from './sessions-page.vm';
 import { PageComponent } from '../../../shell/page/page.component';
 
 /**
- * Dashboard (route `/`) : les sessions qui t'attendent en tête, puis indicateurs, heatmap d'activité, et la liste des
- * autres sessions (décision 041).
+ * Dashboard (route `/`, décision 041 et sa mise à jour) : indicateurs, heatmap d'activité, puis une seule liste de sessions par
+ * date de création ; une session qui attend se repère à son badge, à son fond lavé et à ses actions, sans changer de place.
  */
 @Component({
   selector: 'app-sessions-page',
@@ -56,14 +56,14 @@ import { PageComponent } from '../../../shell/page/page.component';
         <section class="block" aria-labelledby="list-title">
           <h2 id="list-title">Sessions</h2>
           @if (vm.selected().length; as n) {
-            <div class="bulk" role="group" aria-label="Sélection">
+            <div class="bulk panel" role="group" aria-label="Sélection">
               <span class="small" aria-live="polite"><span class="mono">{{ n }}</span> sélectionnée{{ n > 1 ? 's' : '' }}</span>
               <button hlmBtn variant="destructive" size="sm" (click)="vm.removeSelected()">Supprimer la sélection</button>
               <button hlmBtn variant="ghost" size="sm" (click)="vm.clearSelection()">Annuler</button>
             </div>
           }
 
-          <div class="board" role="table" aria-labelledby="list-title">
+          <div class="board panel" role="table" aria-labelledby="list-title">
             @if (vm.rows().length) {
               <div class="row head" role="row">
                 <span role="columnheader" class="state"><hlm-checkbox aria-label="Sélectionner toutes les sessions affichées" [checked]="vm.allSelected()" [indeterminate]="vm.someSelected()" (checkedChange)="vm.toggleAll($event)" />État</span><span role="columnheader">Session</span><span role="columnheader">Activité</span><span role="columnheader" class="c-spark">15 min</span><span role="columnheader" class="c-agents">Agents</span><span role="columnheader" class="num-col">Durée</span><span role="columnheader" class="num-col">Coût</span><span role="columnheader"><span class="sr-only">Actions</span></span>
@@ -137,7 +137,7 @@ import { PageComponent } from '../../../shell/page/page.component';
     .block { display: flex; flex-direction: column; gap: 12px; }
     h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
 
-    .board { border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); overflow: hidden; }
+    .board { overflow: hidden; }
     .row {
       display: grid; align-items: center; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--line);
       grid-template-columns: 118px minmax(180px, 1.3fr) minmax(160px, 1.6fr) 96px 56px 64px 64px 190px;
@@ -161,7 +161,7 @@ import { PageComponent } from '../../../shell/page/page.component';
     .row.done .doing { color: var(--faint); }
     /* Case de sélection devant le badge : la cellule État s'élargit de 26px plutôt qu'une colonne de plus. */
     .state { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px 8px 18px; border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); }
+    .bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px 8px 18px; }
     .bulk > :first-child { margin-right: auto; color: var(--text-2); }
     .num-col { text-align: right; white-space: nowrap; }
     .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

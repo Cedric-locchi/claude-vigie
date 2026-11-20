@@ -1,5 +1,5 @@
-import { Injectable, computed, inject, resource, signal } from '@angular/core';
-import { PluginHost, natureThemes, type LauncherTask, type TaskTheme } from '@vigie/plugin-sdk';
+import { Injectable, computed, inject, resource } from '@angular/core';
+import { PluginHost, errorMessage, launcher, natureThemes, type LauncherTask, type TaskTheme } from '@vigie/plugin-sdk';
 import { NpmProject as NpmProjectSchema } from '../contract.mjs';
 import type { NpmProject } from './models';
 
@@ -36,25 +36,17 @@ export class NpmVm {
   readonly themes = computed(() => npmThemes(this.project()));
   readonly storageKey = computed(() => `npm:${this.host.cwd()}`);
   /** Script en cours de lancement (id de la tâche) : un lancement à la fois. */
-  readonly launching = signal<string | null>(null);
-  readonly launchError = signal<string | null>(null);
+  private readonly launches = launcher();
+  readonly launching = this.launches.launching;
+  readonly launchError = this.launches.error;
   /** Échec de lancement, package.json absent ou illisible, sinon l'échec de lecture (daemon, réponse hors contrat). */
-  readonly error = computed(() => this.launchError() ?? this.project()?.error ?? (this.res.status() === 'error' ? this.res.error()?.message || 'Lecture du package.json impossible.' : null));
+  readonly error = computed(() => this.launchError() ?? this.project()?.error ?? (this.res.status() === 'error' ? errorMessage(this.res.error(), 'Lecture du package.json impossible.') : null));
 
   refresh(): void {
     this.res.reload();
   }
 
-  async run(task: LauncherTask): Promise<void> {
-    if (this.launching() !== null) return;
-    this.launching.set(task.id);
-    this.launchError.set(null);
-    try {
-      await this.host.terminal('run', { script: task.name, workspace: task.scope ?? null });
-    } catch (e) {
-      this.launchError.set((e as Error)?.message || 'Impossible de lancer le script.');
-    } finally {
-      this.launching.set(null);
-    }
+  run(task: LauncherTask): Promise<void> {
+    return this.launches.run(task.id, () => this.host.terminal('run', { script: task.name, workspace: task.scope ?? null }), 'Impossible de lancer le script.');
   }
 }

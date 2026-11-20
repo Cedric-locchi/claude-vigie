@@ -6,7 +6,7 @@ const KEY = 'vigie-theme';
 
 /**
  * Thème clair/sombre : choix mémorisé, sinon celui du système.
- * Le script en tête d'index.html pose le même attribut avant le démarrage d'Angular (pas de flash).
+ * public/theme.js (chargé en tête d'index.html) pose le même attribut avant le démarrage d'Angular (pas de flash).
  */
 @Service()
 export class ThemeService {

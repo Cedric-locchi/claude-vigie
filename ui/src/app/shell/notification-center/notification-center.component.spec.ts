@@ -2,9 +2,9 @@ import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Snapshot } from './models';
+import { Snapshot } from '../../core/models';
 import { NotificationCenterComponent } from './notification-center.component';
-import { aSession, aSnapshot, provideVigieServiceMock } from './vigie.service.mock';
+import { aSession, aSnapshot, provideVigieServiceMock } from '../../core/vigie.service.mock';
 
 const perm = aSession({ id: 'p', title: 'refacto-store', state: 'waiting', reason: 'permission', detail: 'npm test', terminalId: 't1' });
 const turn = aSession({ id: 't', title: 'audit-ui', state: 'turn' });

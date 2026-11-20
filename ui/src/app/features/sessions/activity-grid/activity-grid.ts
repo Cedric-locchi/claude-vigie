@@ -1,5 +1,5 @@
 import { UsageRow } from '../../../core/models';
-import { addDays, startOfDay, tokensOf } from '../../usage/usage-series';
+import { addDays, startOfDay, tokensOf } from '../../../core/usage-rows';
 
 /** Case d'un jour : tokens, sessions distinctes et coût ; `level` 0 (rien) à 4 (le plus chargé) ; `future` : après aujourd'hui (non affiché). */
 export interface ActivityDay { day: number; tokens: number; sessions: number; cost: number; level: 0 | 1 | 2 | 3 | 4; future: boolean }

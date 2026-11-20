@@ -1,33 +1,32 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { DOCUMENT, WritableSignal, computed, signal } from '@angular/core';
+import { DOCUMENT, Signal, WritableSignal, computed, signal } from '@angular/core';
 import { describe, expect, it, vi } from 'vitest';
-import { Agent, SessionDetail, Snapshot, Terminal } from '../../../core/models';
-import { aSession, aSnapshot, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
+import { Agent, SessionDetail, SessionPlugin, Snapshot, Terminal } from '../../../core/models';
+import { aGitDiff, aSession, aSessionUsage, aSnapshot, aTerminal, anAgent as mockAgent, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
 import { OUTDATED, VigieService } from '../../../core/vigie.service';
 import { Router, provideRouter } from '@angular/router';
 import { provideConfirmServiceMock } from '../../../core/confirm.service.mock';
 import { ConfirmService } from '../../../core/confirm.service';
 import { CLIENT_OS } from '../../../core/platform';
+import { DISCARD_EDIT } from '../diff/session-diff.vm';
 import { SessionPageVm } from './session-page.vm';
 
-const term = (id: string, kind: Terminal['kind']): Terminal => ({ id, sessionId: 's1', kind, title: kind, cwd: '/x', shell: 'zsh -l', pid: 1, cols: 80, rows: 24, exited: false, startedAt: 0 });
-const anAgent = (extra: Partial<Agent>): Agent => ({
-  id: 'main', name: 'Agent principal', sub: false, description: '', state: 'running', lastAction: null, lastText: '',
-  tokens: 0, toolCount: 0, firstTs: 0, lastTs: 0, bars: [], ...extra,
-});
+const term = (id: string, kind: Terminal['kind']): Terminal => aTerminal({ id, kind, title: kind });
+const anAgent = (extra: Partial<Agent>): Agent => mockAgent({ name: 'Agent principal', tokens: 0, toolCount: 0, firstTs: 0, lastTs: 0, ...extra });
 
 function createVm(agents: Agent[] = [], sendKeys = vi.fn(), openShell = vi.fn(async () => term('t3', 'shell')), closeTerminal = vi.fn(async () => ({ ok: true })), summary = aSession()) {
-  const detail: SessionDetail = { summary, agents, timeline: { start: 0, end: 100 }, usage: { input: 100, output: 200, cacheCreate: 300, cacheRead: 400, calls: 3, context: 800 } };
+  const detail: SessionDetail = { summary, agents, timeline: { start: 0, end: 100 }, usage: aSessionUsage() };
   const open = vi.fn();
   const deleteSession = vi.fn(async () => ({ ok: true }));
   TestBed.configureTestingModule({
     providers: [
       SessionPageVm, provideRouter([]), provideConfirmServiceMock(), { provide: CLIENT_OS, useValue: 'linux' },
-      { provide: DOCUMENT, useValue: { defaultView: { open }, location: { protocol: 'http:', host: 'x' } } },
+      { provide: DOCUMENT, useValue: { defaultView: { open }, location: { protocol: 'http:', host: 'x' }, addEventListener: vi.fn(), removeEventListener: vi.fn(), hasFocus: () => false } },
       provideVigieServiceMock({
         snapshot: signal(aSnapshot({ terminals: [term('t1', 'claude'), term('t2', 'shell')] })),
-        sessionResource: (() => fakeResource(detail)) as unknown as VigieService['sessionResource'],
-        sendKeys, openShell: openShell as unknown as VigieService['openShell'], deleteSession, closeTerminal,
+        sessionResource: () => fakeResource(detail),
+        sendKeys, openShell, deleteSession, closeTerminal,
       }),
     ],
   });
@@ -42,7 +41,7 @@ describe('SessionPageVm', () => {
       TestBed.resetTestingModule();
       TestBed.configureTestingModule({
         providers: [SessionPageVm, provideRouter([]), provideConfirmServiceMock(),
-          provideVigieServiceMock({ sessionResource: (() => fakeResource(undefined, 'error', error)) as unknown as VigieService['sessionResource'] })],
+          provideVigieServiceMock({ sessionResource: () => fakeResource(undefined, 'error', error) })],
       });
       const vm = TestBed.inject(SessionPageVm);
       vm.connect(signal('s1'));
@@ -95,51 +94,46 @@ describe('SessionPageVm', () => {
   });
 
   it('compteur du Diff : git relu à l’ouverture et en fin de tour, pas à chaque événement', () => {
-    const versions: number[] = [];
+    let version: Signal<number> | undefined;
     const snapshot = signal(aSnapshot({ terminals: [term('t1', 'claude')], sessions: [aSession({ state: 'running' })] }));
-    const files = [{ path: 'a.ts' }, { path: 'b.ts' }];
+    const file = { status: 'M', staged: false, unstaged: true, added: 1, removed: 0, patch: '', truncated: false } as const;
     TestBed.configureTestingModule({
       providers: [SessionPageVm, provideRouter([]), provideConfirmServiceMock(),
         provideVigieServiceMock({
           snapshot,
-          gitResource: ((_id: () => string | null, version: () => number) => {
-            const value = computed(() => (versions.push(version()), { cwd: '/x', repo: true, root: '/x', branch: null, files, total: 2 }));
-            return { hasValue: () => true, value };
-          }) as unknown as VigieService['gitResource'],
+          gitResource: (_id, v) => {
+            version = v;
+            return fakeResource(aGitDiff({ files: [{ ...file, path: 'a.ts' }, { ...file, path: 'b.ts' }] }));
+          },
         })],
     });
     const vm = TestBed.inject(SessionPageVm);
     vm.connect(signal('s1'));
     expect(vm.diffCount()).toBe(2);
+    const versions = new Set([version!()]);
     const at = (state: 'running' | 'turn', lastTs: number) => {
       snapshot.set(aSnapshot({ terminals: [term('t1', 'claude')], sessions: [aSession({ state, lastTs })] }));
-      vm.diffCount();
+      versions.add(version!());
     };
     at('running', 70_000);
     at('running', 80_000);
-    expect(new Set(versions).size).toBe(1); // l'activité seule ne relance pas git
+    expect(versions.size).toBe(1); // l'activité seule ne relance pas git
     at('turn', 90_000);
-    expect(new Set(versions).size).toBe(2); // fin de tour : nouvelle version
+    expect(versions.size).toBe(2); // fin de tour : nouvelle version
   });
 
   it('onglets de plugin : listés tant que des plugins sont actifs, jamais retenus comme dernière vue, retirés avec le plugin', () => {
-    const ids: (string | null)[] = [];
+    let id: Signal<string | null> | undefined;
     const snapshot = signal(aSnapshot({ terminals: [term('t1', 'claude')], plugins: ['mise'] }));
-    const list = signal([{ id: 'mise', name: 'Tâches mise', badge: '2' }]);
+    const list = fakeResource<SessionPlugin[] | undefined>([{ id: 'mise', name: 'Tâches mise', badge: '2' }]);
     TestBed.configureTestingModule({
       providers: [SessionPageVm, provideRouter([]), provideConfirmServiceMock(),
-        provideVigieServiceMock({
-          snapshot,
-          sessionPluginsResource: ((id: () => string | null) => {
-            const value = computed(() => (ids.push(id()), list()));
-            return { hasValue: () => true, value, isLoading: () => false, reload: vi.fn() };
-          }) as unknown as VigieService['sessionPluginsResource'],
-        })],
+        provideVigieServiceMock({ snapshot, sessionPluginsResource: (s) => ((id = s), list) })],
     });
     const vm = TestBed.inject(SessionPageVm);
     vm.connect(signal('s1'));
     expect(vm.plugins()).toEqual([{ id: 'mise', name: 'Tâches mise', badge: '2' }]);
-    expect(ids.at(-1)).toBe('s1');
+    expect(id!()).toBe('s1');
     vm.showView('history');
     TestBed.tick();
     vm.showView('plugin:mise');
@@ -156,31 +150,28 @@ describe('SessionPageVm', () => {
     expect(vm.plugins()).toEqual([]); // aucun plugin actif : pas d'onglet, même avec une ancienne liste
   });
 
-  /** VM avec plugins actifs et une détection espionnée (ids demandés au daemon). */
+  /** VM avec plugins actifs et une détection espionnée (id de session demandé au daemon). */
   function pluginVm(snapshot: WritableSignal<Snapshot>, summary = aSession()) {
-    const ids: (string | null)[] = [];
+    let id: Signal<string | null> | undefined;
     TestBed.configureTestingModule({
       providers: [SessionPageVm, provideRouter([]), provideConfirmServiceMock(),
         provideVigieServiceMock({
           snapshot,
-          sessionResource: (() => fakeResource({ summary, agents: [], timeline: { start: 0, end: 1 } })) as unknown as VigieService['sessionResource'],
-          sessionPluginsResource: ((id: () => string | null) => {
-            const value = computed(() => (ids.push(id()), id() ? [{ id: 'npm', name: 'npm' }] : undefined));
-            return { hasValue: () => !!id(), value, isLoading: () => false, reload: vi.fn() };
-          }) as unknown as VigieService['sessionPluginsResource'],
+          sessionResource: () => fakeResource<SessionDetail | undefined>({ summary, agents: [], timeline: { start: 0, end: 1 }, usage: aSessionUsage() }),
+          sessionPluginsResource: (s) => ((id = s), fakeResource(computed(() => (s() ? [{ id: 'npm', name: 'npm' }] : undefined)))),
         })],
     });
     const vm = TestBed.inject(SessionPageVm);
     vm.connect(signal('s1'));
-    return { vm, ids };
+    return { vm, id: () => id!() };
   }
 
   it('onglets de plugin : aussi pour une session lancée hors de Vigie ; une action y ouvre le terminal sans perdre les onglets', () => {
     const snapshot = signal(aSnapshot({ terminals: [], plugins: ['npm'] }));
-    const { vm, ids } = pluginVm(snapshot);
+    const { vm, id } = pluginVm(snapshot);
     expect(vm.isExternal()).toBe(true);
     expect(vm.plugins()).toEqual([{ id: 'npm', name: 'npm' }]);
-    expect(ids.at(-1)).toBe('s1');
+    expect(id()).toBe('s1');
     vm.showView('plugin:npm');
     TestBed.tick();
     // L'action répond avec le terminal ouvert (`opened`) avant ou après le snapshot qui le contient : il est sélectionné dans les deux cas.
@@ -191,14 +182,14 @@ describe('SessionPageVm', () => {
     expect(vm.isExternal()).toBe(false); // la mise en page passe en mode terminal
     expect(vm.activeTerminal()?.id).toBe('t9');
     expect(vm.plugins()).toEqual([{ id: 'npm', name: 'npm' }]); // l'onglet du plugin reste
-    expect(new Set(ids.filter(Boolean))).toEqual(new Set(['s1']));
+    expect(id()).toBe('s1');
   });
 
   it('onglets de plugin : aucune détection pour une discussion', () => {
-    const { vm, ids } = pluginVm(signal(aSnapshot({ terminals: [term('t1', 'claude')], plugins: ['npm'] })), aSession({ cwd: '/Users/x/.vigie/chat' }));
+    const { vm, id } = pluginVm(signal(aSnapshot({ terminals: [term('t1', 'claude')], plugins: ['npm'] })), aSession({ cwd: '/Users/x/.vigie/chat' }));
     expect(vm.isChat()).toBe(true);
     expect(vm.plugins()).toEqual([]);
-    expect(ids.every((id) => id === null)).toBe(true);
+    expect(id()).toBeNull();
   });
 
   it('filtre les agents par état ; recliquer retire le filtre', () => {
@@ -304,6 +295,27 @@ describe('SessionPageVm', () => {
     expect(vm.activeTab()).toBe('t1');
   });
 
+  it('shell ouvert ou fermé en échec : la raison sous l’en-tête, effacée au nouvel essai', async () => {
+    const openShell = vi.fn().mockRejectedValueOnce(new HttpErrorResponse({ status: 0 })).mockResolvedValueOnce(term('t3', 'shell'));
+    const closeTerminal = vi.fn().mockRejectedValueOnce(new HttpErrorResponse({ status: 404, error: { error: 'terminal inconnu' } }));
+    const { vm } = createVm([], vi.fn(), openShell, closeTerminal);
+    await vm.addShell();
+    expect([vm.replyError(), vm.activeTab()]).toEqual(['Le daemon ne répond pas', 't1']);
+    await vm.addShell();
+    expect([vm.replyError(), vm.activeTab()]).toEqual([null, 't3']);
+    await vm.closeTab('t2');
+    expect(vm.replyError()).toBe('Terminal inconnu');
+  });
+
+  it('suppression en échec : la raison sous l’en-tête, on reste sur la page', async () => {
+    const { vm, deleteSession } = createVm();
+    deleteSession.mockRejectedValueOnce(new Error('réseau'));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await vm.remove();
+    expect(vm.replyError()).toBe('Suppression impossible.');
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it('détache un terminal dans une fenêtre', () => {
     const { vm, open } = createVm();
     vm.detach('t1');
@@ -316,6 +328,58 @@ describe('SessionPageVm', () => {
     await vm.remove();
     expect(deleteSession).toHaveBeenCalledWith('s1');
     expect(navigate).toHaveBeenCalledWith(['/']);
+  });
+
+  it('supprimer avec une saisie non enregistrée : abandon demandé avant la suppression, refusé = rien ne se passe', async () => {
+    const { vm, deleteSession } = createVm();
+    vm.connect(signal('s1'), { diff: signal(true), files: signal(false) });
+    const confirm = TestBed.inject(ConfirmService);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    vi.mocked(confirm.ask).mockResolvedValueOnce(false);
+    await vm.remove();
+    expect(confirm.ask).toHaveBeenCalledWith(DISCARD_EDIT);
+    expect([confirm.deleteSession, deleteSession, navigate].map((f) => vi.mocked(f).mock.calls.length)).toEqual([0, 0, 0]);
+    await vm.remove(); // abandon accepté, suppression confirmée
+    expect(deleteSession).toHaveBeenCalledWith('s1');
+    expect(navigate).toHaveBeenCalledWith(['/']);
+    expect(await vm.leave()).toBe(true); // le garde de la route ne redemande pas
+    expect(confirm.ask).toHaveBeenCalledTimes(2);
+  });
+
+  it("rechargement ou fermeture de la fenêtre : le navigateur demande confirmation seulement s'il y a une saisie non enregistrée", () => {
+    const { vm } = createVm();
+    const diff = signal(false), files = signal(false);
+    vm.connect(signal('s1'), { diff, files });
+    const unload = () => {
+      const e = new Event('beforeunload', { cancelable: true });
+      vm.beforeUnload(e);
+      return e.defaultPrevented;
+    };
+    expect(unload()).toBe(false);
+    files.set(true);
+    expect(unload()).toBe(true);
+    files.set(false);
+    diff.set(true);
+    expect(unload()).toBe(true);
+  });
+
+  it('discussion : la vue choisie reste quand la source de la vue est recalculée', () => {
+    const loading = signal<'resolved' | 'loading'>('resolved');
+    TestBed.configureTestingModule({
+      providers: [SessionPageVm, provideRouter([]), provideConfirmServiceMock(),
+        provideVigieServiceMock({
+          snapshot: signal(aSnapshot({ terminals: [term('t1', 'claude')], sessions: [aSession({ cwd: '/Users/x/.vigie/chat' })] })),
+          sessionPluginsResource: () => fakeResource<SessionPlugin[] | undefined>(undefined, loading),
+        })],
+    });
+    const vm = TestBed.inject(SessionPageVm);
+    vm.connect(signal('s1'));
+    expect(vm.view()).toBe('workspace');
+    vm.showView('usage');
+    loading.set('loading');
+    expect(vm.view()).toBe('usage');
+    loading.set('resolved');
+    expect(vm.view()).toBe('usage');
   });
 
   it('discussion : quitter la page efface la discussion ; une session normale passe sans rien effacer', async () => {
@@ -340,20 +404,56 @@ describe('SessionPageVm', () => {
     expect(await vm.leave()).toBe(true);
   });
 
-  it("quitter la page avec une saisie non enregistrée demande confirmation", async () => {
+  it("quitter la page avec une saisie non enregistrée (Diff ou Fichiers) demande confirmation", async () => {
     const { vm } = createVm();
-    vm.unsaved.set(true);
+    const diff = signal(true), files = signal(false);
+    vm.connect(signal('s1'), { diff, files });
+    expect(vm.diffUnsaved()).toBe(true); // l'onglet Diff reste monté
     const ask = vi.mocked(TestBed.inject(ConfirmService).ask);
     ask.mockResolvedValueOnce(false);
     expect(await vm.leave()).toBe(false);
     expect(await vm.leave()).toBe(true);
-    expect(ask).toHaveBeenCalledTimes(2);
+    diff.set(false);
+    files.set(true);
+    ask.mockResolvedValueOnce(false);
+    expect(await vm.leave()).toBe(false);
+    expect(ask).toHaveBeenCalledTimes(3);
+    files.set(false);
+    expect(await vm.leave()).toBe(true);
+    expect(ask).toHaveBeenCalledTimes(3);
   });
 
-  it("« Voir dans le journal » : onglet Historique en mode Journal, recherche pré-remplie", () => {
+  it("quitter la vue Fichiers avec un brouillon demande confirmation (bouton, raccourci, onglets, réponse rapide)", async () => {
+    const { vm } = createVm();
+    const files = signal(false);
+    vm.connect(signal('s1'), { diff: signal(false), files });
+    const ask = vi.mocked(TestBed.inject(ConfirmService).ask);
+    vm.showView('history');
+    await vm.toggleFiles();
+    files.set(true);
+    ask.mockResolvedValueOnce(false);
+    await vm.toggleFiles(); // refusé : on reste, le brouillon aussi
+    expect(vm.view()).toBe('files');
+    ask.mockResolvedValueOnce(false);
+    expect(await vm.showView('config')).toBe(false);
+    ask.mockResolvedValueOnce(false);
+    vm.goToTerminal();
+    await Promise.resolve();
+    expect(vm.view()).toBe('files');
+    await vm.allow(); // la touche part, la vue ne change pas sans demander
+    expect(vm.view()).toBe('files');
+    expect(ask).toHaveBeenCalledTimes(3);
+    ask.mockResolvedValueOnce(true);
+    await vm.toggleFiles(); // abandon confirmé
+    expect(vm.view()).toBe('history');
+    vm.showView('workspace');
+    TestBed.tick(); // remet la dernière vue du module pour les autres tests
+  });
+
+  it("« Voir dans le journal » : onglet Historique en mode Journal, recherche pré-remplie", async () => {
     const { vm } = createVm();
     expect(vm.historyMode()).toBe('timeline');
-    vm.openLog('Bash · npm test');
+    await vm.openLog('Bash · npm test');
     expect([vm.view(), vm.historyMode(), vm.logQuery()]).toEqual(['history', 'log', 'Bash · npm test']);
   });
 
@@ -381,7 +481,11 @@ describe('SessionPageVm', () => {
 
   it('bouton Fichiers et Ctrl+Shift+E : la vue Fichiers puis retour à la vue précédente ; rien pour une discussion', () => {
     const { vm } = createVm();
-    const e = (extra: Partial<KeyboardEvent> = {}) => ({ key: 'E', ctrlKey: true, shiftKey: true, metaKey: false, altKey: false, preventDefault: vi.fn(), ...extra }) as unknown as KeyboardEvent;
+    const e = (init: KeyboardEventInit = {}) => {
+      const ev = new KeyboardEvent('keydown', { key: 'E', ctrlKey: true, shiftKey: true, ...init });
+      vi.spyOn(ev, 'preventDefault');
+      return ev;
+    };
     expect(vm.canFiles()).toBe(true);
     expect(vm.filesKey).toEqual({ label: 'Ctrl+Shift+E', aria: 'Control+Shift+E' });
     vm.showView('history');
@@ -441,7 +545,7 @@ describe('SessionPageVm', () => {
     const resumeSession = vi.fn(async () => term('t9', 'claude'));
     TestBed.configureTestingModule({
       providers: [SessionPageVm, provideRouter([]), provideConfirmServiceMock(),
-        provideVigieServiceMock({ sessionResource: (() => fakeResource({ summary: aSession(), agents: [], timeline: { start: 0, end: 0 }, usage: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, calls: 0, context: 0 } })) as unknown as VigieService['sessionResource'], resumeSession })],
+        provideVigieServiceMock({ sessionResource: () => fakeResource({ summary: aSession(), agents: [], timeline: { start: 0, end: 0 }, usage: aSessionUsage({ input: 0, output: 0, cacheCreate: 0, cacheRead: 0, calls: 0, context: 0 }) }), resumeSession })],
     });
     const vm = TestBed.inject(SessionPageVm);
     vm.connect(signal('s1'));

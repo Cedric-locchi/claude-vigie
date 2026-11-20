@@ -4,6 +4,9 @@
  */
 export * from './host';
 
+// Lancements un à la fois et message d'échec, communs à tous les onglets de plugins.
+export { errorMessage, launcher } from './launcher';
+
 // Lanceur de tâches partagé (mise, npm, nx) : thèmes repliables, recherche, bouton « Lancer » par tâche.
 export { TaskLauncherComponent } from './task-launcher.component';
 export { NATURES, natureOf, natureThemes, launchLabel, type LauncherTask, type Nature, type TaskTheme } from './task-launcher.vm';

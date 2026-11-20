@@ -15,13 +15,14 @@ import { PageComponent } from '../../shell/page/page.component';
         <p class="small faint">À ne pas confondre avec les plugins Claude Code, listés dans l'onglet Config d'une session.</p>
       </header>
 
-      @let r = vm.resource;
-      @if (r.hasValue()) {
+      @if (vm.loadError(); as err) {
+        <p class="err" role="alert">{{ err }}</p>
+      } @else if (vm.plugins(); as list) {
         <ul class="cards" aria-label="Plugins de Vigie">
-          @for (p of r.value(); track p.id) {
+          @for (p of list; track p.id) {
             @let failed = vm.failure()?.id === p.id ? vm.failure()?.message : null;
             <li>
-              <button type="button" class="card" [attr.aria-pressed]="p.enabled" [disabled]="vm.busy() === p.id" (click)="vm.toggle(p)"
+              <button type="button" class="card panel" [attr.aria-pressed]="p.enabled" [disabled]="vm.busy() === p.id" (click)="vm.toggle(p)"
                 [attr.aria-describedby]="'plugin-desc-' + p.id">
                 <span class="top">
                   <span class="name">{{ p.name }}</span>
@@ -40,8 +41,6 @@ import { PageComponent } from '../../shell/page/page.component';
             <li class="muted">Aucun plugin livré avec cette version de Vigie.</li>
           }
         </ul>
-      } @else if (r.status() === 'error') {
-        <p class="err" role="alert">{{ r.error()?.message || 'Liste des plugins illisible.' }}</p>
       } @else {
         <p class="muted" role="status">Chargement…</p>
       }
@@ -56,7 +55,7 @@ import { PageComponent } from '../../shell/page/page.component';
     li { display: flex; flex-direction: column; gap: 6px; }
     .card {
       flex: 1; display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 14px 18px; text-align: left;
-      border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); color: var(--text); font: inherit; cursor: pointer;
+      color: var(--text); font: inherit; cursor: pointer;
       transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur) var(--ease);
     }
     .card:hover:not(:disabled) { background: var(--hover); border-color: var(--line-strong); box-shadow: var(--elev-2); }

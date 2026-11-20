@@ -25,11 +25,12 @@ export abstract class PluginHost {
   abstract readonly sessionId: Signal<string>;
   abstract readonly cwd: Signal<string>;
   /**
-   * Appelle une méthode du backend du plugin. Avec `schema`, la réponse est validée (échec → Error(OUTDATED)).
+   * Appelle une méthode du backend du plugin ; la réponse est toujours validée par `schema` (celui du `result` de la méthode
+   * dans le `contract.mjs` du plugin ; échec → Error(OUTDATED)). `params` : `{}` (ou undefined) si la méthode n'en prend pas.
    * Rejette avec Error(message du daemon) sur 4xx/5xx. `opts.signal` abandonne la requête HTTP (dans un `resource`,
    * passer l'`abortSignal` du loader) : la promesse rejette alors avec `signal.reason` (AbortError), pas un message.
    */
-  abstract call<T = unknown>(method: string, params?: unknown, schema?: ResponseSchema<T>, opts?: CallOptions): Promise<T>;
+  abstract call<T>(method: string, params: unknown, schema: ResponseSchema<T>, opts?: CallOptions): Promise<T>;
   /** Lance une action terminal du plugin ; la page affiche le terminal ouvert. Rejette avec le message du daemon. */
   abstract terminal(action: string, params?: Record<string, string | number | boolean | null>): Promise<void>;
   /** Relit les onglets de plugins de la session (détection + badge), par exemple après `mise trust`. */

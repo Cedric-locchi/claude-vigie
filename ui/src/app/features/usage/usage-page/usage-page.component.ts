@@ -22,8 +22,11 @@ import { PageComponent } from '../../../shell/page/page.component';
         <p class="muted">Calculée depuis les transcripts locaux · coûts estimés au tarif API, même sur abonnement</p>
       </header>
 
-      @if (vm.failed()) {
-        <div hlmCard class="pad error"><p class="small">Le daemon ne fournit pas le détail de consommation (<span class="mono">/api/usage</span>). S'il tourne depuis avant la mise à jour, redémarre-le avec <span class="mono">systemctl --user restart vigie</span> (Linux) ou <span class="mono">launchctl kickstart -k gui/$UID/dev.vigie.daemon</span> (macOS), ou relance l'app.</p></div>
+      @if (vm.loadError(); as err) {
+        <div hlmCard class="pad error" role="alert">
+          <p class="small">{{ err }}</p>
+          <p class="small">Redémarre le daemon avec <span class="mono">{{ vm.restartCommand }}</span>, ou relance l'app.</p>
+        </div>
       }
 
       <div class="toolbar">
@@ -56,14 +59,14 @@ import { PageComponent } from '../../../shell/page/page.component';
             <span class="strong">Fenêtre de 5 h en cours</span>
             @if (w.active) {
               <span class="small muted">{{ f.clock(w.start!) }} → {{ f.clock(w.end!) }}
-                @if (w.limitAt) { · <span class="wait">au rythme actuel, limite atteinte vers {{ f.clock(w.limitAt) }}</span> }
+                @if (w.limitAt) { · <span class="text-err">au rythme actuel, limite atteinte vers {{ f.clock(w.limitAt) }}</span> }
               </span>
             } @else {
               <span class="small muted">aucune activité depuis 5 h</span>
             }
           </div>
           <div class="meter tall">
-            <span [style.width.%]="vm.windowBar().used"></span>
+            <span [style.--p]="vm.windowBar().used / 100"></span>
             <i [style.left.%]="vm.windowBar().used" [style.width.%]="vm.windowBar().projected"></i>
           </div>
           <div class="row small faint mono">

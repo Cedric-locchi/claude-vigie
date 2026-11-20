@@ -9,10 +9,10 @@ import { deriveState } from './ingest.mjs';
  */
 export function buildTrace({ main, subs, summary, now }) {
   const alive = summary.state !== 'done';
-  // Outil sans résultat : en cours si la session vit, sinon interrompu (on l'arrête à la dernière activité).
+  // Outil sans résultat : en cours si la session vit, sinon interrompu (on l'arrête à la dernière activité). Échap : clos et interrompu (ingest).
   const step = (x) => ({
     id: x.id, name: x.name, kind: x.kind, label: x.label, ...(x.path && { path: x.path }), start: x.start,
-    end: x.end || (alive ? null : Math.max(x.start, summary.lastTs)), error: x.error, interrupted: !x.end && !alive,
+    end: x.end || (alive ? null : Math.max(x.start, summary.lastTs)), error: x.error, interrupted: !!x.interrupted || (!x.end && !alive),
   });
 
   // Sous-agents rattachés à l'appel (Task/Agent) qui les a lancés.

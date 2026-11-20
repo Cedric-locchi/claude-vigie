@@ -7,63 +7,52 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { execFile } from 'node:child_process';
 import pty from 'node-pty';
 import { WebSocketServer } from 'ws';
 // Chemin relatif, pas `@vigie/contract` : la copie des liens de workspace par electron-builder n'est pas garantie.
-import { BranchBody, CommitBody, FileQuery, HookEvent, InputBody, NewSessionBody, PluginActionBody, PluginCallBody, PluginToggleBody, PtyMessage, RestoreBody, SearchQuery, SettingsBody, SettingsFile, TerminalBody, UsageQuery, WriteBody } from '../contract/index.mjs';
+import { BranchBody, CommitBody, EmptyBody, FileQuery, HookEvent, InputBody, LogQuery, NewSessionBody, PluginActionBody, PluginCallBody, PluginToggleBody, ProjectsQuery, PtyMessage, RestoreBody, SearchQuery, SettingsBody, SettingsFile, TerminalBody, UsageQuery, WriteBody } from '../contract/index.mjs';
 import { readClaudeConfig } from './claude-config.mjs';
 import { listProjectFiles, readProjectFile, searchProjectFiles, writeProjectFile } from './files.mjs';
 import { commitAll, createBranch, readGitDiff, readWorktreeFile, restoreFile, suggestCommitMessage, writeWorktreeFile } from './git.mjs';
-import { hostOk, staticFile } from './guard.mjs';
+import { csp, hostOk, staticFile } from './guard.mjs';
 import { createPlugins } from './plugins.mjs';
-import { childDirs, describeDirs } from './projects.mjs';
+import { listProjects } from './projects.mjs';
 import { claudeCommand, shQuote, spoolLine } from './launch.mjs';
-import { defaultLocale, localeEnv, localeInstalled } from './platform.mjs';
+import { expandHome } from './paths.mjs';
+import { defaultLocale, localeEnv, localeInstalled, managedSettingsFile } from './platform.mjs';
+import { listLocales as systemLocales, readSettings, writeSettings } from './settings.mjs';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.ico': 'image/x-icon', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.woff2': 'font/woff2' };
 const SCROLLBACK = 512 * 1024;
 
 /**
  * `store` : createStore(…) ; `uiDir` : UI construite ; `home` : remplacé par `~` dans /api/projects ;
+ * `platform` : process.platform, passé par server.mjs (seul module du daemon qui le lit) ; locale des PTY, réglages gérés de Claude ;
  * `chatDir` : dossier des discussions ; `hooksFile` : réglages passés à claude --settings ; `dev` : accepte ng serve (4200) ;
  * `listLocales` : sortie de `locale -a` (promesse de texte, null = indisponible) ; `settingsFile` : réglages du daemon (~/.vigie/settings.json), gardés en mémoire seulement s'il est absent ;
  * `spoolFile` : spool des hooks (~/.vigie/spool.jsonl), où POST /api/hook ajoute ce que Claude Code poste ;
- * `pluginsDir` : dossier des plugins livrés (plugins/ du dépôt, null = aucun) ; `pluginsDataDir` : leurs données (~/.vigie/plugins-data).
+ * `pluginsDir` : dossier des plugins livrés (plugins/ du dépôt, null = aucun) ; `pluginsDataDir` : leurs données (~/.vigie/plugins-data) ;
+ * `commitDir` : dossier vide d'où part `claude -p` pour un message de commit (~/.vigie/commit-message, créé au premier clic).
  */
-export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, settingsFile = null, spoolFile = null, dev = false, pluginsDir = null, pluginsDataDir = path.join(home, '.vigie', 'plugins-data'), claudeStatus = () => undefined, listLocales = null }) {
+export function createTransport({ store, port, uiDir, home, platform, chatDir, hooksFile, settingsFile = null, spoolFile = null, dev = false, pluginsDir = null, pluginsDataDir = path.join(home, '.vigie', 'plugins-data'), commitDir = path.join(home, '.vigie', 'commit-message'), claudeStatus = () => undefined, listLocales = systemLocales }) {
   const ORIGINS = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...(dev ? ['http://localhost:4200'] : [])]);
   const originOk = (req) => !req.headers.origin || ORIGINS.has(req.headers.origin);
+  // Un GET same-origin du navigateur n'envoie pas `Origin`, mais `Sec-Fetch-Site: same-origin` (`none` : URL tapée) ; une page
+  // étrangère (<img src>, fetch no-cors) envoie `cross-site` / `same-site`. La CLI et le process principal d'Electron ne l'envoient pas.
+  const siteOk = (req) => { const s = req.headers['sec-fetch-site']; return s === undefined || s === 'same-origin' || s === 'none'; };
+  const CSP = csp(port);
 
-  // ── Réglages ────────────────────────────────────────────────────────────
-  // Fichier absent, illisible ou hors contrat (édité à la main) : réglages par défaut plutôt qu'une locale invalide dans les PTY.
-  // Lu avec SettingsFile (SettingsBody + `plugins`) : avec SettingsBody, zod retirerait `plugins` à la lecture et le prochain
-  // POST /api/settings l'effacerait du fichier.
-  // `plugins` hors contrat (édité à la main) : seules ses entrées booléennes sont gardées, sans faire rejeter la locale ni les alertes.
-  let settings = { locale: null };
-  try {
-    const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
-    if (raw && typeof raw === 'object' && 'plugins' in raw) {
-      const p = raw.plugins;
-      raw.plugins = Object.fromEntries(p && typeof p === 'object' && !Array.isArray(p) ? Object.entries(p).filter(([, v]) => typeof v === 'boolean') : []);
-    }
-    const r = SettingsFile.safeParse(raw);
-    if (r.success) settings = r.data;
-  } catch { /* pas encore de réglages */ }
+  // ── Réglages (settings.mjs : lecture tolérante, écriture tmp + rename) ──
+  let settings = readSettings(settingsFile, SettingsFile);
   const settingsView = () => ({
     locale: settings.locale ?? null,
-    defaultLocale: defaultLocale({ platform: process.platform, env: cleanEnv }),
+    defaultLocale: defaultLocale({ platform, env: cleanEnv }),
     alerts: settings.alerts ?? { dailyCost: null, windowPct: null },
   });
-  /** Écrit puis applique : un échec d'écriture ne laisse pas une locale active mais oubliée au redémarrage ; tmp + rename, jamais de fichier tronqué. */
-  // `locale -a` sans shell, timeout court ; introuvable ou en échec : on ne bloque pas l'enregistrement.
-  const defaultListLocales = () => new Promise((resolve) => execFile('locale', ['-a'], { timeout: 3000, maxBuffer: 4e6 }, (err, out) => resolve(err ? null : out)));
-  const localeKnown = async (name) => { const l = await (listLocales ?? defaultListLocales)(); return l === null || localeInstalled(name, l); };
+  const localeKnown = async (name) => { const l = await listLocales(); return l === null || localeInstalled(name, l); };
+  /** Écrit puis applique : un échec d'écriture ne laisse pas une locale active mais oubliée au redémarrage. */
   function saveSettings(next) {
-    if (settingsFile) {
-      fs.writeFileSync(settingsFile + '.tmp', JSON.stringify(next, null, 2));
-      fs.renameSync(settingsFile + '.tmp', settingsFile);
-    }
+    writeSettings(settingsFile, next);
     settings = next;
   }
 
@@ -82,12 +71,14 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
     const shell = process.env.SHELL || os.userInfo().shell || '/bin/sh';
     const id = crypto.randomUUID();
     const args = command ? ['-l', '-c', `${command}; exec ${shQuote(shell)} -l`] : ['-l'];
-    const p = pty.spawn(shell, args, { name: 'xterm-256color', cols: 120, rows: 36, cwd, env: { ...cleanEnv, ...localeEnv({ platform: process.platform, env: cleanEnv, locale: settings.locale }), TERM: 'xterm-256color', COLORTERM: 'truecolor' } });
+    const p = pty.spawn(shell, args, { name: 'xterm-256color', cols: 120, rows: 36, cwd, env: { ...cleanEnv, ...localeEnv({ platform, env: cleanEnv, locale: settings.locale }), TERM: 'xterm-256color', COLORTERM: 'truecolor' } });
     const term = { id, sessionId, kind, title: title ?? (kind === 'claude' ? 'claude' : path.basename(shell)), cwd, shell: `${shell} -l`, pid: p.pid, cols: 120, rows: 36, exited: false, startedAt: Date.now(), buf: '', clients: new Set(), p };
     p.onData((d) => {
       term.buf = (term.buf + d).slice(-SCROLLBACK);
       for (const ws of term.clients) ws.send(d);
     });
+    // ponytail: un terminal terminé garde son tampon (512 Ko max) jusqu'à ce que l'UI le ferme, pour rejouer sa dernière sortie.
+    // Suite : le réduire à la sortie, ou fermer les terminaux terminés depuis des heures, si la mémoire du daemon pèse.
     p.onExit(() => { term.exited = true; changed(); });
     terminals.set(id, term);
     changed();
@@ -106,7 +97,7 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
   const snap = () => ({ ...store.snapshot(termList()), claudeStatus: claudeStatus(), plugins: plugins.active() });
 
   function startSession({ cwd, command }) {
-    const dir = String(cwd ?? '').replace(/^~(?=$|\/)/, home);
+    const dir = expandHome(String(cwd ?? ''), home);
     if (!dir || !fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`Dossier introuvable : ${cwd}`);
     const { sessionId, command: cmd } = claudeCommand(command, hooksFile, crypto.randomUUID);
     return spawnTerminal({ sessionId, kind: 'claude', cwd: dir, command: cmd });
@@ -119,7 +110,9 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
     if (pending || !watchers.size) return; // personne n'écoute : pas de snapshot (un client reçoit le sien à la connexion)
     pending = setTimeout(() => {
       pending = null;
-      const msg = JSON.stringify({ type: 'snapshot', ...snap() });
+      // Callback de timer : une exception (store, plugin) y tuerait le daemon et tous les PTY.
+      let msg;
+      try { msg = JSON.stringify({ type: 'snapshot', ...snap() }); } catch (e) { return console.error('[vigie] snapshot impossible :', e); }
       for (const ws of watchers) ws.send(msg);
     }, 400);
     pending.unref(); // ne retient pas le processus (tests) ; le daemon vit par son serveur et ses intervalles
@@ -152,10 +145,20 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
     if (!cwd) json(res, 404, { error: 'session inconnue' });
     return cwd;
   }
-  /** Origine web étrangère : répond 403 et renvoie vrai (routes qui lisent le disque ou lancent un process, même en GET). */
+  /** Origine web étrangère (`Origin` ou `Sec-Fetch-Site`) : répond 403 et renvoie vrai. Tout GET /api/* et tout POST y passent. */
   function refused(req, res) {
-    if (originOk(req)) return false;
+    if (originOk(req) && siteOk(req)) return false;
     json(res, 403, { error: 'origine refusée' });
+    return true;
+  }
+
+  /**
+   * Claude au travail dans la session : il écrirait par-dessus (ou l'utilisateur par-dessus lui) ; on attend la fin du tour.
+   * Répond 409 et renvoie vrai. Garde de toute route qui change un fichier de la session (git/write, git/restore, files/write).
+   */
+  function working(id, res) {
+    if (store.idle(id, termList())) return false;
+    json(res, 409, { error: 'Claude travaille dans cette session' });
     return true;
   }
 
@@ -169,6 +172,8 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
   async function api(req, res, url) {
     const m = (re) => url.pathname.match(re);
     let r;
+    // Tout GET : une page étrangère ne déclenche rien (git, lecture de fichier, outils des plugins), même sans `Origin`.
+    if (req.method === 'GET' && refused(req, res)) return;
     if (req.method === 'GET' && url.pathname === '/api/snapshot') return json(res, 200, snap());
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)$/))) {
       const d = store.detail(r[1], termList());
@@ -189,7 +194,7 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
     }
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/config$/))) {
       const cwd = sessionCwd(r[1], res);
-      return cwd && json(res, 200, readClaudeConfig(cwd));
+      return cwd && json(res, 200, readClaudeConfig(cwd, home, managedSettingsFile(platform)));
     }
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/git$/))) {
       const cwd = sessionCwd(r[1], res);
@@ -202,9 +207,8 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       if (!q) return;
       try { return json(res, 200, await readWorktreeFile(cwd, q.path)); } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
     }
-    // Explorateur de fichiers : lecture de n'importe quel fichier du projet (.env compris), d'où le contrôle d'origine même en GET.
+    // Explorateur de fichiers : lecture de n'importe quel fichier du projet (.env compris).
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/files(\/read)?$/))) {
-      if (refused(req, res)) return;
       const cwd = sessionCwd(r[1], res);
       if (!cwd) return;
       if (!r[2]) return json(res, 200, await listProjectFiles(cwd));
@@ -212,9 +216,8 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       if (!q) return;
       try { return json(res, 200, await readProjectFile(cwd, q.path)); } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
     }
-    // Recherche texte : même contrôle d'origine que la lecture (renvoie des extraits de fichiers).
+    // Recherche texte : renvoie des extraits de fichiers.
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/files\/search$/))) {
-      if (refused(req, res)) return;
       const cwd = sessionCwd(r[1], res);
       if (!cwd) return;
       const q = valid(SearchQuery, { q: url.searchParams.get('q'), case: url.searchParams.get('case') === '1' }, res);
@@ -225,26 +228,18 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       try { return json(res, 200, await searchProjectFiles(cwd, q.q, { matchCase: q.case, signal: ac.signal })); } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
     }
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/log$/))) {
-      const log = store.sessionLog(r[1], Number(url.searchParams.get('since')) || 0);
-      return found(res, log);
+      const since = url.searchParams.get('since');
+      const q = valid(LogQuery, { since: since === null ? 0 : Number(since) }, res);
+      return q && found(res, store.sessionLog(r[1], q.since));
     }
-    // Sélecteur de projet : chemin tapé → ses sous-dossiers, sinon les dossiers récents. Origine contrôlée : la route sonde le disque.
+    // Sélecteur de projet : chemin tapé → ses sous-dossiers, sinon les dossiers récents (projects.listProjects ; sonde le disque).
     if (req.method === 'GET' && url.pathname === '/api/projects') {
-      if (refused(req, res)) return;
-      const q = url.searchParams.get('q') ?? '';
-      const recent = store.recentDirs();
-      const dirs = q.includes(path.sep) ? await childDirs(q, home) : recent.map((r) => r.dir);
-      const projects = await describeDirs(dirs, new Map(recent.map((r) => [r.dir, r.lastTs])));
-      const tilde = (p) => (p === home || p.startsWith(home + path.sep) ? '~' + p.slice(home.length) : p);
-      return json(res, 200, projects.map((p) => ({ ...p, path: tilde(p.path) })));
+      const q = valid(ProjectsQuery, { q: url.searchParams.get('q') ?? '' }, res);
+      return q && json(res, 200, await listProjects(q.q, home, store.recentDirs()));
     }
-    // Plugins : origine contrôlée même en GET, un plugin lance des outils (detect compris).
-    if (req.method === 'GET' && url.pathname === '/api/plugins') {
-      if (refused(req, res)) return;
-      return json(res, 200, plugins.list());
-    }
+    // Plugins : un plugin lance des outils (detect compris).
+    if (req.method === 'GET' && url.pathname === '/api/plugins') return json(res, 200, plugins.list());
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/plugins$/))) {
-      if (refused(req, res)) return;
       const cwd = sessionCwd(r[1], res);
       return cwd && json(res, 200, await plugins.detect(cwd));
     }
@@ -259,6 +254,7 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
 
     if (url.pathname === '/api/hook') {
       // Hook HTTP de Claude Code : même spool que hook.mjs, lu par server.mjs (rejeu au démarrage compris). Aucun process lancé.
+      // Inactive : hooks.json branche des hooks en commande (décision 021) ; gardée pour les réactiver (cf. server.mjs).
       const b = valid(HookEvent, body, res);
       if (!b) return;
       if (spoolFile) await fs.promises.appendFile(spoolFile, JSON.stringify(spoolLine(b)) + '\n');
@@ -311,18 +307,21 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       if (!b) return;
       try { return json(res, 201, publicTerm(startSession(b))); } catch (e) { return json(res, 400, { error: e.message }); }
     }
+    // Routes sans paramètre : corps `{}` seulement (rien de l'UI n'est ignoré sans avoir été décrit).
+    const empty = /^\/api\/(chat(\/[\w-]+\/delete)?|sessions\/[\w-]+\/(delete|git\/commit-message)|terminals\/[\w-]+\/close)$/.test(url.pathname);
+    if (empty && !valid(EmptyBody, body, res)) return;
     if (url.pathname === '/api/chat') {
       // Commande fixée ici, pas par l'UI : une discussion reste toujours en mode plan.
       return json(res, 201, publicTerm(startSession({ cwd: chatDir, command: 'claude --permission-mode plan' })));
     }
     if ((r = m(/^\/api\/chat\/([\w-]+)\/delete$/))) {
       const id = r[1];
-      // Garde-fou : seule une discussion (dossier chatDir) est effacée du disque.
+      // Garde-fou : seule une discussion (dossier chatDir) est effacée du disque (purge le revérifie, 2ᵉ passe comprise).
       if (!store.isChat(id, termList())) return json(res, 403, { error: 'pas une discussion' });
       for (const term of [...terminals.values()].filter((t) => t.sessionId === id)) closeTerminal(term);
       store.purge(id);
-      // claude peut encore écrire son transcript en quittant : deuxième passe un peu plus tard.
-      setTimeout(() => { store.purge(id); changed(); }, 3000).unref();
+      // claude peut encore écrire son transcript en quittant : deuxième passe un peu plus tard (purge ne lève pas ; try : callback de timer).
+      setTimeout(() => { try { store.purge(id); changed(); } catch (e) { console.error(`[vigie] deuxième passe de la discussion ${id} :`, e); } }, 3000).unref();
       changed();
       return json(res, 200, { ok: true });
     }
@@ -334,7 +333,8 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       return json(res, 200, { ok: true });
     }
     if ((r = m(/^\/api\/sessions\/([\w-]+)\/terminals$/))) {
-      // Le terminal de la session (même un shell) prime sur le transcript.
+      // Voulu, différent de store.cwdOf : un nouveau shell s'ouvre là où tourne déjà un terminal de la session (même un shell),
+      // y compris une session qui n'a plus que ses shells ; le transcript ne sert qu'à défaut.
       const cwd = termList().find((x) => x.sessionId === r[1])?.cwd ?? store.cwdOf(r[1], []);
       if (!cwd) return json(res, 404, { error: 'session inconnue' });
       const b = valid(TerminalBody, body, res);
@@ -344,37 +344,38 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
     if ((r = m(/^\/api\/sessions\/([\w-]+)\/git\/(restore|commit|commit-message|branch|write)$/))) {
       const cwd = sessionCwd(r[1], res);
       if (!cwd) return;
+      if ((r[2] === 'write' || r[2] === 'restore') && working(r[1], res)) return;
       try {
         if (r[2] === 'write') {
-          // Claude au travail : il écrirait par-dessus (ou l'utilisateur par-dessus lui) ; on attend la fin du tour.
-          if (!store.idle(r[1], termList())) return json(res, 409, { error: 'Claude travaille dans cette session' });
           const b = valid(WriteBody, body, res);
           if (b) { await writeWorktreeFile(cwd, b.path, b.content, b.hash, home); json(res, 200, { ok: true }); }
           return;
         }
         if (r[2] === 'restore') {
           const b = valid(RestoreBody, body, res);
-          if (b) { await restoreFile(cwd, b.path); json(res, 200, { ok: true }); }
+          if (b) { await restoreFile(cwd, b.path, home); json(res, 200, { ok: true }); }
           return;
         }
         if (r[2] === 'branch') {
           const b = valid(BranchBody, body, res);
-          if (b) { await createBranch(cwd, b.name); json(res, 200, { ok: true }); }
+          if (b) { await createBranch(cwd, b.name, home); json(res, 200, { ok: true }); }
           return;
         }
         if (r[2] === 'commit') {
           const b = valid(CommitBody, body, res);
-          if (b) { await commitAll(cwd, b.message); json(res, 200, { ok: true }); }
+          if (b) { await commitAll(cwd, b.message, home); json(res, 200, { ok: true }); }
           return;
         }
-        return json(res, 200, { message: await suggestCommitMessage(cwd, cleanEnv) });
+        // Onglet fermé pendant la rédaction (claude -p, plusieurs secondes) : claude est tué.
+        const ac = new AbortController();
+        res.on('close', () => { if (!res.writableFinished) ac.abort(); });
+        return json(res, 200, { message: await suggestCommitMessage(cwd, cleanEnv, { workDir: commitDir, signal: ac.signal }) });
       } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
     }
     if ((r = m(/^\/api\/sessions\/([\w-]+)\/files\/write$/))) {
       const cwd = sessionCwd(r[1], res);
       if (!cwd) return;
-      // Même règle que git/write : on n'écrit pas pendant que Claude travaille.
-      if (!store.idle(r[1], termList())) return json(res, 409, { error: 'Claude travaille dans cette session' });
+      if (working(r[1], res)) return;
       const b = valid(WriteBody, body, res);
       if (!b) return;
       try { await writeProjectFile(cwd, b.path, b.content, b.hash, home); return json(res, 200, { ok: true }); } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
@@ -412,7 +413,8 @@ export function createTransport({ store, port, uiDir, home, chatDir, hooksFile, 
       if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) file = path.join(uiDir, 'index.html');
       fs.readFile(file, (err, data) => {
         if (err) { res.writeHead(503); return res.end('UI non construite : lance `npm run build`.'); }
-        res.writeHead(200, { 'content-type': MIME[path.extname(file)] ?? 'application/octet-stream' });
+        // CSP sur tout fichier de l'UI (décision 044) : la page, et un worker éventuel, qui prend la politique de sa propre réponse.
+        res.writeHead(200, { 'content-type': MIME[path.extname(file)] ?? 'application/octet-stream', 'content-security-policy': CSP });
         res.end(data);
       });
     } catch {

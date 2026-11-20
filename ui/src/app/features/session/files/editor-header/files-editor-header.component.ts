@@ -41,7 +41,7 @@ import { SessionFilesVm } from '../session-files.vm';
       <div class="banner" role="note">
         <svg class="info" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01" /></svg>
         <span class="txt">Modifié par Claude au tour <span class="mono">{{ turn }}</span></span>
-        @if (vm.canShowHistory) { <button type="button" class="link" (click)="vm.showInHistory(vm.activeTouch()!)">Voir dans l’historique</button> }
+        @if (vm.canShowHistory()) { <button type="button" class="link" (click)="vm.showInHistory(vm.activeTouch()!)">Voir dans l’historique</button> }
       </div>
     }
   `,

@@ -25,6 +25,3 @@ export function keepLast<T>(res: HasValue<T>, key?: () => unknown): Signal<T | n
 export function counter<S>(source: () => S, bumps: (next: S, prev: S) => boolean = () => true): Signal<number> {
   return linkedSignal<S, number>({ source, computation: (s, prev) => (prev ? prev.value + (bumps(s, prev.source) ? 1 : 0) : 0) });
 }
-
-/** Vrai quand `on` passe de faux à vrai : relire à l'entrée dans un onglet. */
-export const entering = (on: boolean, was: boolean): boolean => on && !was;

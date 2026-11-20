@@ -1,14 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { provideVigieServiceMock } from '../../../../core/vigie.service.mock';
+import { anAgent, provideVigieServiceMock } from '../../../../core/vigie.service.mock';
 import { LogEntry } from '../../../../core/models';
 import { Agent } from '../../../../core/models';
 import { AgentPanelComponent } from './agent-panel.component';
 
-const agent = (extra: Partial<Agent>): Agent => ({
-  id: 'a1', name: 'testeur', sub: true, description: '', state: 'done', lastAction: null, lastText: '',
-  tokens: 0, toolCount: 0, firstTs: 0, lastTs: 0, bars: [], ...extra,
-});
+const agent = (extra: Partial<Agent>): Agent => anAgent({ id: 'a1', name: 'testeur', sub: true, state: 'done', tokens: 0, toolCount: 0, firstTs: 0, lastTs: 0, ...extra });
 
 const entry = (n: number, extra: Partial<LogEntry>): LogEntry => ({
   id: `a1:${n}`, ts: n * 1000, kind: 'assistant', title: 'Claude', text: '', truncated: false, agent: 'testeur', sub: true, ...extra,

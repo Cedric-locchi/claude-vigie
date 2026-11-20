@@ -7,16 +7,15 @@ import { GitDiff, SessionSummary, SessionTrace } from '../../../core/models';
 import { CLIENT_OS } from '../../../core/platform';
 import { OUTDATED, VigieService } from '../../../core/vigie.service';
 import { aProjectFiles, aSession, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { SessionPageVm } from '../session-page/session-page.vm';
-import { Row, SessionFilesVm, Tab, buildTree, closeTab, openTab, quickMatch, sideWidth, treeKey } from './session-files.vm';
+import { FilesPage, Row, SessionFilesVm, Tab, buildTree, closeTab, openTab, quickMatch, sideWidth, treeKey } from './session-files.vm';
 
 const httpError = (status: number, error: string) => Object.assign(new Error('http'), { status, error: { error } });
 
-async function setup(extra: Partial<VigieService> = {}, answer = true) {
+async function setup(extra: Partial<VigieService> = {}, answer = true, page: FilesPage | null = null) {
   TestBed.configureTestingModule({ providers: [SessionFilesVm, provideConfirmServiceMock(answer), provideVigieServiceMock(extra), { provide: CLIENT_OS, useValue: 'linux' }] });
   const vm = TestBed.inject(SessionFilesVm);
   const idle = signal(true);
-  vm.connect(signal('s1'), idle);
+  vm.connect(signal('s1'), idle, page);
   await TestBed.inject(ApplicationRef).whenStable();
   return { vm, idle, vigie: TestBed.inject(VigieService), confirm: TestBed.inject(ConfirmService) };
 }
@@ -165,7 +164,7 @@ describe('SessionFilesVm', () => {
       cwd: '/dev/meeplebox', repo: true, root: '/dev/meeplebox', branch: 'main', total: 1,
       files: [{ path: 'src/a.ts', status: 'M', staged: false, unstaged: true, added: 1, removed: 0, patch: '@@ -1 +1,2 @@\n a\n+b', truncated: false }],
     };
-    const { vm } = await setup({ gitResource: (() => fakeResource(diff)) as unknown as VigieService['gitResource'] });
+    const { vm } = await setup({ gitResource: () => fakeResource(diff) });
     expect(vm.changes().dirs.has('src')).toBe(true);
     expect(vm.changes().files.get('src/a.ts')?.status).toBe('M');
     expect(vm.branch()).toBe('main'); // barre d'état
@@ -197,6 +196,7 @@ describe('SessionFilesVm', () => {
     await vm.open('b.ts');
     expect(vm.editing()).toBe(false);
     expect(vm.text()).toBe('export const a = 1;\n');
+    expect(vm.unsaved()).toBe(true); // onglet inactif modifié : quitter la vue le perdrait
     await vm.activate('a.ts');
     expect(vm.text()).toBe('saisie A');
     expect(vm.dirty()).toBe(true);
@@ -283,12 +283,12 @@ describe('SessionFilesVm', () => {
   describe('ce que Claude a touché', () => {
     const trace = (steps: [string, string, number][]): SessionTrace => ({
       now: 0, state: 'turn', waiting: null,
-      turns: [{ index: 7, start: 0, end: 0, prompt: '', live: false, steps: steps.map(([kind, label, start]) => ({ id: label + start, name: 'Edit', kind: kind as 'read', label, start, end: start, error: false, agent: null })) }],
+      turns: [{ index: 7, start: 0, end: 0, prompt: '', live: false, steps: steps.map(([kind, label, start]) => ({ id: label + start, name: 'Edit', kind: kind as 'read', label, start, end: start, error: false, interrupted: false, agent: null })) }],
     });
     const files = ['src/a.ts', 'src/b.ts', 'README.md', '.DS_Store', 'src/.DS_Store'];
     const traced = (t: SessionTrace, extra: Partial<VigieService> = {}) => {
       const versions: Signal<number>[] = [];
-      const traceResource = ((_: unknown, v: Signal<number>) => { versions.push(v); return fakeResource(t); }) as unknown as VigieService['traceResource'];
+      const traceResource = (_: unknown, v: Signal<number>) => { versions.push(v); return fakeResource(t); };
       return { versions, extra: { files: vi.fn(async () => aProjectFiles({ root: '/dev/meeplebox', files })), traceResource, ...extra } };
     };
 
@@ -303,7 +303,7 @@ describe('SessionFilesVm', () => {
       expect(vigie.readProjectFile).toHaveBeenCalledWith('s1', 'src/a.ts');
       expect(vm.active()?.path).toBe('src/a.ts');
       expect(vm.activeTouch()).toMatchObject({ editTurn: 7, label: '/dev/meeplebox/src/a.ts' });
-      expect(vm.canShowHistory).toBe(false);
+      expect(vm.canShowHistory()).toBe(false);
     });
 
     it('sans fichier modifié, rien ne s’ouvre ; un onglet déjà ouvert n’est pas remplacé', async () => {
@@ -327,10 +327,9 @@ describe('SessionFilesVm', () => {
 
     it('relit la trace toutes les 5 s tant qu’un sous-agent travaille, pas autrement', async () => {
       try {
-        const summary = signal(aSession({ state: 'running', activeSubagents: 1 }));
-        TestBed.configureTestingModule({ providers: [{ provide: SessionPageVm, useValue: { summary, openLog: vi.fn() } }] });
+        const summary = signal<SessionSummary | null>(aSession({ state: 'running', activeSubagents: 1 }));
         const { extra, versions } = traced(trace([]));
-        const { idle } = await setup(extra);
+        const { idle } = await setup(extra, true, { summary, openLog: vi.fn() });
         vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }); // seuls les intervalles : whenStable repose sur setTimeout
         idle.set(false);
         await TestBed.inject(ApplicationRef).whenStable();
@@ -347,9 +346,8 @@ describe('SessionFilesVm', () => {
     it('« Voir dans l’historique » ouvre le journal de la page sur le fichier', async () => {
       const openLog = vi.fn();
       const { extra } = traced(trace([['edit', 'src/a.ts', 1]]));
-      TestBed.configureTestingModule({ providers: [{ provide: SessionPageVm, useValue: { openLog, summary: signal(null) } }] });
-      const { vm } = await setup(extra);
-      expect(vm.canShowHistory).toBe(true);
+      const { vm } = await setup(extra, true, { openLog, summary: signal(null) });
+      expect(vm.canShowHistory()).toBe(true);
       vm.showInHistory(vm.touched()[0]);
       expect(openLog).toHaveBeenCalledWith('src/a.ts');
     });
@@ -438,12 +436,11 @@ describe('SessionFilesVm', () => {
   describe('Claude ici', () => {
     const files = ['src/a.ts', 'src/b.ts', 'README.md'];
     async function here(state: Partial<SessionSummary> = {}, trace: SessionTrace | null = null) {
-      const summary = signal(aSession({ state: 'running', ...state }));
-      TestBed.configureTestingModule({ providers: [{ provide: SessionPageVm, useValue: { summary, openLog: vi.fn() } }] });
+      const summary = signal<SessionSummary | null>(aSession({ state: 'running', ...state }));
       const r = await setup({
         files: vi.fn(async () => aProjectFiles({ root: '/dev/meeplebox', files })),
-        ...(trace ? { traceResource: (() => fakeResource(trace)) as unknown as VigieService['traceResource'] } : {}),
-      });
+        ...(trace ? { traceResource: () => fakeResource(trace) } : {}),
+      }, true, { summary, openLog: vi.fn() });
       r.idle.set(false);
       await TestBed.inject(ApplicationRef).whenStable();
       return { ...r, summary };
@@ -466,7 +463,7 @@ describe('SessionFilesVm', () => {
     });
 
     it('sinon le dernier fichier touché pendant le tour en cours (trace), jamais celui d’un tour fini', async () => {
-      const step = (label: string, kind: 'read' | 'edit', start: number) => ({ id: label, name: 'Edit', kind, label, start, end: start, error: false, agent: null });
+      const step = (label: string, kind: 'read' | 'edit', start: number) => ({ id: label, name: 'Edit', kind, label, start, end: start, error: false, interrupted: false, agent: null });
       const t: SessionTrace = { now: 0, state: 'running', waiting: null, turns: [
         { index: 1, start: 0, end: 1, prompt: '', live: false, steps: [step('README.md', 'edit', 1)] },
         { index: 2, start: 2, end: 0, prompt: '', live: true, steps: [step('src/b.ts', 'edit', 3)] },

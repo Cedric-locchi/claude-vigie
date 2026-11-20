@@ -1,4 +1,4 @@
-import { Component, ElementRef, Injector, afterNextRender, inject, output, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, Injector, afterNextRender, inject, output, viewChild } from '@angular/core';
 import { HlmButton } from '@spartan-ng/helm/button';
 import { HlmTooltip } from '@spartan-ng/helm/tooltip';
 import { MAIN_LANE, nextLane } from '../timeline';
@@ -12,6 +12,7 @@ import { TimelineVm } from '../timeline.vm';
  */
 @Component({
   selector: 'app-gantt',
+  host: { class: 'panel' },
   imports: [Icon, HlmButton, HlmTooltip],
   template: `
     @if (vm.gantt(); as g) {
@@ -60,7 +61,7 @@ import { TimelineVm } from '../timeline.vm';
             <div class="lane" role="toolbar" [style.grid-row]="i + 2" [attr.aria-label]="'Couloir ' + lane.name + (lane.description ? ', ' + lane.description : '')"
               [attr.aria-describedby]="i === 0 ? sumId : null" (keydown)="onKey($event)" (mouseleave)="vm.readout.set(null)">
               @for (b of lane.blocks; track b.key) {
-                <button type="button" [class]="'b k-' + b.kind" [class.dim]="b.dim" [class.err]="b.error" [class.run]="b.end === null" [class.int]="b.interrupted"
+                <button type="button" [class]="'b k-' + b.kind" [class.dim]="b.dim" [class.err]="b.error" [class.stripes]="b.end === null" [class.int]="b.interrupted"
                   [class.many]="b.count > 1" [class.sel]="b.count === 1 && vm.selected() === b.bars[0].stepId"
                   [style.left.%]="b.left" [style.width.%]="b.width" [attr.tabindex]="b.key === g.tab ? 0 : -1" [attr.aria-label]="b.aria"
                   (click)="pick(b)" (focus)="vm.focusBar(b.key, b.aria)" (mouseenter)="vm.readout.set(b.aria)">
@@ -78,7 +79,7 @@ import { TimelineVm } from '../timeline.vm';
     }
   `,
   styles: `
-    :host { flex: none; display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--edge); border-radius: 10px; box-shadow: var(--elev-1); background: var(--surface); overflow: hidden; --head: 148px; --lane-h: 20px; }
+    :host { flex: none; display: flex; flex-direction: column; min-width: 0; border-radius: 10px; overflow: hidden; --head: 148px; --lane-h: 20px; }
     .k-read { background: var(--read); } .k-edit { background: var(--brand); } .k-command { background: var(--text-2); }
     .k-agent { background: var(--data); } .k-other { background: var(--neutral); } .k-wait { background: var(--wait); }
     .top { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 8px; border-bottom: 1px solid var(--line); }
@@ -122,10 +123,6 @@ import { TimelineVm } from '../timeline.vm';
     .b.err { box-shadow: 0 0 0 1.5px var(--err); }
     .b .x { position: absolute; left: calc(100% + 2px); top: 50%; transform: translateY(-50%); color: var(--err); }
     .n { font-size: 10px; font-weight: 600; line-height: 1; color: var(--bg); }
-    /* Étape en cours : rayures qui glissent (coupées par « réduire les animations », règle globale). */
-    .b.run { overflow: hidden; }
-    .b.run::after { content: ''; position: absolute; inset: 0 0 0 -14px; background: repeating-linear-gradient(135deg, transparent 0 5px, rgb(255 255 255 / 0.25) 5px 10px) 0 0 / 14px 14px; animation: run 0.8s linear infinite; }
-    @keyframes run { to { transform: translateX(14px); } }
     .wait { position: absolute; top: 4px; right: 0; height: 12px; min-width: 8px; border-radius: 2px; background: var(--wait); }
 
     @media (max-width: 600px) {
@@ -151,11 +148,14 @@ export class GanttComponent {
   private readonly corner = viewChild<ElementRef<HTMLElement>>('corner');
 
   constructor() {
+    const destroy = inject(DestroyRef);
     afterNextRender(() => {
       const view = this.view()?.nativeElement;
       if (!view) return;
       const measure = () => this.vm.setGanttWidth(view.clientWidth - (this.corner()?.nativeElement.offsetWidth ?? 0));
-      new ResizeObserver(measure).observe(view);
+      const observer = new ResizeObserver(measure);
+      observer.observe(view);
+      destroy.onDestroy(() => observer.disconnect());
       measure();
     });
   }

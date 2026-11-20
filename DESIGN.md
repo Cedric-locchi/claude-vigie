@@ -90,7 +90,7 @@ rounded:
   none: "0px"
   xs: "4px"
   sm: "6px"
-  md: "8px"
+  md: "6.4px"
   lg: "12px"
   pill: "999px"
 spacing:
@@ -108,8 +108,6 @@ components:
     rounded: "{rounded.md}"
     height: "36px"
     padding: "0 10px"
-  button-primary-hover:
-    backgroundColor: "{colors.violet-hover}"
   button-wait:
     backgroundColor: "{colors.orange-wait}"
     textColor: "{colors.on-orange}"
@@ -159,11 +157,11 @@ components:
     rounded: "{rounded.lg}"
     padding: "14px 18px"
   input:
-    backgroundColor: "{colors.night}"
+    backgroundColor: "transparent"
     textColor: "{colors.ink}"
     rounded: "{rounded.md}"
     height: "36px"
-    padding: "0 12px"
+    padding: "0 10px"
   nav-item:
     backgroundColor: "transparent"
     textColor: "{colors.ink-soft}"
@@ -187,19 +185,19 @@ components:
 
 Vigie est une salle de contrôle de nuit. Le fond est sombre et calme, presque silencieux ; l'information est dense mais rangée en lignes et en colonnes alignées, lisibles d'un balayage. La couleur n'est pas décorative : elle signale. Trois couleurs et deux accents (décision 042) : le violet est l'identité et l'action, le bleu-vert porte les données et le travail en cours, l'orange attire l'attention sur ce qui attend ; le vert dit « terminé », le rouge « erreur ». Si rien n'attend, l'écran est presque monochrome, et c'est voulu.
 
-L'interface s'efface derrière ce qu'elle surveille : terminaux, chronologies, chiffres de consommation. Les contrôles sont précis et retenus ; les actions principales prennent l'aplat violet, et seule l'action qui débloque une session (Autoriser, Répondre) prend l'aplat orange. La profondeur vient de strates de ton, de filets de 1px et d'un relief léger (neutre en clair, teinté de violet en sombre) : un grand halo très doux sous les cartes et les panneaux, plus marqué pour ce qui flotte. La zone de contenu est posée sur un fond pointillé discret. Le thème sombre est le thème par défaut ; un thème clair (inspiré de Codex : fond quasi blanc, cartes blanches sans filet, barre latérale grise) reprend les mêmes rôles, valeur pour valeur.
+L'interface s'efface derrière ce qu'elle surveille : terminaux, chronologies, chiffres de consommation. Les contrôles sont précis et retenus ; les actions principales prennent l'aplat violet, et seule l'action qui débloque une session (Autoriser, Répondre) prend l'aplat orange. La profondeur vient de strates de ton, de filets de 1px et d'un relief léger (neutre en clair, teinté de violet en sombre) : un grand halo très doux sous les cartes et les panneaux, plus marqué pour ce qui flotte. La zone de contenu est posée sur un fond pointillé discret. Le thème sombre est le thème par défaut ; un thème clair (inspiré de Codex : fond quasi blanc, cartes et barre latérale blanches sans filet, popovers gris) reprend les mêmes rôles, valeur pour valeur.
 
 **Key Characteristics:**
 - Sombre par défaut, thème clair complet avec les mêmes rôles de couleur.
 - Couleur = rôle. Violet agit (actions, focus, sélection), bleu-vert mesure et tourne (données, « en cours »), orange attend, vert terminé, rouge erreur. Les commandes restent neutres.
 - Dense et aligné : tableaux, colonnes de chiffres en mono, lignes de 12px de haut de padding.
 - Relief léger : `--elev-1` sous les cartes et panneaux au repos, `--elev-2` pour ce qui flotte ou est survolé ; jamais sur les lignes ni les listes denses.
-- Fond pointillé sous la zone de contenu, fond plein dans tout ce qui contient.
-- Micro-interactions courtes et identiques partout (120 ms / 200 ms, même courbe).
+- Fond pointillé sous la zone de contenu et autour de la barre latérale, fond plein dans tout ce qui contient : barre latérale et colonnes des vues sont des panneaux détachés posés dessus (décision 043).
+- Micro-interactions courtes (120 ms / 200 ms, courbe `--ease`) dans les composants Vigie ; les composants spartan gardent la transition Tailwind par défaut (150 ms).
 
 ## Colors
 
-Trois couleurs et deux accents (décision 042, qui remplace la palette de la 040), sur des neutres retintés vers le bleu-vert (h ≈ 210, C ≤ 0,02). En clair : papier quasi blanc `#FCFCFC`, cartes `#FFFFFF`, barre latérale `#F0F0F0`, texte `#0C0C0C`. Chaque couleur a sa variante de nuit : même teinte OKLCH, clarté relevée.
+Trois couleurs et deux accents (décision 042, qui remplace la palette de la 040), sur des neutres retintés vers le bleu-vert (h ≈ 210, C ≤ 0,02). En clair : papier quasi blanc `#FCFCFC`, cartes et barre latérale `#FFFFFF` (`--surface`, `--sidebar`, décision 043), popovers `#F0F0F0` (`--nav`), texte `#0C0C0C`. Chaque couleur a sa variante de nuit : même teinte OKLCH, clarté relevée.
 
 ### Primary
 - **Violet** (`violet`, `--brand` ; clair `#635BDB`, sombre `#9B9EFF`) : identité et action. Bouton principal (aplat, texte blanc en clair, nuit en sombre), lien, anneau de focus, élément de navigation actif, sélection, éditions (chronologie, fichiers modifiés). Sa version lavée (`violet-wash`, `--brand-bg`) sert de fond à l'élément sélectionné.
@@ -218,7 +216,7 @@ Trois couleurs et deux accents (décision 042, qui remplace la palette de la 040
 - Les commandes shell (chronologies, lanceur de tâches, journal) n'ont pas de couleur : neutre mono (`--text-2`) ; une ligne du lanceur survolée prend le violet.
 
 ### Neutral
-- **Night** (`night`) : fond de page (clair : `light-paper`, sous le fond pointillé). **Abyss** (`abyss`) : fond le plus profond, terminaux et blocs de code. **Nav Night** (`nav-night`) : barre latérale et popovers (clair : `light-nav` `#F0F0F0`).
+- **Night** (`night`) : fond de page (clair : `light-paper`, sous le fond pointillé). **Abyss** (`abyss`) : fond le plus profond, terminaux et blocs de code. **Nav Night** (`nav-night`) : popovers (clair : `light-nav` `#F0F0F0`). La barre latérale est un panneau `panel` (décision 043).
 - **Panel** / **Panel Raised** (`panel`, `panel-raised`) : surfaces de contenu, puis contrôles et zones survolées posés dessus.
 - **Hairline** / **Hairline Strong** (`hairline`, `hairline-strong`) : filets de séparation (cartes, lignes, panneaux), puis bordures appuyées (survol, terminal). **Control** (`control`, `--control` / `--input`) : bordure des champs et contrôles, à 3:1 du fond (WCAG 1.4.11).
 - **Ink** → **Ink Faint** : quatre niveaux de texte, du titre (`ink`) aux métadonnées (`ink-faint`). `ink-faint` reste au-dessus de 4,5:1 sur toutes les surfaces, dans les deux thèmes.
@@ -228,11 +226,11 @@ Trois couleurs et deux accents (décision 042, qui remplace la palette de la 040
 
 **The Separation Rule.** Panneau/fond ≥ 1,14:1 **ou** relief `--elev-1` (en clair, carte blanche sur `#FCFCFC` = 1,03:1 : le halo porte la séparation), filet/panneau ≥ 1,33:1, contrôle/fond ≥ 3:1, couleurs de données (barres, sparklines) ≥ 3:1 sur le panneau. Neutres teintés vers la secondaire (teinte OKLCH ≈ 210, chroma ≤ 0,02). Pastille d'indicateur : icône ≥ 3:1 sur son fond lavé. Tout nouveau jeton passe ces seuils dans les deux thèmes avant d'être ajouté.
 
-**The Lights-Out Rule.** Au repos, l'écran est neutre. Une couleur d'état n'apparaît que si l'état existe ; un écran sans session en attente ne contient pas d'orange (pastille Sessions comprise).
+**The Lights-Out Rule.** Au repos, l'écran est neutre. Une couleur d'état n'apparaît que si l'état existe ; un écran sans session en attente ne contient pas d'orange d'état (pastille Sessions comprise). Seules les icônes de l'arbre de fichiers (décision 043) gardent leur teinte au repos, dossiers `assets` en orange (`--fd-assets`) compris : elles ne portent jamais d'état.
 
-**The Three-Colors Rule.** Bouton principal = violet, toujours. Bouton secondaire = neutre (outline, ghost) ou bleu-vert. Graphiques = bleu-vert, violet en seconde série, puis des neutres. Orange = attirer ponctuellement l'attention (attente), rien d'autre. Vert = positif, rouge = erreur. Cartes majoritairement blanches en clair. Aucune autre teinte (le lilas des commandes a disparu).
+**The Three-Colors Rule.** Bouton principal = violet, toujours. Bouton secondaire = neutre (outline, ghost) ou bleu-vert. Graphiques = bleu-vert, violet en seconde série, puis des neutres. Orange = attirer ponctuellement l'attention (attente), rien d'autre. Vert = positif, rouge = erreur. Cartes majoritairement blanches en clair. Aucune autre teinte (le lilas des commandes a disparu), sauf deux exceptions qui ne portent jamais d'état : les icônes de l'arbre de fichiers (décision 043) — fichiers à la couleur de leur écosystème (`--ft-*`, à 3:1 sur `--surface` et `--nav` dans les deux thèmes), dossiers en `--fd-*` tirés de la palette (`src` violet, `components` et `scripts` bleu-vert, `assets` orange, `tests` vert ; docs, config, build et les autres en neutres) — et la palette ANSI du terminal (16 couleurs fixes par thème dans `terminal.vm.ts`, décisions 040 et 042).
 
-**The Same-Role Rule.** Chaque couleur a un jumeau dans le thème clair (`:root[data-theme='light']`). On n'écrit jamais de hex dans un composant : on passe par la variable CSS, et les composants spartan passent par les jetons sémantiques dérivés (`--primary`, `--muted`, `--border`…).
+**The Same-Role Rule.** Chaque couleur a un jumeau dans le thème clair (`:root[data-theme='light']`). On n'écrit jamais de hex dans un composant : on passe par la variable CSS, et les composants spartan passent par les jetons sémantiques dérivés (`--primary`, `--muted`, `--border`…). Seule exception : le thème xterm (`THEMES` de `terminal.vm.ts`), qui exige des couleurs littérales ; il recopie en hex les jetons des deux thèmes (fond `--bg-deep`, texte `--text-2`…), à tenir à jour avec `styles.css`.
 
 ## Typography
 
@@ -243,7 +241,7 @@ Trois couleurs et deux accents (décision 042, qui remplace la palette de la 040
 
 ### Hierarchy
 - **Headline** (600, 24px, -0.01em) : titre de page (Dashboard, Consommation). Un seul par écran ; 20px dans les panneaux en surimpression (Nouvelle session).
-- **Title** (600, 13–16px) : titre de session, nom d'agent, en-tête de carte.
+- **Title** (600, 13–18px) : titre de session (18px dans l'en-tête de sa page), nom d'agent, en-tête de carte.
 - **Body** (400, 14px, 1.4) : texte courant. Le Markdown des rapports d'agents passe à 13px / 1.6.
 - **Body small** (400, 12px) : sous-lignes, aides sous les champs, états.
 - **Label** (600, 11px, 0.05em, majuscules) : en-têtes de colonnes uniquement. Les libellés des cartes d'indicateurs restent en casse normale (600, 13px, avec icône).
@@ -252,7 +250,7 @@ Trois couleurs et deux accents (décision 042, qui remplace la palette de la 040
 ### Named Rules
 **The Measured-Mono Rule.** Le mono est réservé à ce qui se mesure ou se copie (montants, durées, tokens, branches, chemins, commandes). Jamais pour faire « technique ».
 
-**The 11px Floor Rule.** 11px est le plus petit texte courant. 9–10px n'existe que pour les graduations de la chronologie et les valeurs au-dessus des barres du graphique.
+**The 11px Floor Rule.** 11px est le plus petit texte courant. 10px n'existe que pour les graduations de la chronologie et du Gantt, le nombre dans une barre groupée du Gantt et le compteur de la cloche ; les graphiques sont à 11px.
 
 ## Layout
 
@@ -261,14 +259,14 @@ Une barre latérale repliable (18rem, ou icônes seules via ⌘B) et une zone de
 Les pages suivent un même gabarit : padding 28px / 36px / 40px (20px / 16px sous 720px), sections espacées de 24px, en-tête titre + outils à droite. Le contenu est rangé en tableaux à colonnes fixes plutôt qu'en grilles de cartes : la liste des sessions est une grille CSS de 8 colonnes qui en perd deux sous 1200px et passe sur deux lignes par session sous 820px.
 
 ### Gabarit de page et défilement
-Toute page routée (et la page de session) est posée dans le gabarit `app-page` (`ui/src/app/shell/page/`), qui porte la règle de défilement une fois pour toutes. Trois zones : l'en-tête (`[pageHeader]`, titre et outils, barre d'attente…), la barre d'onglets facultative (`[pageTabs]`), le corps (tout le reste). Espacements réglables par variables : `--page-pt`, `--page-px`, `--page-pb`, `--page-gap`, `--page-max` (largeur, padding compris).
+Toute page routée (et la page de session), sauf la fenêtre de terminal détachée (`/terminal/:id`, plein écran), est posée dans le gabarit `app-page` (`ui/src/app/shell/page/`), qui porte la règle de défilement une fois pour toutes. Trois zones : l'en-tête (`[pageHeader]`, titre et outils, barre d'attente…), la barre d'onglets facultative (`[pageTabs]`), le corps (tout le reste). Espacements réglables par variables : `--page-pt`, `--page-px`, `--page-pb`, `--page-gap`, `--page-max` (largeur, padding compris).
 
-- **Bureau (> 720px)** : la coque (`main`, app.ts) fait exactement la hauteur de la fenêtre, sous la barre mobile et les bandeaux ; le document ne défile jamais (`overflow: clip`). En-tête et onglets restent fixes. Un seul défilement :
-  - `mode="scroll"` (défaut) : le corps défile. Dashboard, Consommation, Réglages, Plugins, Nouvelle session ; dans une session : Consommation, onglets de plugins, agents d'une session lancée hors de Vigie.
-  - `mode="fill"` : le corps ne défile pas, il donne toute la hauteur restante à la vue, dont **chaque colonne défile seule** : terminal et agents (empilés sous 1100px, 3/5 – 2/5), Diff (fichiers + patch), Fichiers (arbre + éditeur), Historique (Gantt borné à 30 % de la vue, au plus 232px ; les tours prennent le reste ; le Journal est une seule colonne), Config (navigation + contenu).
+- **Bureau (> 720px)** : la coque (`main`, `app.ts` ; barre latérale dans `shell/sidebar/`) fait exactement la hauteur de la fenêtre, sous la barre mobile et les bandeaux ; le document ne défile jamais (`overflow: clip`). En-tête et onglets restent fixes. Un seul défilement :
+  - `mode="scroll"` (défaut) : le corps défile. Dashboard, Consommation, Réglages, Plugins, Nouvelle session ; dans une session : Consommation et agents d'une session lancée hors de Vigie.
+  - `mode="fill"` : le corps ne défile pas, il donne toute la hauteur restante à la vue, dont **chaque colonne défile seule** : terminal et agents (empilés sous 1100px, 3/5 – 2/5), Diff (fichiers + patch), Fichiers (arbre + éditeur), Historique (Gantt borné à 30 % de la vue, au plus 232px ; les tours prennent le reste ; le Journal est une seule colonne), Config (navigation + contenu), onglets de plugins (l'onglet défile seul ; le lanceur de tâches du SDK le remplit et ses deux panneaux, navigation et contenu, défilent chacun).
   - Jamais un corps qui défile contenant une colonne qui défile, ni une liste à hauteur bornée dans une page qui défile (la liste des dossiers de Nouvelle session s'allonge).
 - **Téléphone (≤ 720px)** : seul le document défile, quel que soit le mode. La barre mobile (52px) et la barre d'onglets (41px) collent en haut ; `--sticky-top` (posé par le gabarit : 52px, 93px avec onglets) place le `scroll-margin-top` des ancres (tours de l'historique). Les colonnes s'empilent, sans défilement vertical interne. Exceptions voulues : le terminal et l'éditeur de Fichiers (hauteur propre, `100dvh - --chrome-top`), le Gantt (hauteur bornée), les blocs de code, le patch du Diff et la barre d'onglets (défilement horizontal).
-- **Fond pointillé** : l'hôte du gabarit porte des points de 1px tous les 18px (`--dot` : texte à 10 % en clair, 7 % en sombre), fixes sous le corps qui défile. Rien d'autre n'a de points : barre latérale, barre mobile, cartes, panneaux, terminal et diff gardent un fond plein. Le texte posé sur le fond (titres) garde 4,5:1 même sur le cœur d'un point (`--faint` 4,6:1 en clair).
+- **Fond pointillé** : l'hôte du gabarit porte des points de 1px tous les 18px (`--dot` : texte à 10 % en clair, 7 % en sombre), fixes sous le corps qui défile ; la marge autour de la barre latérale porte la même trame (`--dots`, les deux coïncident). Rien d'autre n'a de points : barre latérale, barre mobile, cartes, panneaux, terminal et diff gardent un fond plein. Les vues en colonnes (Config, Diff, Fichiers) sont des panneaux séparés posés sur le fond, chacun défile seul (décision 043). Le texte posé sur le fond (titres) garde 4,5:1 même sur le cœur d'un point (`--faint` 4,6:1 en clair).
 - Une colonne qui défile contient ses éléments `sr-only` (`position: relative`), sinon ils agrandissent la zone au-dessus.
 
 Le rythme interne suit une échelle serrée : 2 / 4 / 6 / 8 / 10 / 12 / 14 / 16px pour les gaps, 12px × 18px de padding pour les lignes de tableau et les indicateurs.
@@ -283,43 +281,44 @@ La profondeur vient de strates de fond — `abyss` < `night` < `panel` < `panel-
   - Sombre : reflet haut (`inset 0 1px 0`, texte 6 %) + anneau principal (`0 0 0 1px`, 8 %) + ombre noire courte (`0 4px 12px -2px`, 50 %) + portée violette (`0 10px 24px -8px`, 24 %). Le filet reste (`--edge: var(--line)`).
 - **Flottant / survolé** (`--elev-2`) : même famille, plus marquée. Popovers, menus, listes de choix, dialogues (avec un filet `--line` en anneau), notifications, recherche rapide de Fichiers, carte de plugin survolée. En sombre, anneau violet à 14 % et ombre noire plus marquée.
 - **State bar** (`box-shadow: inset 2px 0 0 var(--brand)` ; 3px dans les tableaux) : la barre d'état à gauche d'un élément actif (violet), en cours (bleu-vert, `--run`) ou urgent (orange / rouge). Ce n'est pas une ombre de relief, c'est un indicateur.
-- **Halo d'état** (`box-shadow: 0 0 0 3px var(--wait-bg)`) : anneau autour d'un point d'état, pour le détacher.
+- **Halo d'état** (`box-shadow: 0 0 0 3px` du fond lavé de l'état : `--ok-bg`, `--err-bg`, `--data-bg`, ou `--surface-2` pour un avertissement neutre) : anneau autour d'un point d'état (santé de la config, « Claude est ici » dans Fichiers), pour le détacher.
 
 ### Named Rules
-**The Quiet-Relief Rule.** Une carte ou un panneau porte `--elev-1`, ce qui flotte ou se survole `--elev-2` ; rien d'autre ne porte d'ombre. Jamais sur une ligne de tableau ni dans une liste dense (lignes de sessions, d'agents, tours de la chronologie, entrées du journal), jamais teinté par une couleur d'état, jamais d'ombre écrite à la main dans un composant : on passe par le jeton.
+**The Quiet-Relief Rule.** Une carte ou un panneau porte `--elev-1`, ce qui flotte ou se survole `--elev-2` ; rien d'autre ne porte d'ombre, hormis les ombres d'origine de spartan qu'on ne retouche pas (`shadow-xs` des champs, déclencheurs de liste et boutons outline, `shadow-lg` du panneau coulissant mobile). Jamais sur une ligne de tableau ni dans une liste dense (lignes de sessions, d'agents, tours de la chronologie, entrées du journal), jamais teinté par une couleur d'état, jamais d'ombre écrite à la main dans un composant : on passe par le jeton.
 
 ## Shapes
 
-Des angles doux et sobres, croissant avec la taille du conteneur : 12px pour les grands panneaux (tableau des sessions, indicateurs, terminal, diff), 10px pour les tours de la chronologie, 8px pour les boutons, champs et popovers, 6px pour les éléments de liste, 4px pour les petits marqueurs. Les badges d'état sont des pilules. Exception volontaire : les lignes de navigation de la barre latérale sont à angle droit, pour que la barre d'état de gauche reste droite.
+Des angles doux et sobres, croissant avec la taille du conteneur : 12px pour les grands panneaux (`.panel` : tableau des sessions, indicateurs, terminal, diff ; 11,2px pour les cartes spartan `hlmCard`), 10px pour les tours de la chronologie, 6,4px pour les boutons, champs et popovers spartan (`rounded-md` = 0,8 × `--radius`), 8px pour les toasts et encarts maison, 6px pour les éléments de liste, 4px pour les petits marqueurs. Les badges d'état sont des pilules. Exception volontaire : les lignes de navigation de la barre latérale sont à angle droit, pour que la barre d'état de gauche reste droite.
 
 ## Components
 
 ### Buttons
 Précis et retenus.
-- **Shape :** coins doux (8px), hauteur 36px (32px en `sm`, 40px en `lg`).
-- **Primary :** aplat violet, texte blanc (clair) ou nuit (sombre). Toujours le violet. Une seule par écran (Nouvelle session, Lancer la session).
+- **Shape :** coins doux (6,4px, `rounded-md`), hauteur 36px (32px en `sm`, 40px en `lg`).
+- **Primary :** aplat violet, texte blanc (clair) ou nuit (sombre) ; survol : violet à 80 % (`hover:bg-primary/80`), `violet-hover` (`--brand-hover`) ne sert qu'aux liens de texte. Toujours le violet. Une seule par écran (Nouvelle session, Lancer la session).
 - **Wait :** aplat orange (`--wait-fill`), texte sombre gras — réservé aux actions qui débloquent une session (Autoriser, Répondre, Reprendre une session urgente).
 - **Outline / Ghost :** actions secondaires et icônes, neutres. Le ghost de suppression vire au rouge au survol.
-- **Hover / Focus :** transition 120 ms ; anneau de focus violet ; léger enfoncement (1px) à la pression.
+- **Hover / Focus :** transition de 150 ms (`transition-all` de spartan, durée et courbe Tailwind par défaut) ; anneau de focus violet ; léger enfoncement (1px, `translate-y-px`) à la pression.
 
 ### Chips
 - **Badges d'état :** pilule de 20px, fond lavé + texte de la couleur d'état (attend orange, en cours bleu-vert, terminé vert éteint, erreur rouge). « À toi » : contour orange sans fond, point d'état en anneau, pour qu'une fin de tour ne se lise pas comme un blocage.
 - **Groupes de bascule :** boutons outline `sm` espacés de 8px, pour les choix exclusifs (gabarit, mode git, période, mesure).
 
 ### Cards / Containers
-- **Corner Style :** 12px.
+- **Corner Style :** 12px (`.panel`) ; 11,2px pour `hlmCard` (`rounded-xl` de spartan).
 - **Background :** `panel`, bordure `--edge` de 1px (transparente en clair, `hairline` en sombre). Les cartes spartan (`hlmCard`) reçoivent globalement `--elev-1` à la place de l'ombre `shadow-xs` et de l'anneau d'origine de spartan.
+- **Classe `.panel`** (`styles.css`, `@layer components`) : fond `--surface`, bordure `--edge`, rayon 12px, `--elev-1`. Tout panneau de vue la prend (ou `hlmCard`) ; on ne réécrit jamais ce bloc dans un composant, sauf pour l'intérieur de la barre latérale spartan (`[data-slot='sidebar-inner']`, `shell/sidebar/`), qui ne peut pas recevoir la classe.
 - **Shadow Strategy :** `--elev-1` au repos, `--elev-2` au survol d'une carte cliquable (voir Quiet-Relief). Un état recolore la bordure : `orange-line` + fond légèrement lavé d'orange pour un agent qui attend, `red-line` pour un souci ; survol cliquable = `hairline-strong`.
 - **Internal Padding :** 14–18px ; 28px pour les formulaires en surimpression.
 - Les panneaux regroupent des lignes séparées par des filets, pas des cartes empilées.
 
 ### Inputs / Fields
-- **Style :** bordure `control` (3:1 sur le fond, WCAG 1.4.11), fond de page, 8px de rayon, 36px de haut. Les champs de commande et de chemin sont en mono, sur fond `abyss`.
+- **Style :** bordure `control` (3:1 sur le fond, WCAG 1.4.11), fond transparent (en sombre, `control` à 30 %), 6,4px de rayon, 36px de haut. Les champs de commande et de chemin sont en mono, sur fond `abyss`.
 - **Focus :** bordure et anneau violet.
 - **Error :** bordure et texte rouge, message court sous le champ (« Choisis un dossier »).
 
 ### Navigation
-- Barre latérale `nav-night` (sans fond pointillé), sessions groupées par état (attend → à toi → en cours → terminé, ce dernier repliable).
+- Barre latérale en panneau détaché (décision 043) : variante `floating` de spartan, marge autour sur le fond pointillé, fond `panel` (`--sidebar`), rayon 12px, `--elev-1` ; en mobile, panneau coulissant de spartan. Sessions groupées par état (attend → à toi → en cours → terminé, ce dernier repliable).
 - Élément actif : fond `violet-wash`, barre d'état violette à gauche, icône et titre en violet.
 - Session urgente : barre d'état orange, sous-titre orange en mono, point d'état qui pulse (coupé si « réduire les animations »).
 - Replié : chaque session devient son initiale dans un carré de 22px, avec le point d'état en coin.
@@ -328,7 +327,7 @@ Précis et retenus.
 Une ligne de tableau cliquable en entier : badge d'état, titre + projet · branche, activité en cours, sparkline des 15 dernières minutes, agents, durée et coût alignés à droite en mono, actions à droite. Sparkline en bleu-vert (données). Urgente : fond orange lavé + barre d'état de 3px. Terminée : texte en retrait par la couleur (jamais par l'opacité), sparkline en gris.
 
 ### Dashboard (décision 041)
-Route `/`, de haut en bas : indicateurs, activité, liste des sessions. Pas de section d'attente en tête (mise à jour du 2026-11-19) : une seule liste, triée par date de création (la plus récente en haut), où une session ne change jamais de place selon son état ; l'attente se voit à son badge orange, à son fond lavé et à ses actions (Autoriser, Répondre) dans la ligne. Recherche, sélection et suppression en lot portent sur toute la liste. Pas de graphique : ils vivent sur la page Consommation. Chaque section a un titre `h2` (16px, 600) posé sur le fond pointillé ; les indicateurs ont un titre `sr-only`.
+Route `/`, de haut en bas : indicateurs, activité, liste des sessions. Pas de section d'attente en tête (mise à jour du 2026-11-19) : une seule liste, triée par date de création (la plus récente en haut), où une session ne change jamais de place selon son état ; l'attente se voit à son badge orange, à son fond lavé et à ses actions (Autoriser, Répondre) dans la ligne. Recherche, sélection et suppression en lot portent sur toute la liste. Pas de graphique : ils vivent sur la page Consommation. Chaque section a un titre `h2` (16px, 600) : Sessions posé sur le fond pointillé, Activité dans sa carte (précédé de l'éclair) ; les indicateurs ont un titre `sr-only`.
 
 ### Carte d'indicateur
 Carte `--elev-1`, 12px de rayon, 14px × 18px de padding, 10px entre les lignes : libellé en casse normale (13px, 600, `ink-soft`) précédé d'une icône SVG de 16px en `ink-faint` (violet au survol), gros chiffre en mono (24px, 500), barre segmentée, ligne de détail (12px, `ink-muted`, valeurs en mono `ink` 600). Cliquable quand elle mène à une page (Consommation) : `--elev-2` et `hairline-strong` au survol, focus violet. Grille de 4 colonnes, 2 sous 1200px, 1 sous 560px.
@@ -349,19 +348,20 @@ Pleine largeur en tête de la zone principale, 36px, fond `red-wash`, texte `red
 
 ### Do:
 - **Do** passer par les variables CSS de `styles.css` (`--brand`, `--wait`, `--line`…) ou les jetons spartan dérivés ; jamais de hex dans un composant.
-- **Do** utiliser `--dur-fast` (120 ms), `--dur` (200 ms) et `--ease` (`cubic-bezier(0.2, 0, 0, 1)` : sortie rapide, arrivée douce) pour toute transition.
+- **Do** utiliser `--dur-fast` (120 ms), `--dur` (200 ms) et `--ease` (`cubic-bezier(0.2, 0, 0, 1)` : sortie rapide, arrivée douce) pour toute transition d'un composant Vigie (les composants spartan gardent la transition Tailwind par défaut, 150 ms).
 - **Do** mettre en mono les montants, durées, tokens, branches, chemins et commandes, alignés à droite dans les tableaux.
 - **Do** vérifier chaque nouvelle couleur de texte à 4,5:1 dans les deux thèmes, y compris sur `nav-night` et `panel-raised`.
 - **Do** vérifier aussi les seuils non textuels avant d'ajouter un jeton : contrôles 3:1 sur le fond, couleurs de données (barres, sparklines) 3:1 sur `panel`, filets 1,33:1 sur `panel`.
 - **Do** donner à chaque élément cliquable un survol (`--hover`), une pression (`--press`) et un focus visible violet.
 - **Do** colorer une donnée en bleu-vert (`--data`), une seconde série en violet, le reste en neutres ; « en cours » en `--run`.
 - **Do** poser du texte sombre (`--on-wait`) sur l'aplat orange, et utiliser `--wait` (variante sombre) pour tout texte, point ou trait orange en clair.
-- **Do** réserver le seul mouvement signé de Vigie à l'arrivée d'une attente (classe `.wait-arrive` : l'orange arrive à 30 % puis se pose, `--dur-arrive` 900 ms, `--ease-out` `cubic-bezier(0.16, 1, 0.3, 1)` ; barre d'état du tableau tracée en `scaleY`). Tout le reste reste du retour d'état en `--dur-fast` / `--dur`. Barres, jauges et sparklines bougent en `transform`, jamais en `width` / `height`.
+- **Do** réserver le seul mouvement signé de Vigie à l'arrivée d'une attente (classe `.wait-arrive` : l'orange arrive à 30 % puis se pose, `--dur-arrive` 900 ms, `--ease-out` `cubic-bezier(0.16, 1, 0.3, 1)` ; barre d'état du tableau tracée en `scaleY`). Tout le reste reste du retour d'état en `--dur-fast` / `--dur`. Barres, jauges et sparklines bougent en `transform`, jamais en `width` / `height` / `left` (jauges en `scaleX`). Une barre qu'un `transform` déformerait (rayures, rayon, largeur minimale : barres de la chronologie) ne s'anime pas. Rayures « en cours » : une seule définition (`.stripes`, jeton `--stripe`).
 
 ### Don't:
-- **Don't** utiliser l'orange pour autre chose qu'un état qui attend l'utilisateur, ni le vert pour autre chose que « terminé » / positif.
+- **Don't** utiliser l'orange pour autre chose qu'un état qui attend l'utilisateur, ni le vert pour autre chose que « terminé » / positif (seules exceptions, sans état : les icônes de dossiers `--fd-assets` et `--fd-tests` de la décision 043, et la palette ANSI du terminal).
 - **Don't** mettre un bouton principal dans une autre couleur que le violet, ni un bouton secondaire en violet plein.
-- **Don't** introduire une teinte hors des trois couleurs et deux accents (plus de lilas pour les commandes : neutre mono).
+- **Don't** introduire une teinte hors des trois couleurs et deux accents (plus de lilas pour les commandes : neutre mono). Seules exceptions : les icônes de l'arbre de fichiers (`--ft-*`, `--fd-*`, décision 043) et la palette ANSI du terminal (`terminal.vm.ts`).
+- **Don't** citer une décision dans un commentaire sans que son fichier existe dans `decisions/` : un changement visuel structurant = une décision + la mise à jour de ce document, dans la même tâche.
 - **Don't** atténuer du texte avec `opacity` : passer à `--text-muted` ou `--faint`.
 - **Don't** poser d'ombre sur une ligne ou dans une liste dense, ni écrire une ombre à la main : `--elev-1` / `--elev-2` seulement.
 - **Don't** empiler des cartes dans des cartes ; une liste dans un panneau se sépare par des filets.

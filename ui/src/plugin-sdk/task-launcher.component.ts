@@ -41,7 +41,7 @@ let seq = 0;
 
     @if (vm.count()) {
       <div class="body">
-        <nav class="nav" aria-label="Thèmes">
+        <nav class="nav panel" aria-label="Thèmes">
           @for (th of vm.visible(); track th.id) {
             <button type="button" class="nav-item" [attr.aria-current]="vm.current()?.id === th.id ? 'page' : null" (click)="vm.select(th.id)">
               <span class="label">{{ th.label }}</span>
@@ -50,7 +50,7 @@ let seq = 0;
           }
         </nav>
 
-        <section class="pane" [attr.aria-label]="vm.current()?.label ?? 'Recherche'">
+        <section class="pane panel" [attr.aria-label]="vm.current()?.label ?? 'Recherche'">
           @if (vm.current(); as cur) {
             <header class="pane-head">
               <h3>{{ cur.label }}</h3>
@@ -106,7 +106,6 @@ let seq = 0;
 
     /* Deux panneaux séparés sur le fond pointillé, comme Config : navigation, contenu ; chacun défile seul. */
     .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 10px; }
-    .nav, .pane { border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); }
     .nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; overflow-y: auto; }
     .nav-item {
       display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent;

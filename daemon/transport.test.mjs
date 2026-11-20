@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Readable } from 'node:stream';
+import { Duplex, Readable } from 'node:stream';
 import { createStore } from './store.mjs';
 import { createTransport } from './transport.mjs';
 import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
@@ -17,7 +17,7 @@ const HOST = `127.0.0.1:${PORT}`;
 
 const LOCALES = 'C\nPOSIX\nen_US.UTF-8\nfr_FR.UTF-8\n'; // `locale -a` simulé : les tests ne dépendent pas de la machine
 
-function fixture({ claudeStatus, pluginsDir, settingsFile } = {}) {
+function fixture({ claudeStatus, pluginsDir, settingsFile, dev } = {}) {
   const tmp = tempDir('vigie-transport-');
   const home = path.join(tmp, 'home');
   const chatDir = path.join(home, '.vigie', 'chat');
@@ -36,7 +36,7 @@ function fixture({ claudeStatus, pluginsDir, settingsFile } = {}) {
   fs.writeFileSync(path.join(dir, 'W.jsonl'), rec('W', path.join(proj, '.claude', 'worktrees', 'x')));
   const store = createStore({ projectsDir: path.join(tmp, 'projects'), hiddenFile: path.join(tmp, 'hidden.json'), chatDir, limitsDir: path.join(tmp, 'limits') });
   store.scan();
-  const { server } = createTransport({ store, port: PORT, uiDir, home, chatDir, hooksFile: path.join(tmp, 'hooks.json'), claudeStatus, pluginsDir, pluginsDataDir: path.join(tmp, 'plugins-data'), settingsFile, listLocales: async () => LOCALES });
+  const { server } = createTransport({ store, port: PORT, uiDir, home, chatDir, hooksFile: path.join(tmp, 'hooks.json'), claudeStatus, pluginsDir, pluginsDataDir: path.join(tmp, 'plugins-data'), settingsFile, dev, listLocales: async () => LOCALES });
   return { server, dir, store, proj, tmp };
 }
 
@@ -47,9 +47,9 @@ function request(server, method, url, { headers = {}, body, abortAfter } = {}) {
   return new Promise((resolve) => {
     const closers = [];
     const res = {
-      statusCode: 0, headersSent: false, writableFinished: false,
-      writeHead(code) { this.statusCode = code; this.headersSent = true; },
-      end(data = '') { this.writableFinished = true; resolve({ status: this.statusCode, body: String(data) }); },
+      statusCode: 0, headersSent: false, writableFinished: false, headers: {},
+      writeHead(code, headers = {}) { this.statusCode = code; this.headersSent = true; this.headers = headers; },
+      end(data = '') { this.writableFinished = true; resolve({ status: this.statusCode, body: String(data), headers: this.headers }); },
       on(ev, fn) { if (ev === 'close') closers.push(fn); return this; }, // res.on('close') : recherche et méthodes de plugin s'annulent
     };
     if (abortAfter !== undefined) setTimeout(() => { for (const fn of closers) fn(); }, abortAfter);
@@ -81,6 +81,65 @@ test('POST : origine étrangère 403, corps non JSON 415', async () => {
   const { server } = fixture();
   assert.equal((await post(server, '/api/sessions/S/delete', { origin: 'http://evil.com' })).status, 403);
   assert.equal((await post(server, '/api/sessions/S/delete', { 'content-type': 'text/plain' })).status, 415);
+});
+
+test('GET /api/* : Sec-Fetch-Site étranger refusé même sans Origin (<img>, fetch no-cors) ; git et git/file contrôlent l’origine ; erreurs conformes', async () => {
+  const { ErrorBody } = await import('../contract/index.mjs');
+  const { server } = fixture();
+  for (const url of ['/api/snapshot', '/api/settings', '/api/sessions/S', '/api/sessions/S/git', '/api/sessions/S/git/file?path=a.txt', '/api/sessions/S/log', '/api/usage']) {
+    for (const site of ['cross-site', 'same-site']) {
+      const r = await request(server, 'GET', url, { headers: { 'sec-fetch-site': site } });
+      assert.equal(r.status, 403, `${url} ${site}`);
+      assert.deepStrictEqual(ErrorBody.parse(JSON.parse(r.body)), { error: 'origine refusée' });
+    }
+    assert.equal((await request(server, 'GET', url, { headers: { origin: 'http://evil.com' } })).status, 403, url);
+  }
+  // UI servie par le daemon (same-origin), URL tapée (none), CLI et Electron (aucun en-tête) : acceptés.
+  for (const headers of [{ 'sec-fetch-site': 'same-origin' }, { 'sec-fetch-site': 'none' }, {}]) assert.equal((await request(server, 'GET', '/api/snapshot', { headers })).status, 200, JSON.stringify(headers));
+  // POST aussi : une origine acceptée ne suffit pas si le navigateur dit cross-site.
+  assert.equal((await post(server, '/api/sessions/S/delete', { 'sec-fetch-site': 'cross-site' })).status, 403);
+  const missing = await request(server, 'GET', '/api/sessions/inconnue');
+  assert.deepStrictEqual([missing.status, ErrorBody.parse(JSON.parse(missing.body))], [404, { error: 'session inconnue' }]);
+});
+
+test('statiques : CSP de la décision 044 sur les fichiers de l’UI, pas sur l’API', async () => {
+  const { server } = fixture();
+  const page = await request(server, 'GET', '/');
+  assert.equal(page.status, 200);
+  assert.match(page.headers['content-security-policy'], /^default-src 'self'; script-src 'self';.*connect-src 'self' ws:\/\/127\.0\.0\.1:4317 ws:\/\/localhost:4317;.*frame-ancestors 'none'$/);
+  assert.equal((await request(server, 'GET', '/api/snapshot')).headers['content-security-policy'], undefined);
+});
+
+test('POST sans paramètre (/api/chat, …/delete, …/commit-message, …/close) : seul {} passe, rien n’est lancé ni effacé', async () => {
+  const { server, dir } = fixture();
+  const send = (url, body) => request(server, 'POST', url, { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  for (const url of ['/api/chat', '/api/chat/C/delete', '/api/sessions/S/delete', '/api/sessions/S/git/commit-message', '/api/terminals/t1/close']) {
+    for (const body of [{ x: 1 }, null, []]) {
+      const r = await send(url, body);
+      assert.deepEqual([r.status, JSON.parse(r.body)], [400, { error: 'Corps de requête invalide' }], `${url} ${JSON.stringify(body)}`);
+    }
+  }
+  assert.ok(fs.existsSync(path.join(dir, 'C.jsonl')));
+  assert.equal((await send('/api/terminals/t1/close', {})).status, 404); // {} passe, le terminal est inconnu
+  assert.equal((await request(server, 'POST', '/api/terminals/t1/close', { headers: { 'content-type': 'application/json' } })).status, 404); // corps vide = {}
+});
+
+test('paramètres d’URL : since de /log et q de /api/projects passent un schéma', async () => {
+  const { SessionLog } = await import('../contract/index.mjs');
+  const { server } = fixture();
+  const get = (url) => request(server, 'GET', url);
+  for (const since of ['abc', '-1', 'Infinity']) {
+    const r = await get(`/api/sessions/S/log?since=${since}`);
+    assert.deepEqual([r.status, JSON.parse(r.body)], [400, { error: 'since doit être une date en ms' }], since);
+  }
+  for (const url of ['/api/sessions/S/log', '/api/sessions/S/log?since=0', `/api/sessions/S/log?since=${Date.now()}`]) {
+    const r = await get(url);
+    assert.equal(r.status, 200, url);
+    assert.deepStrictEqual(SessionLog.parse(JSON.parse(r.body)), JSON.parse(r.body));
+  }
+  assert.equal((await get('/api/sessions/inconnue/log')).status, 404);
+  const long = await get(`/api/projects?q=${'a'.repeat(5000)}`);
+  assert.deepEqual([long.status, JSON.parse(long.body)], [400, { error: 'Chemin trop long' }]);
 });
 
 test('/api/projects : récents en ~/…, sans discussion ni worktree, conformes', async () => {
@@ -135,6 +194,31 @@ test('upgrade : origine étrangère ou terminal inconnu, connexion coupée', () 
     server.emit('upgrade', { url, headers: { host: HOST, ...(origin ? { origin } : {}) } }, socket, Buffer.alloc(0));
     assert.equal(destroyed, true, url);
   }
+});
+
+test('VIGIE_DEV : trafic de ng serve passé par ui/proxy.conf.json (Host réécrit par changeOrigin, Origin localhost:4200) accepté ; refusé sans', async () => {
+  // Ce que le proxy de Vite transmet : Host de la cible (changeOrigin), Origin et Sec-Fetch-Site du navigateur sur localhost:4200.
+  const proxied = { host: HOST, origin: 'http://localhost:4200', 'sec-fetch-site': 'same-origin' };
+  const post = (server) => request(server, 'POST', '/api/sessions/S/delete', { headers: { ...proxied, 'content-type': 'application/json' }, body: '{}' });
+  /** Upgrade simulé : vrai si le daemon répond 101 (poignée de main acceptée), faux s'il coupe la connexion. */
+  const upgrade = (server) => {
+    const written = [];
+    let destroyed = false;
+    const socket = Object.assign(new Duplex({ read() {}, write(c, _e, cb) { written.push(String(c)); cb(); } }), { setTimeout() {}, setNoDelay() {} });
+    socket.destroy = () => { destroyed = true; };
+    server.emit('upgrade', { method: 'GET', url: '/ws', headers: { ...proxied, upgrade: 'websocket', connection: 'Upgrade', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', 'sec-websocket-version': '13' } }, socket, Buffer.alloc(0));
+    return !destroyed && written.join('').startsWith('HTTP/1.1 101');
+  };
+  const dev = fixture({ dev: true }).server;
+  assert.equal((await request(dev, 'GET', '/api/snapshot', { headers: proxied })).status, 200);
+  assert.equal((await post(dev)).status, 200);
+  assert.equal(upgrade(dev), true);
+  // Host non réécrit (proxy sans changeOrigin) : refusé, comme un DNS rebinding.
+  assert.equal((await request(dev, 'GET', '/api/snapshot', { headers: { ...proxied, host: 'localhost:4200' } })).status, 403);
+  const prod = fixture().server;
+  assert.equal((await request(prod, 'GET', '/api/snapshot', { headers: proxied })).status, 403);
+  assert.equal((await post(prod)).status, 403);
+  assert.equal(upgrade(prod), false);
 });
 
 test('statique : un chemin qui sort du dossier UI retombe sur index.html', async () => {
@@ -205,6 +289,38 @@ test('édition d’un fichier : lecture conforme, empreinte périmée 412, écri
   const busy = await send({ path: 'a.txt', content: 'v4\n', hash: f.hash });
   assert.deepEqual([busy.status, JSON.parse(busy.body)], [409, { error: 'Claude travaille dans cette session' }]);
   assert.equal(fs.readFileSync(path.join(proj, 'a.txt'), 'utf8'), 'v3\n');
+  // Restaurer réécrit le fichier aussi : même refus pendant que Claude travaille, puis permis au tour rendu.
+  const restore = () => request(server, 'POST', '/api/sessions/S/git/restore', { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: 'a.txt' }) });
+  const refused = await restore();
+  assert.deepEqual([refused.status, JSON.parse(refused.body)], [409, { error: 'Claude travaille dans cette session' }]);
+  assert.equal(fs.readFileSync(path.join(proj, 'a.txt'), 'utf8'), 'v3\n');
+  store.onHook({ session_id: 'S', hook_event_name: 'Stop' });
+  assert.equal((await restore()).status, 200);
+  assert.equal(fs.readFileSync(path.join(proj, 'a.txt'), 'utf8'), 'v1\n');
+});
+
+test('restauration acceptée après un Échap : l’interruption rend le tour, même juste après un PreToolUse', async () => {
+  const { server, store, proj, dir } = fixture();
+  const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { cwd: proj });
+  g('init', '-q');
+  fs.writeFileSync(path.join(proj, 'a.txt'), 'v1\n');
+  g('add', '.'); g('commit', '-qm', 'init');
+  fs.writeFileSync(path.join(proj, 'a.txt'), 'v2\n');
+  const now = Date.now();
+  const rec = (ms, o) => JSON.stringify({ timestamp: new Date(now - ms).toISOString(), sessionId: 'S', cwd: proj, ...o }) + '\n';
+  fs.appendFileSync(path.join(dir, 'S.jsonl'),
+    rec(3000, { type: 'user', message: { content: 'corrige a.txt' } }) +
+    rec(2500, { type: 'assistant', message: { id: 'e1', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'ed1', name: 'Edit', input: { file_path: path.join(proj, 'a.txt') } }] } }));
+  store.scan();
+  store.onHook({ session_id: 'S', hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { file_path: 'a.txt' }, ts: now - 2400 });
+  const restore = () => request(server, 'POST', '/api/sessions/S/git/restore', { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: 'a.txt' }) });
+  assert.equal((await restore()).status, 409); // Claude travaille
+  // Échap : aucun hook Stop, seulement le marqueur dans le transcript.
+  fs.appendFileSync(path.join(dir, 'S.jsonl'), rec(2000, { type: 'user', message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } }));
+  store.scan();
+  const ok = await restore();
+  assert.deepEqual([ok.status, JSON.parse(ok.body)], [200, { ok: true }]);
+  assert.equal(fs.readFileSync(path.join(proj, 'a.txt'), 'utf8'), 'v1\n');
 });
 
 test('corps illisible ou trop gros : erreur {error}, pas de promesse pendante ni de 500', async () => {

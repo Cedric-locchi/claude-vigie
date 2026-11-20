@@ -1,6 +1,6 @@
-import { Injectable, computed, effect, inject, linkedSignal, resource, signal } from '@angular/core';
-import { PluginHost } from '@vigie/plugin-sdk';
-import { XcodeProject as XcodeProjectSchema, XcodeTargets as XcodeTargetsSchema } from '../contract.mjs';
+import { Injectable, computed, effect, inject, linkedSignal, resource } from '@angular/core';
+import { PluginHost, errorMessage, launcher } from '@vigie/plugin-sdk';
+import { XcodeOpen, XcodeProject as XcodeProjectSchema, XcodeTargets as XcodeTargetsSchema } from '../contract.mjs';
 import type { Simulator, XcodeAction, XcodeContainer, XcodeTargets } from './models';
 
 export const CONTAINER_KINDS: Record<XcodeContainer['kind'], string> = { workspace: 'Workspace', project: 'Projet', package: 'Paquet SPM' };
@@ -19,13 +19,14 @@ const needsSimulator = (action: XcodeAction) => action !== 'clean';
  * ponytail: mémoire du module, perdue au rechargement ; localStorage si on veut la garder.
  */
 const picks = new Map<string, { scheme?: string; udid?: string }>();
-/** Dernières cibles lues par session : réaffichées dès l'entrée dans l'onglet, pendant la relecture (jusqu'à 45 s). */
+/**
+ * Dernières cibles lues par session : réaffichées dès l'entrée dans l'onglet, pendant la relecture (jusqu'à 45 s).
+ * ponytail: mémoire du module, jamais vidée ni perdue avant le rechargement de la page (une entrée par session ouverte) ; à borner si ça grossit.
+ */
 const lastTargets = new Map<string, XcodeTargets>();
 
 /** Garde le choix courant s'il existe encore, sinon le choix mémorisé du projet, sinon le défaut. */
 const keep = (list: string[], ...candidates: (string | null | undefined)[]) => candidates.find((c) => c != null && list.includes(c)) ?? null;
-
-const message = (e: unknown, fallback: string) => (e as Error | undefined)?.message || fallback;
 
 /**
  * Onglet « Xcode » : le projet (conteneur + scripts, rapide) et les schemes / simulateurs (lent) viennent du backend du plugin ;
@@ -54,7 +55,7 @@ export class XcodeVm {
   readonly loading = computed(() => this.targetsResource.isLoading());
   /** Échec de lecture (daemon d'une autre version, erreur réseau) ; les dernières cibles restent affichées. */
   readonly targetsError = computed(() => {
-    for (const r of [this.projectResource, this.targetsResource]) if (r.status() === 'error') return message(r.error(), 'Lecture du projet Xcode impossible.');
+    for (const r of [this.projectResource, this.targetsResource]) if (r.status() === 'error') return errorMessage(r.error(), 'Lecture du projet Xcode impossible.');
     return null;
   });
   readonly available = computed(() => !!this.targets()?.available);
@@ -80,8 +81,9 @@ export class XcodeVm {
   readonly simulatorLabel = (udid: string | null) => this.simulators().find((s) => s.udid === udid)?.name ?? '';
 
   /** Une requête à la fois : les boutons restent inactifs le temps de la requête. */
-  readonly launching = signal(false);
-  readonly launchError = signal<string | null>(null);
+  private readonly launches = launcher();
+  readonly launching = computed(() => this.launches.launching() !== null);
+  readonly launchError = this.launches.error;
 
   pickScheme(scheme: string): void {
     this.scheme.set(scheme);
@@ -106,28 +108,16 @@ export class XcodeVm {
     const scheme = this.scheme();
     const udid = this.udid();
     if (!scheme || !this.canRun(action)) return Promise.resolve();
-    return this.request(() => this.host.terminal(action, needsSimulator(action) && udid ? { scheme, udid } : { scheme }), 'Impossible de lancer l’action Xcode.');
+    return this.launches.run(action, () => this.host.terminal(action, needsSimulator(action) && udid ? { scheme, udid } : { scheme }), 'Impossible de lancer l’action Xcode.');
   }
 
   runScript(name: string): Promise<void> {
-    return this.request(() => this.host.terminal('script', { name }), 'Impossible de lancer le script.');
+    return this.launches.run(`script:${name}`, () => this.host.terminal('script', { name }), 'Impossible de lancer le script.');
   }
 
   /** Ouvre le projet dans Xcode : rien à afficher dans Vigie, seul l'échec se signale. */
   openInXcode(): Promise<void> {
-    return this.request(() => this.host.call('open'), 'Impossible d’ouvrir Xcode.');
-  }
-
-  private async request(fn: () => Promise<unknown>, fallback: string): Promise<void> {
-    if (this.launching()) return;
-    this.launching.set(true);
-    this.launchError.set(null);
-    try {
-      await fn();
-    } catch (e) {
-      this.launchError.set(message(e, fallback));
-    } finally {
-      this.launching.set(false);
-    }
+    // Même schéma que le `result` de la méthode `open` du back (rien à rendre, la fenêtre d'Xcode s'ouvre).
+    return this.launches.run('open', () => this.host.call('open', {}, XcodeOpen), 'Impossible d’ouvrir Xcode.');
   }
 }

@@ -2,11 +2,12 @@ import { DestroyRef, Injectable, computed, inject, linkedSignal, signal } from '
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter, map } from 'rxjs';
+import { AttentionService } from './core/attention.service';
 import { ClaudeStatus, SessionSummary } from './core/models';
 import { activityMax, describeSession, rank } from './core/session-view';
-import { CLIENT_OS } from './core/platform';
+import { CLIENT_OS, restartCommand } from './core/platform';
 import { duration } from './core/format';
-import { KEYS, VigieService, isChat, sendReply } from './core/vigie.service';
+import { VigieService, daemonError, isChat } from './core/vigie.service';
 
 const SPARK_H = 12;
 const GROUPS = [
@@ -30,9 +31,11 @@ const CLAUDE_STATUS: Record<ClaudeStatus['indicator'], { label: string; tone: 'o
 export class AppVm {
   private readonly vigie = inject(VigieService);
   private readonly router = inject(Router);
+  private readonly attention = inject(AttentionService);
+  private readonly os = inject(CLIENT_OS);
   /** Raccourcis ⌘N / ⌘B affichés seulement sur mac. */
   // ponytail: raccourcis N et B absents hors mac (Chrome réserve Ctrl+N, Ctrl+B appartient au terminal) ; en ajouter (Alt+…) si demandé.
-  readonly mac = inject(CLIENT_OS) === 'mac';
+  readonly mac = this.os === 'mac';
 
   readonly connected = this.vigie.connected;
   readonly incompatible = this.vigie.incompatible;
@@ -53,8 +56,8 @@ export class AppVm {
     const age = Math.max(0, this.clock() - snap.now);
     return { age: age < 60_000 ? `${Math.max(1, Math.round(age / 1000))} s` : duration(age) };
   });
-  /** Commande pour relancer le service du daemon, selon l'OS du client (Linux aussi pour un navigateur Windows sur WSL). */
-  readonly restartCommand = this.mac ? 'launchctl kickstart -k gui/$UID/dev.vigie.daemon' : 'systemctl --user restart vigie';
+  /** Commande pour relancer le service du daemon, selon l'OS du client. */
+  readonly restartCommand = restartCommand(this.os);
   readonly now = computed(() => this.vigie.snapshot()?.now ?? 0);
   readonly sessions = computed(() => this.vigie.snapshot()?.sessions ?? []);
   readonly active = computed(() => this.sessions().filter((s) => s.state !== 'done'));
@@ -118,15 +121,12 @@ export class AppVm {
     this.doneOpen.update((open) => !open);
   }
 
-  /** Échec de la dernière autorisation rapide, sur la ligne de la session concernée. */
-  readonly replyError = signal<{ id: string; message: string } | null>(null);
+  /** Échec de la dernière réponse rapide, sur la ligne de la session concernée (partagé avec la cloche, les toasts, le Dashboard). */
+  readonly replyError = this.attention.replyError.asReadonly();
 
   /** Autorisation rapide depuis la sidebar : la touche est tapée dans le terminal claude de la session. */
-  async allow(s: SessionSummary): Promise<void> {
-    if (!s.terminalId) return;
-    this.replyError.set(null);
-    const message = await sendReply(this.vigie, s.terminalId, KEYS.allow);
-    if (message) this.replyError.set({ id: s.id, message });
+  allow(s: SessionSummary): Promise<void> {
+    return this.attention.reply(s.id, 'allow');
   }
 
   readonly chatError = signal<string | null>(null);
@@ -142,8 +142,8 @@ export class AppVm {
     try {
       const term = await this.vigie.startChat();
       await this.router.navigate(['/sessions', term.sessionId]);
-    } catch {
-      this.chatError.set('Discussion impossible à lancer : le daemon est-il à jour ?');
+    } catch (e) {
+      this.chatError.set(daemonError(e, 'Discussion impossible à lancer.'));
     } finally {
       this.chatStarting = false;
     }

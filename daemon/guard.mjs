@@ -25,3 +25,13 @@ export function staticFile(uiDir, pathname) {
   const file = path.join(uiDir, path.normalize(p).replace(/^(\.\.[/\\])+/, ''));
   return file === uiDir || file.startsWith(uiDir + path.sep) ? file : uiDir;
 }
+
+/**
+ * Content-Security-Policy des fichiers de l'UI (décision 044) : rien ne sort de la machine (images, polices, fetch, WebSocket
+ * seulement vers le daemon), aucun script inline. `style-src 'unsafe-inline'` : Angular et spartan posent des styles en ligne.
+ */
+export const csp = (port) => [
+  "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:", "font-src 'self' data:",
+  `connect-src 'self' ws://127.0.0.1:${port} ws://localhost:${port}`, "worker-src 'self' blob:", "object-src 'none'", "base-uri 'none'",
+  "form-action 'none'", "frame-ancestors 'none'",
+].join('; ');

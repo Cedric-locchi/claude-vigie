@@ -1,7 +1,7 @@
 import { Injectable, Signal, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ClaudeConfig, ConfigScope } from '../../../core/models';
-import { VigieService } from '../../../core/vigie.service';
+import { VigieService, daemonError } from '../../../core/vigie.service';
 import { renderMarkdown } from '../../../core/markdown';
 import { SCOPE_ORDER, estimateTokens, splitMiddle } from './config-rules';
 
@@ -123,7 +123,8 @@ export class SessionConfigVm {
   private readonly resource = this.vigie.configResource(this.id);
   readonly config = computed(() => (this.resource.hasValue() ? this.resource.value() : null));
   readonly loading = computed(() => this.resource.isLoading() && !this.config());
-  readonly failed = computed(() => this.resource.status() === 'error');
+  /** Lecture en échec : la raison (daemon injoignable, session inconnue, réponse hors contrat). */
+  readonly loadError = computed(() => (this.resource.status() === 'error' ? daemonError(this.resource.error(), 'Configuration indisponible.') : null));
 
   readonly counts = computed(() => {
     const checks = this.config()?.checks ?? [];
@@ -239,7 +240,7 @@ export class SessionConfigVm {
       const term = await this.vigie.startSession({ cwd, command: auditCommand(this.config()?.checks ?? []) });
       await this.router.navigate(['/sessions', term.sessionId]);
     } catch (e) {
-      this.auditError.set((e as { error?: { error?: string } })?.error?.error ?? "Impossible de lancer l'audit.");
+      this.auditError.set(daemonError(e, "Impossible de lancer l'audit."));
     } finally {
       this.auditing.set(false);
     }

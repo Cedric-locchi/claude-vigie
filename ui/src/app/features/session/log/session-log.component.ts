@@ -1,4 +1,4 @@
-import { Component, ElementRef, effect, inject, input, untracked, viewChild } from '@angular/core';
+import { Component, ElementRef, effect, inject, input, viewChild } from '@angular/core';
 import { HlmBadge, BadgeVariants } from '@spartan-ng/helm/badge';
 import { HlmButton } from '@spartan-ng/helm/button';
 import { HlmEmptyImports } from '@spartan-ng/helm/empty';
@@ -53,7 +53,7 @@ const BADGES: Record<LogKind, BadgeVariants['variant']> = {
       <p class="small faint">Chargement du journal…</p>
     } @else {
       <div #scroller class="scroller" tabindex="-1">
-      <ol class="entries">
+      <ol class="entries panel">
         @for (e of vm.visible(); track e.id) {
           <li class="entry" [attr.data-kind]="e.kind">
             <div class="meta">
@@ -101,7 +101,7 @@ const BADGES: Record<LogKind, BadgeVariants['variant']> = {
     .has-errors .n { color: var(--err); }
     .agent { width: 200px; }
     .total { margin-inline-start: auto; }
-    .entries { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); overflow: hidden; }
+    .entries { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; overflow: hidden; }
     .entry { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--line); transition: background-color var(--dur-fast) var(--ease); }
     .entry:last-child { border-bottom: 0; }
     .entry:hover { background: var(--hover); }
@@ -134,11 +134,7 @@ export class SessionLogComponent {
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
 
   constructor() {
-    this.vm.connect(this.sessionId, this.lastTs);
-    effect(() => {
-      const q = this.query();
-      if (q) untracked(() => this.vm.setQuery(q));
-    });
+    this.vm.connect(this.sessionId, this.lastTs, this.query);
     // Nouvelle recherche ou nouveau filtre : on revient en haut, là où sont les résultats les plus récents.
     effect(() => {
       this.vm.query(); this.vm.filter(); this.vm.agent();

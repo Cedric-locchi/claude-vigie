@@ -1,0 +1,73 @@
+{
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Saved on this machine",
+    "language": {
+      "title": "Language",
+      "hint": "Interface language (defaults to your system's). Some screens and daemon messages are still in French."
+    },
+    "theme": {
+      "title": "Theme",
+      "hint": "Vigie's appearance, light or dark.",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "notify": {
+      "title": "Notifications",
+      "hint": "The bell always shows what's waiting for you. When Vigie has focus, a toast lets you know; otherwise, a system notification.",
+      "blockedMac": "System notifications are blocked: allow Vigie (“Electron” in dev) in System Settings › Notifications, or the site in your browser.",
+      "blockedWindows": "System notifications are blocked: allow your browser in Settings › System › Notifications, and the site in its settings.",
+      "blockedOther": "System notifications are blocked: allow Vigie (“Electron” in dev) in your desktop's notification settings, or the site in your browser.",
+      "waiting": {
+        "title": "Permissions and questions",
+        "hint": "Always in the bell and as a toast. System notification when Vigie doesn't have focus:",
+        "on": "On",
+        "off": "Off"
+      },
+      "turn": {
+        "title": "End of turn",
+        "hint": "Claude is done and hands back to you.",
+        "inapp": "In Vigie",
+        "system": "System too",
+        "off": "Nothing"
+      },
+      "usage": {
+        "title": "Usage alerts",
+        "hint": "Toast or notification when a threshold is crossed (see below). The bell keeps them either way.",
+        "on": "On",
+        "off": "Off"
+      },
+      "sound": {
+        "title": "Sound",
+        "hint": "A small chime: two notes for a request, one for an end of turn.",
+        "on": "On",
+        "off": "Off"
+      },
+      "pause": {
+        "title": "Do not disturb",
+        "idle": "Mutes sound and system notifications for 1 h; the bell and toasts keep going.",
+        "untilBefore": "Paused until ",
+        "untilAfter": ": no sound, no system notification.",
+        "resume": "Resume",
+        "start": "Pause for 1 h"
+      }
+    },
+    "locale": {
+      "title": "Terminal locale",
+      "hintBefore": "Encoding and language of the shell and claude (accents, symbols). Empty: automatic",
+      "hintAfter": ". Applies to terminals opened afterwards.",
+      "save": "Save",
+      "notSaved": "Locale not saved."
+    },
+    "alerts": {
+      "title": "Usage alerts",
+      "hint": "An alert when today's estimated cost or the 5-hour window goes over your threshold: once a day for cost, once per window. Empty: no alert.",
+      "saved": "Thresholds saved.",
+      "dailyCost": "Today's cost",
+      "window": "5-hour window",
+      "example": "e.g. {{ value }}",
+      "save": "Save",
+      "notSaved": "Thresholds not saved."
+    }
+  }
+}

@@ -21,8 +21,8 @@ import { TimelineVm } from './timeline.vm';
   imports: [Icon, GanttComponent, HlmBadge, HlmButton, HlmEmptyImports, HlmInputGroupImports, HlmToggle, StepDetailComponent],
   providers: [TimelineVm],
   template: `
-    @if (vm.failed()) {
-      <p class="small text-err" role="alert">Chronologie indisponible : le daemon est-il à jour ? (redémarre-le après une mise à jour)</p>
+    @if (vm.loadError(); as err) {
+      <p class="small text-err" role="alert">{{ err }}</p>
     } @else if (vm.loading()) {
       <p class="small faint">Chargement de la chronologie…</p>
     } @else if (vm.trace(); as trace) {
@@ -94,7 +94,7 @@ import { TimelineVm } from './timeline.vm';
                     </span>
                     <span role="cell" class="track">
                       @for (b of t.scale.breaks; track $index) { <span class="gap" [style.left.%]="b.left" [style.width.%]="b.width"></span> }
-                      <span class="bar" [class]="'bar k-' + r.kind" [class.running]="r.running" [class.err]="r.error" [class.interrupted]="r.interrupted"
+                      <span class="bar" [class]="'bar k-' + r.kind" [class.stripes]="r.running" [class.err]="r.error" [class.interrupted]="r.interrupted"
                         [style.left.%]="r.left" [style.width.%]="r.width"></span>
                     </span>
                     <span role="cell" class="dur mono small" [class.text-err]="r.error">{{ r.running ? 'en cours' : r.interrupted ? 'interrompu' : r.duration }}</span>
@@ -108,7 +108,7 @@ import { TimelineVm } from './timeline.vm';
                 @if (t.waiting; as w) {
                   <div class="row step waiting" role="row">
                     <span role="cell" class="label"><span class="twist"></span><span class="pick static"><i class="sw k-wait" aria-hidden="true"></i><span class="name">{{ waitLabel(w.reason, 'long') }}</span><span class="desc mono">{{ w.detail }}</span></span></span>
-                    <span role="cell" class="track"><span class="bar k-wait running" style="left: 96%; width: 4%"></span></span>
+                    <span role="cell" class="track"><span class="bar k-wait stripes" style="left: 96%; width: 4%"></span></span>
                     <span role="cell" class="dur mono small wait">maintenant</span>
                   </div>
                 }
@@ -184,13 +184,10 @@ import { TimelineVm } from './timeline.vm';
     .desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-muted); }
     .err-mark { flex: none; margin-inline-start: auto; color: var(--err); }
     .gap { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, transparent 0 3px, var(--line) 3px 4px); opacity: 0.6; }
-    .bar { position: absolute; top: 50%; height: 12px; min-width: 3px; transform: translateY(-50%); border-radius: 3px; transition: left var(--dur) var(--ease), width var(--dur) var(--ease); }
+    /* Pas de transition : une barre ne bouge qu'en transform (DESIGN.md), et sa place suit l'échelle du tour, recalculée à chaque relecture. */
+    .bar { position: absolute; top: 50%; height: 12px; min-width: 3px; transform: translateY(-50%); border-radius: 3px; }
     .bar.err { box-shadow: 0 0 0 1.5px var(--err); }
     .bar.interrupted { opacity: 0.45; }
-    /* Rayures « en cours » : un calque translaté (composite) plutôt qu'un fond repeint à chaque image. */
-    .bar.running { overflow: hidden; }
-    .bar.running::after { content: ''; position: absolute; inset: 0 0 0 -14px; background: repeating-linear-gradient(135deg, transparent 0 5px, rgb(255 255 255 / 0.25) 5px 10px) 0 0 / 14px 14px; animation: run 0.8s linear infinite; }
-    @keyframes run { to { transform: translateX(14px); } }
     .step.error .name { color: var(--err); }
     .waiting .name { color: var(--wait); }
     .none { padding: 6px 14px; }

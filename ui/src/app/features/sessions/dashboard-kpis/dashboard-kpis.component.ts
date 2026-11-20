@@ -17,7 +17,7 @@ import { SessionsPageVm } from '../sessions-page/sessions-page.vm';
     <section class="kpis" aria-labelledby="kpis-title">
       <h2 id="kpis-title" class="sr-only">Indicateurs</h2>
 
-      <a class="card" data-tone="data" routerLink="/usage">
+      <a class="card panel" data-tone="data" routerLink="/usage">
         <span class="badge" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="12" width="4" height="8" rx="1" /><rect x="10" y="7" width="4" height="13" rx="1" /><rect x="16" y="3" width="4" height="17" rx="1" /></svg></span>
         <span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>Fenêtre 5 h</span>
         @if (k.window; as w) {
@@ -34,7 +34,7 @@ import { SessionsPageVm } from '../sessions-page/sessions-page.vm';
         }
       </a>
 
-      <a class="card" data-tone="brand" routerLink="/usage">
+      <a class="card panel" data-tone="brand" routerLink="/usage">
         <span class="badge" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill-rule="evenodd" d="M3 7a3 3 0 0 1 3-3h10a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a3 3 0 0 1-3-3zm12.5 7a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0z" /></svg></span>
         <span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M16.5 7.5c-.8-1.2-2.4-2-4.5-2-2.5 0-4 1.3-4 3s1.5 2.5 4 3 4 1.4 4 3.2-1.6 3-4 3c-2.1 0-3.7-.8-4.5-2" /></svg>Coût du jour</span>
         <span class="big"><span class="mono">{{ f.usd(k.todayCost) }}</span>@if (k.threshold) { <span class="of mono"> / {{ f.usd(k.threshold) }}</span> }</span>
@@ -47,7 +47,7 @@ import { SessionsPageVm } from '../sessions-page/sessions-page.vm';
         </span>
       </a>
 
-      <div class="card sessions" [attr.data-tone]="k.blocked || k.turn ? 'wait' : 'data'">
+      <div class="card panel sessions" [attr.data-tone]="k.blocked || k.turn ? 'wait' : 'data'">
         <span class="badge" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5" /><path d="M2 20v-1a7 7 0 0 1 14 0v1z" /><circle cx="17" cy="9" r="2.5" /><path d="M17 13.5a5 5 0 0 1 5 5V20h-4.5v-1a8.5 8.5 0 0 0-2.2-5.2 5 5 0 0 1 1.7-.3z" /></svg></span>
         <span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M9 10v10" /></svg>Sessions</span>
         <span class="big"><span class="mono">{{ k.running }}</span> <span class="unit">en cours</span></span>
@@ -61,7 +61,7 @@ import { SessionsPageVm } from '../sessions-page/sessions-page.vm';
         </span>
       </div>
 
-      <a class="card" data-tone="data" routerLink="/usage">
+      <a class="card panel" data-tone="data" routerLink="/usage">
         <span class="badge" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="3" /><path d="M4 8.5c0 1.7 3.6 3 8 3s8-1.3 8-3V12c0 1.7-3.6 3-8 3s-8-1.3-8-3zm0 6c0 1.7 3.6 3 8 3s8-1.3 8-3V18c0 1.7-3.6 3-8 3s-8-1.3-8-3z" /></svg></span>
         <span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg>Tokens du jour</span>
         <span class="big mono">{{ f.tokens(k.todayTokens) }}</span>
@@ -86,7 +86,7 @@ import { SessionsPageVm } from '../sessions-page/sessions-page.vm';
     .card[data-tone='wait'] { --tone: var(--wait); --tone-bg: var(--wait-bg); }
     .card {
       position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 18px;
-      border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); color: var(--text-muted);
+      color: var(--text-muted);
       transition: box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
     }
     a.card:hover { box-shadow: var(--elev-2); border-color: var(--line-strong); }

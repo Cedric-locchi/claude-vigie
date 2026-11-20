@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { describe, expect, it, vi } from 'vitest';
 import { VigieService } from '../../core/vigie.service';
-import { provideVigieServiceMock, somePlugins } from '../../core/vigie.service.mock';
+import { fakeResource, provideVigieServiceMock, somePlugins } from '../../core/vigie.service.mock';
 import { PluginsPageVm } from './plugins-page.vm';
 
 function createVm(togglePlugin?: VigieService['togglePlugin']) {
@@ -17,8 +17,8 @@ describe('PluginsPageVm', () => {
     const xcode = somePlugins()[1];
     await vm.toggle(xcode);
     expect(vigie.togglePlugin).toHaveBeenCalledWith('xcode', true);
-    expect(vm.resource.value()?.find((p) => p.id === 'xcode')?.enabled).toBe(true);
-    await vm.toggle(vm.resource.value()!.find((p) => p.id === 'xcode')!);
+    expect(vm.plugins()?.find((p) => p.id === 'xcode')?.enabled).toBe(true);
+    await vm.toggle(vm.plugins()!.find((p) => p.id === 'xcode')!);
     expect(vigie.togglePlugin).toHaveBeenLastCalledWith('xcode', false);
     expect(vm.busy()).toBeNull();
   });
@@ -41,6 +41,16 @@ describe('PluginsPageVm', () => {
     expect(toggle).toHaveBeenCalledTimes(1);
     resolve({ ...somePlugins()[0], enabled: false });
     await p;
-    expect(vm.resource.value()?.[0].enabled).toBe(false);
+    expect(vm.plugins()?.[0].enabled).toBe(false);
+  });
+
+  it('liste illisible : un message lisible (daemon injoignable), aucune carte', () => {
+    TestBed.configureTestingModule({
+      providers: [PluginsPageVm, provideVigieServiceMock({
+        pluginsResource: () => fakeResource(undefined, 'error', new HttpErrorResponse({ status: 0 })),
+      })],
+    });
+    const vm = TestBed.inject(PluginsPageVm);
+    expect([vm.loadError(), vm.plugins()]).toEqual(['Le daemon ne répond pas', null]);
   });
 });
