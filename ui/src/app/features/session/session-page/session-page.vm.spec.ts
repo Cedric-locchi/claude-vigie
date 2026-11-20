@@ -450,11 +450,57 @@ describe('SessionPageVm', () => {
     TestBed.tick(); // remet la dernière vue du module pour les autres tests
   });
 
-  it("« Voir dans le journal » : onglet Historique en mode Journal, recherche pré-remplie", async () => {
+  it("« Voir dans le journal » : onglet Historique en mode Journal, recherche pré-remplie ; le même terme redemandé est réappliqué", async () => {
     const { vm } = createVm();
     expect(vm.historyMode()).toBe('timeline');
     await vm.openLog('Bash · npm test');
-    expect([vm.view(), vm.historyMode(), vm.logQuery()]).toEqual(['history', 'log', 'Bash · npm test']);
+    expect([vm.view(), vm.historyMode(), vm.logQuery()]).toEqual(['history', 'log', { q: 'Bash · npm test' }]);
+    const first = vm.logQuery();
+    await vm.openLog('Bash · npm test');
+    expect(vm.logQuery()).toEqual(first);
+    expect(vm.logQuery()).not.toBe(first); // nouvel objet : le journal réapplique le terme
+    vm.showView('workspace');
+    TestBed.tick();
+  });
+
+  it('palette de recherche (?log=) : Historique > Journal filtré, paramètre retiré de l’URL ; confirmation si brouillon Fichiers', async () => {
+    const { vm } = createVm();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const log = signal<string | undefined>(undefined), files = signal(false);
+    vm.connect(signal('s1'), { diff: signal(false), files }, log);
+    TestBed.tick();
+    expect(navigate).not.toHaveBeenCalled();
+
+    log.set('npm test');
+    TestBed.tick();
+    expect(navigate).toHaveBeenCalledWith(['/sessions', 's1'], { replaceUrl: true });
+    await vi.waitFor(() => expect([vm.view(), vm.historyMode(), vm.logQuery()]).toEqual(['history', 'log', { q: 'npm test' }]));
+
+    // Paramètre retiré, puis la vue Fichiers avec un brouillon : changer de vue demande confirmation, refusée = on reste.
+    log.set(undefined);
+    TestBed.tick();
+    await vm.toggleFiles();
+    files.set(true);
+    const ask = vi.mocked(TestBed.inject(ConfirmService).ask);
+    ask.mockResolvedValueOnce(false);
+    log.set('autre');
+    TestBed.tick();
+    await vi.waitFor(() => expect(ask).toHaveBeenCalledWith(DISCARD_EDIT));
+    await new Promise((r) => setTimeout(r));
+    expect([vm.view(), vm.logQuery()]).toEqual(['files', { q: 'npm test' }]);
+    files.set(false);
+    vm.showView('workspace');
+    TestBed.tick();
+  });
+
+  it('palette de recherche (?log=) sur une discussion : paramètre retiré, rien d’autre (pas d’Historique)', async () => {
+    const { vm } = createVm([], undefined, undefined, undefined, aSession({ cwd: '/Users/x/.vigie/chat' }));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    vm.connect(signal('s1'), undefined, signal('npm'));
+    TestBed.tick();
+    await new Promise((r) => setTimeout(r));
+    expect(navigate).toHaveBeenCalledWith(['/sessions', 's1'], { replaceUrl: true });
+    expect([vm.view(), vm.logQuery()]).toEqual(['workspace', null]);
   });
 
   it("bascule sur l'historique, et revient au terminal pour répondre", () => {

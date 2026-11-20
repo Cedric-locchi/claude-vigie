@@ -1,5 +1,10 @@
 // Lecture d'une session pour l'affichage, partagée par le tableau de bord et la sidebar.
-import { Agent, Reason, SessionState, SessionSummary } from './models';
+import { Agent, LogKind, Reason, SessionState, SessionSummary } from './models';
+
+/** Libellé d'une ligne du journal selon son type : onglet Journal, palette de recherche. */
+export const LOG_KIND_LABELS: Record<LogKind, string> = {
+  prompt: 'Ta demande', assistant: 'Message', thinking: 'Réflexion', tool: 'Outil', result: 'Résultat', error: 'Erreur', system: 'Système',
+};
 
 export const STATE_LABELS = { waiting: 'Attend', turn: 'À toi', running: 'En cours', done: 'Terminée' } as const;
 

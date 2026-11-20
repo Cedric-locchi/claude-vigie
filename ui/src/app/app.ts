@@ -1,19 +1,24 @@
 import { Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { HlmBadge } from '@spartan-ng/helm/badge';
+import { HlmButton } from '@spartan-ng/helm/button';
 import { HlmSidebarImports, provideHlmSidebarConfig } from '@spartan-ng/helm/sidebar';
 import { AppVm } from './app.vm';
 import { ConfirmDialogComponent } from './shell/confirm-dialog/confirm-dialog.component';
 import { NotificationCenterComponent } from './shell/notification-center/notification-center.component';
+import { SearchPaletteComponent } from './shell/search-palette/search-palette.component';
 import { SidebarComponent } from './shell/sidebar/sidebar.component';
 import { ToastHostComponent } from './shell/toast-host/toast-host.component';
 
-/** Coque : barre latérale (shell/sidebar), bandeaux d'état du daemon, puis la page courante ; dialogue de confirmation et toasts. */
+/**
+ * Coque : barre latérale (shell/sidebar), bandeaux d'état du daemon, puis la page courante ; dialogue de confirmation, toasts et
+ * palette de recherche dans les sessions (⌘F / Ctrl+F).
+ */
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, HlmBadge, HlmSidebarImports, ConfirmDialogComponent, NotificationCenterComponent, SidebarComponent, ToastHostComponent],
+  imports: [RouterOutlet, HlmBadge, HlmButton, HlmSidebarImports, ConfirmDialogComponent, NotificationCenterComponent, SearchPaletteComponent, SidebarComponent, ToastHostComponent],
   providers: [AppVm, provideHlmSidebarConfig({ sidebarWidth: '18rem', sidebarCookieName: 'vigie_sidebar' })],
-  host: { '(document:keydown.meta.n)': 'vm.newSession($event)' },
+  host: { '(document:keydown.meta.n)': 'vm.newSession($event)', '(window:keydown)': 'vm.searchShortcut($event)' },
   template: `
     <div hlmSidebarWrapper [class.offline]="!!vm.offline()">
       <app-sidebar />
@@ -39,6 +44,20 @@ import { ToastHostComponent } from './shell/toast-host/toast-host.component';
     </div>
     <app-confirm-dialog />
     <app-toast-host />
+    <!-- Palette de recherche dans les sessions : créée à l'ouverture, chargée à part (hors chargement initial, décision 036). -->
+    @if (vm.searchOpen()) {
+      @defer (on immediate) { <app-search-palette (closed)="vm.searchOpen.set(false)" /> }
+      @error {
+        <!-- Chunk introuvable (UI mise à jour onglet ouvert, daemon injoignable) : Angular retient l'échec et chaque réouverture rend ce bloc. -->
+        <dialog open class="palette search-error" aria-label="Recherche indisponible" (document:keydown.escape)="vm.searchOpen.set(false)">
+          <p role="alert">La recherche n'a pas pu se charger : l'interface a peut-être été mise à jour.</p>
+          <div class="actions">
+            <button hlmBtn type="button" variant="ghost" size="sm" (click)="vm.searchOpen.set(false)">Fermer</button>
+            <button hlmBtn type="button" size="sm" (click)="vm.reloadPage()">Recharger</button>
+          </div>
+        </dialog>
+      }
+    }
   `,
   styles: `
     /* Barre latérale détachée (décision 043) posée, comme la zone principale, sur le fond pointillé. */
@@ -71,6 +90,10 @@ import { ToastHostComponent } from './shell/toast-host/toast-host.component';
     /* État figé : sessions et page passent en gris, l'ambre et le bleu ne font plus croire à un état vivant. */
     /* ::ng-deep : la page routée n'hérite pas de l'attribut de style du shell. */
     :host ::ng-deep .offline :is([hlmSidebarContent], main > :not(.mobile-bar, .incompat, .offline-bar, router-outlet)) { filter: grayscale(0.85); transition: filter var(--dur) var(--ease); }
+    /* Palette impossible à charger : même fenêtre flottante (.palette, styles.css), non modale donc posée au-dessus de la coque. */
+    .search-error { z-index: 50; gap: 12px; padding: 14px 16px; }
+    .search-error p { margin: 0; font-size: 13px; color: var(--err); }
+    .search-error .actions { display: flex; justify-content: flex-end; gap: 8px; }
   `,
 })
 export class App {

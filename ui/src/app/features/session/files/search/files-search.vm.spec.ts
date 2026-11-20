@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { provideConfirmServiceMock } from '../../../../core/confirm.service.mock';
 import { SearchResults } from '../../../../core/models';
 import { CLIENT_OS } from '../../../../core/platform';
-import { VigieService } from '../../../../core/vigie.service';
+import { SEARCH_DELAY, VigieService } from '../../../../core/vigie.service';
 import { aSearchResults, provideVigieServiceMock } from '../../../../core/vigie.service.mock';
-import { FilesSearchVm, SEARCH_DELAY, parts } from './files-search.vm';
+import { FilesSearchVm } from './files-search.vm';
 import { SessionFilesVm } from '../session-files.vm';
 
 const CONTENT = 'export const a = 1;\n\n  export const b = 2;\n';
@@ -131,7 +131,7 @@ describe('FilesSearchVm', () => {
     expect(files.goto()).toEqual({ line: 3, offset: CONTENT.indexOf('export const b') });
   });
 
-  it('Ctrl+Shift+F ouvre le tiroir sur Rechercher, sans le refermer ; Ctrl+F reste libre', () => {
+  it('Ctrl+Shift+F ouvre le tiroir sur Rechercher, sans le refermer ; Ctrl+F aussi tant qu’aucun fichier n’est ouvert', () => {
     const { files } = setup();
     const key = (mods: KeyboardEventInit) => new KeyboardEvent('keydown', { key: mods.shiftKey ? 'F' : 'f', ...mods });
     files.narrow.set(true);
@@ -139,13 +139,7 @@ describe('FilesSearchVm', () => {
     expect([files.panelShown(), files.side()]).toEqual([true, 'search']);
     expect(files.shortcut(key({ ctrlKey: true, shiftKey: true }))).toBe('search');
     expect(files.panelShown()).toBe(true);
-    expect(files.shortcut(key({ ctrlKey: true }))).toBeNull();
-  });
-});
-
-describe('parts', () => {
-  it('coupe un long début d’extrait pour garder le texte trouvé visible', () => {
-    const text = 'x'.repeat(100) + 'trouvé' + ' fin';
-    expect(parts({ line: 1, col: 101, text, at: 100 }, 6)).toEqual({ pre: '…' + 'x'.repeat(40), hit: 'trouvé', post: ' fin' });
+    expect(files.shortcut(key({ ctrlKey: true }))).toBe('search');
+    expect(files.shortcut(key({ ctrlKey: true, altKey: true }))).toBeNull();
   });
 });

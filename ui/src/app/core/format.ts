@@ -47,3 +47,12 @@ export function elapsed(ms: number): string {
   return duration(ms);
 }
 
+
+/** Texte gardé avant le texte trouvé : au-delà, l'extrait commence par « … » pour que le surlignage reste visible. */
+const BEFORE = 40;
+
+/** Extrait de recherche sans l'indentation, coupé avant le texte trouvé s'il est loin ; `hit` : `text.slice(at, at + n)`. */
+export function excerpt(text: string, at: number, n: number): { pre: string; hit: string; post: string } {
+  const pre = text.slice(0, at).trimStart();
+  return { pre: pre.length > BEFORE ? '…' + pre.slice(-BEFORE) : pre, hit: text.slice(at, at + n), post: text.slice(at + n) };
+}

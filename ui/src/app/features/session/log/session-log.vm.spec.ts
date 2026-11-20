@@ -3,7 +3,6 @@ import { signal } from '@angular/core';
 import { describe, expect, it, vi } from 'vitest';
 import { LogEntry } from '../../../core/models';
 import { provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { CLIENT_OS, ClientOs } from '../../../core/platform';
 import { SessionLogVm } from './session-log.vm';
 
 const entry = (n: number, extra: Partial<LogEntry> = {}): LogEntry => ({
@@ -21,16 +20,21 @@ function createVm(pages: LogEntry[][]) {
 }
 
 describe('SessionLogVm', () => {
-  it('recherche imposée par la page (« Voir dans le journal »), modifiable ensuite', () => {
+  it('recherche imposée par la page (« Voir dans le journal »), modifiable ensuite ; redemander le même terme le réapplique', () => {
     TestBed.configureTestingModule({ providers: [SessionLogVm, provideVigieServiceMock()] });
     const vm = TestBed.inject(SessionLogVm);
-    const query = signal('Bash · npm test');
+    const query = signal<{ q: string } | null>({ q: 'Bash · npm test' });
     vm.connect(signal('S'), signal(1), query);
     expect(vm.query()).toBe('Bash · npm test');
     vm.setQuery('autre');
     expect(vm.query()).toBe('autre');
-    query.set('Edit · a.ts');
+    query.set({ q: 'Edit · a.ts' });
     expect(vm.query()).toBe('Edit · a.ts');
+    vm.setQuery('');
+    query.set({ q: 'Edit · a.ts' }); // même terme, nouvelle demande
+    expect(vm.query()).toBe('Edit · a.ts');
+    query.set(null);
+    expect(vm.query()).toBe('');
   });
 
   it("charge tout, puis seulement la suite à chaque activité, sans doublon", async () => {
@@ -78,36 +82,5 @@ describe('SessionLogVm', () => {
     expect(vm.hasMore()).toBe(true);
     vm.more();
     expect(vm.visible()).toHaveLength(250);
-  });
-
-  it('recherche : Cmd+F sur mac ; Ctrl+F ailleurs, sauf dans le terminal', () => {
-    const vmFor = (os: ClientOs) => {
-      TestBed.resetTestingModule();
-      TestBed.configureTestingModule({ providers: [SessionLogVm, { provide: CLIENT_OS, useValue: os }, provideVigieServiceMock()] });
-      return TestBed.inject(SessionLogVm);
-    };
-    const term = document.createElement('div');
-    term.className = 'xterm';
-    const textarea = term.appendChild(document.createElement('textarea'));
-    document.body.append(term);
-    const keyIn = (target: EventTarget, init: KeyboardEventInit) => {
-      let ev!: KeyboardEvent;
-      target.addEventListener('keydown', (e) => (ev = e as KeyboardEvent), { once: true });
-      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true, ...init }));
-      return ev;
-    };
-
-    const mac = vmFor('mac');
-    expect(mac.searchKey).toBe('⌘F');
-    expect(mac.isSearchShortcut(keyIn(document.body, { metaKey: true }))).toBe(true);
-    expect(mac.isSearchShortcut(keyIn(textarea, { metaKey: true }))).toBe(true);
-    expect(mac.isSearchShortcut(keyIn(document.body, { ctrlKey: true }))).toBe(false);
-
-    const linux = vmFor('linux');
-    expect(linux.searchKey).toBe('Ctrl+F');
-    expect(linux.isSearchShortcut(keyIn(document.body, { ctrlKey: true }))).toBe(true);
-    expect(linux.isSearchShortcut(keyIn(textarea, { ctrlKey: true }))).toBe(false);
-    expect(linux.isSearchShortcut(keyIn(document.body, { metaKey: true }))).toBe(false);
-    term.remove();
   });
 });

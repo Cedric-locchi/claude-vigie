@@ -1,7 +1,12 @@
-import { Component, ElementRef, afterRenderEffect, computed, effect, input, output, signal, untracked, viewChild } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, afterRenderEffect, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
+import { HlmButton } from '@spartan-ng/helm/button';
+import { HlmInput } from '@spartan-ng/helm/input';
+import { HlmToggle } from '@spartan-ng/helm/toggle';
 import { HlmTooltip } from '@spartan-ng/helm/tooltip';
+import { Icon } from '../../../../core/icon.component';
 import { highlight } from '../../../../core/highlight';
 import { GitMark, indent, lineCount } from './code-editor';
+import { CodeEditorVm } from './code-editor.vm';
 
 /** Au-delà, pas de coloration (highlight.js à chaque frappe deviendrait sensible) : même éditeur, texte brut. */
 export const HIGHLIGHT_MAX = 100_000;
@@ -13,12 +18,33 @@ const LH = 18, PAD = 8;
 /**
  * Éditeur de code sans dépendance : une <textarea> au texte transparent (seul le curseur et la sélection se voient)
  * posée sur un <pre> coloré aux métriques identiques, dans la même cellule de grille : ils défilent ensemble par construction.
- * ponytail: superposition textarea/pre ; CodeMirror si on veut annuler multi-niveaux, recherche intégrée, pliage.
+ * Recherche dans le fichier (`openFind`, logique dans `CodeEditorVm`) : barre au-dessus du code, occurrences surlignées sur un
+ * troisième calque (<pre class="find">, texte transparent, sous le texte coloré), pas la CSS Custom Highlight API (absente de jsdom).
+ * ponytail: superposition textarea/pre ; CodeMirror si on veut annuler multi-niveaux, remplacer, pliage.
  */
 @Component({
   selector: 'app-code-editor',
-  imports: [HlmTooltip],
+  imports: [HlmButton, HlmInput, HlmToggle, HlmTooltip, Icon],
+  providers: [CodeEditorVm],
   template: `
+    @if (vm.open()) {
+      <div class="find-bar" role="search" aria-label="Rechercher dans le fichier" (keydown.escape)="closeFind()">
+        <!-- type=text, pas search : Échap viderait le champ au lieu de fermer la barre. -->
+        <input #find hlmInput class="h-7 max-w-64" type="text" placeholder="Rechercher" aria-label="Texte à chercher dans le fichier" maxlength="200"
+          autocomplete="off" spellcheck="false" [value]="vm.query()" (input)="vm.setQuery($any($event.target).value)" (keydown)="step($event)" />
+        <span class="find-n mono" role="status">@if (vm.count(); as c) {<span aria-hidden="true">{{ c.text }}</span><span class="sr-only">{{ c.label }}</span>}</span>
+        <button hlmToggle size="sm" class="aa" aria-label="Respecter la casse" hlmTooltip="Respecter la casse" [showDelay]="300" [state]="vm.matchCase() ? 'on' : 'off'" (stateChange)="vm.toggleCase()">Aa</button>
+        <button hlmBtn variant="ghost" size="icon-sm" aria-label="Résultat précédent" hlmTooltip="Résultat précédent (Maj+Entrée)" [showDelay]="300" [disabled]="!vm.matches().length" (click)="vm.prev()">
+          <svg appIcon="chevron" class="up"></svg>
+        </button>
+        <button hlmBtn variant="ghost" size="icon-sm" aria-label="Résultat suivant" hlmTooltip="Résultat suivant (Entrée)" [showDelay]="300" [disabled]="!vm.matches().length" (click)="vm.next()">
+          <svg appIcon="chevron" class="down"></svg>
+        </button>
+        <button hlmBtn variant="ghost" size="icon-sm" aria-label="Fermer la recherche" hlmTooltip="Fermer (Échap)" [showDelay]="300" (click)="closeFind()">
+          <svg appIcon="close"></svg>
+        </button>
+      </div>
+    }
     <div class="scroll" #scroll>
       <div class="sheet" [class.wrap]="wrap()" [style.--digits]="digits()">
         <!-- Retour à la ligne : une ligne du fichier peut occuper plusieurs lignes à l'écran, la gouttière et la ligne courante
@@ -33,6 +59,10 @@ const LH = 18, PAD = 8;
           </div>
         }
         <div class="stack">
+          <!-- Calque de surlignage, sous le texte : @for sur une ligne, sans blanc (un <pre> garde les blancs du gabarit). -->
+          @if (vm.parts().length) {
+            <pre class="find" aria-hidden="true">@for (p of vm.parts(); track $index) {@if (p.hit) {<mark [class.cur]="p.cur">{{ p.text }}</mark>} @else {{{ p.text }}}}</pre>
+          }
           @if (html(); as h) {
             <pre class="code hl" aria-hidden="true" [innerHTML]="h"></pre>
           } @else {
@@ -48,8 +78,14 @@ const LH = 18, PAD = 8;
     <p class="sr-only" [id]="helpId">{{ help() }}</p>
   `,
   styles: `
-    :host { flex: 1; min-height: 0; display: flex; }
-    .scroll { flex: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+    :host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .find-bar { flex: none; display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+    .find-n { min-width: 8ch; padding: 0 6px; font-size: 11px; color: var(--faint); white-space: nowrap; }
+    .aa { font: 600 12px / 1 var(--mono); }
+    .up { rotate: -90deg; }
+    .down { rotate: 90deg; }
+    .find-bar svg { width: 16px; height: 16px; }
+    .scroll { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
     /* Ligne qui dépasse à droite : ombre fixée au bord (scroll), masquée par un cache collé à la fin du contenu (local). */
     .scroll {
       background:
@@ -84,6 +120,10 @@ const LH = 18, PAD = 8;
     }
     .wrap .stack > * { white-space: pre-wrap; overflow-wrap: anywhere; }
     .code { color: var(--text-2); pointer-events: none; }
+    /* Occurrences : comme la vue Rechercher (lavé + trait de la principale) ; la courante cerclée. Marge : la gouttière collante ne la cache pas. */
+    .find { color: transparent; pointer-events: none; }
+    mark { border-radius: 2px; background: var(--brand-bg); color: transparent; box-shadow: inset 0 -1px 0 var(--brand); scroll-margin: 0 24px 0 calc(var(--digits) * 1ch + 40px); }
+    mark.cur { outline: 1px solid var(--brand); }
     textarea { width: 100%; height: 100%; resize: none; overflow: hidden; background: transparent; color: transparent; caret-color: var(--text); outline: none; }
     textarea::selection { color: transparent; background: color-mix(in oklch, var(--brand) 35%, transparent); }
     /* Coloration : jetons du thème, clair comme sombre. */
@@ -119,6 +159,10 @@ export class CodeEditorComponent {
   readonly edit = output<string>();
   readonly caret = output<number>();
 
+  protected readonly vm = inject(CodeEditorVm);
+  private readonly injector = inject(Injector);
+  private readonly findInput = viewChild<ElementRef<HTMLInputElement>>('find');
+
   protected readonly helpId = `code-help-${uid++}`;
   private readonly scroll = viewChild.required<ElementRef<HTMLElement>>('scroll');
   private readonly ta = viewChild.required<ElementRef<HTMLTextAreaElement>>('ta');
@@ -135,6 +179,7 @@ export class CodeEditorComponent {
   private escaped = false;
 
   constructor() {
+    this.vm.connect(this.value);
     effect((onCleanup) => {
       const v = this.value();
       if (typeof requestAnimationFrame !== 'function') return this.painted.set(v);
@@ -159,6 +204,33 @@ export class CodeEditorComponent {
         el.scrollLeft = 0;
       });
     });
+    // Recherche : après rendu du calque, le résultat courant est amené à l'écran (saisie, suivant, précédent ; pas une frappe dans le code).
+    afterRenderEffect(() => {
+      this.vm.moved();
+      untracked(() => this.scroll().nativeElement.querySelector('mark.cur')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }));
+    });
+  }
+
+  /** ⌘F / Ctrl+F : barre de recherche, avec la sélection du code pour terme si elle tient sur une ligne ; focus et saisie sélectionnée. */
+  openFind(): void {
+    const ta = this.ta().nativeElement, sel = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+    this.vm.start(sel.includes('\n') ? '' : sel, ta.selectionStart);
+    afterNextRender(() => { const f = this.findInput()?.nativeElement; f?.focus(); f?.select(); }, { injector: this.injector });
+  }
+
+  /** Entrée : résultat suivant ; Maj+Entrée : précédent (keydown.enter d'Angular refuse Maj). */
+  protected step(e: KeyboardEvent): void {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (e.shiftKey) this.vm.prev(); else this.vm.next();
+  }
+
+  /** Échap : la barre se ferme, le résultat courant est sélectionné dans le code, qui reprend le focus. */
+  protected closeFind(): void {
+    const m = this.vm.close(), ta = this.ta().nativeElement;
+    ta.focus();
+    if (m) ta.setSelectionRange(m.from, m.to);
+    this.caret.emit(ta.selectionStart);
   }
 
   protected changed(ta: HTMLTextAreaElement): void {

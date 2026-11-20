@@ -168,6 +168,18 @@ export function createTransport({ store, port, uiDir, home, platform, chatDir, h
     if (!r.success) json(res, 400, { error: r.error.issues[0]?.message ?? 'Requête invalide' });
     return r.success ? r.data : null;
   }
+  /** Paramètres `q` et `case=1` d'une recherche (SearchQuery), ou null après avoir répondu 400. */
+  const searchQuery = (url, res) => valid(SearchQuery, { q: url.searchParams.get('q'), case: url.searchParams.get('case') === '1' }, res);
+
+  /**
+   * Signal annulé quand la requête est abandonnée (onglet fermé, nouvelle frappe) : `close` suit aussi une réponse envoyée,
+   * seule une réponse pas finie annule.
+   */
+  function abortOnClose(res) {
+    const ac = new AbortController();
+    res.on('close', () => { if (!res.writableFinished) ac.abort(); });
+    return ac.signal;
+  }
 
   async function api(req, res, url) {
     const m = (re) => url.pathname.match(re);
@@ -220,12 +232,17 @@ export function createTransport({ store, port, uiDir, home, platform, chatDir, h
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/files\/search$/))) {
       const cwd = sessionCwd(r[1], res);
       if (!cwd) return;
-      const q = valid(SearchQuery, { q: url.searchParams.get('q'), case: url.searchParams.get('case') === '1' }, res);
+      const q = searchQuery(url, res);
       if (!q) return;
-      // Onglet fermé ou nouvelle frappe : la requête est abandonnée, la recherche s'arrête au fichier suivant.
-      const ac = new AbortController();
-      res.on('close', () => ac.abort());
-      try { return json(res, 200, await searchProjectFiles(cwd, q.q, { matchCase: q.case, signal: ac.signal })); } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
+      // Requête abandonnée : la recherche s'arrête au fichier suivant.
+      try { return json(res, 200, await searchProjectFiles(cwd, q.q, { matchCase: q.case, signal: abortOnClose(res) })); } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
+    }
+    // Recherche dans les sessions du snapshot (palette ⌘F) : titres et journaux, par le cache du journal du store.
+    if (req.method === 'GET' && url.pathname === '/api/search') {
+      const q = searchQuery(url, res);
+      if (!q) return;
+      const out = await store.searchSessions(q.q, termList(), { matchCase: q.case, signal: abortOnClose(res) });
+      return out && json(res, 200, out); // null : requête abandonnée, plus personne à qui répondre
     }
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/log$/))) {
       const since = url.searchParams.get('since');
@@ -286,11 +303,8 @@ export function createTransport({ store, port, uiDir, home, platform, chatDir, h
       if (!cwd) return;
       const b = valid(PluginCallBody, body, res);
       if (!b) return;
-      // Onglet fermé ou requête abandonnée : le signal du handler est annulé, son outil (vigie.exec) tué. `close` suit aussi
-      // une réponse envoyée : seul un abandon (réponse pas finie) annule.
-      const ac = new AbortController();
-      res.on('close', () => { if (!res.writableFinished) ac.abort(); });
-      try { return json(res, 200, await plugins.call(r[2], r[3], cwd, b.params, { signal: ac.signal })); } catch (e) { return pluginError(res, e); }
+      // Requête abandonnée : le signal du handler est annulé, son outil (vigie.exec) tué.
+      try { return json(res, 200, await plugins.call(r[2], r[3], cwd, b.params, { signal: abortOnClose(res) })); } catch (e) { return pluginError(res, e); }
     }
     if ((r = m(/^\/api\/sessions\/([\w-]+)\/plugins\/([a-z0-9-]+)\/actions\/([\w-]+)$/))) {
       const cwd = sessionCwd(r[1], res);
@@ -367,9 +381,7 @@ export function createTransport({ store, port, uiDir, home, platform, chatDir, h
           return;
         }
         // Onglet fermé pendant la rédaction (claude -p, plusieurs secondes) : claude est tué.
-        const ac = new AbortController();
-        res.on('close', () => { if (!res.writableFinished) ac.abort(); });
-        return json(res, 200, { message: await suggestCommitMessage(cwd, cleanEnv, { workDir: commitDir, signal: ac.signal }) });
+        return json(res, 200, { message: await suggestCommitMessage(cwd, cleanEnv, { workDir: commitDir, signal: abortOnClose(res) }) });
       } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
     }
     if ((r = m(/^\/api\/sessions\/([\w-]+)\/files\/write$/))) {

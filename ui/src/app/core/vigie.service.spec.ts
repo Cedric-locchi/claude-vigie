@@ -100,6 +100,34 @@ describe('VigieService', () => {
     await expect(cut).rejects.toBeDefined();
   });
 
+  it('recherche dans les sessions : terme en paramètre, réponse validée, annulation qui coupe la requête', async () => {
+    const service = TestBed.inject(VigieService);
+    const http = TestBed.inject(HttpTestingController);
+    const found = { sessions: [{ id: 's1', count: 0, hits: [] }], truncated: false };
+    const done = service.searchSessions('npm test');
+    const req = http.expectOne((r) => r.url === '/api/search');
+    expect(req.request.params.get('q')).toBe('npm test');
+    expect(req.request.params.has('case')).toBe(false);
+    req.flush(found);
+    await expect(done).resolves.toEqual(found);
+
+    const bad = service.searchSessions('npm');
+    http.expectOne((r) => r.url === '/api/search').flush({ sessions: [{ id: 's1', count: 1, hits: [{ id: 'x', at: 'non' }] }], truncated: false });
+    await expect(bad).rejects.toThrow(OUTDATED);
+
+    // Daemon pas redémarré (route absente) : même message qu'une réponse hors contrat.
+    const old = service.searchSessions('npm');
+    http.expectOne((r) => r.url === '/api/search').flush({ error: 'Not found' }, { status: 404, statusText: 'Not Found' });
+    await expect(old).rejects.toThrow(OUTDATED);
+
+    const ctrl = new AbortController();
+    const cut = service.searchSessions('lent', ctrl.signal);
+    const req2 = http.expectOne((r) => r.url === '/api/search');
+    ctrl.abort();
+    expect(req2.cancelled).toBe(true);
+    await expect(cut).rejects.toBeDefined();
+  });
+
   it("message d'erreur : corps du daemon, daemon injoignable, réponse hors contrat, sinon le repli", () => {
     // Affiché seul : majuscule ; inséré dans une phrase (`inline`) : tel quel.
     expect(daemonError(new HttpErrorResponse({ status: 404, error: { error: 'terminal inconnu' } }), 'repli')).toBe('Terminal inconnu');

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { applyRecord, batchWatch, deriveState, newTrack, readTrack, trackTokens } from './ingest.mjs';
+import { applyRecord, batchWatch, deriveState, excerpt, newTrack, readTrack, trackTokens } from './ingest.mjs';
 import { buildTrace } from './trace.mjs';
 import { SessionTrace } from '../contract/index.mjs';
 import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
@@ -174,4 +174,17 @@ test('batchWatch : un lot 250 ms après le premier événement, noms accumulés,
   on('change', Buffer.from('b.jsonl')); // fs.watch peut rendre un Buffer
   t.mock.timers.tick(250);
   assert.deepEqual(lots[1], { files: [path.join(dir, 'b.jsonl')], full: true });
+});
+
+test('excerpt : ≤ 200 caractères autour du terme, sans déborder de la ligne', () => {
+  const found = (line, q) => excerpt(line, line.indexOf(q), q.length);
+  assert.deepEqual(found('un mot court', 'mot'), { text: 'un mot court', at: 3 }); // ligne courte : entière
+  const start = found('CIBLE' + 'z'.repeat(500), 'CIBLE');
+  assert.deepEqual([start.text, start.at], ['CIBLE' + 'z'.repeat(195), 0]); // début : pas d'avant
+  const end = found('a'.repeat(500) + 'CIBLE', 'CIBLE');
+  assert.deepEqual([end.text, end.at], ['a'.repeat(195) + 'CIBLE', 195]); // fin : la ligne finit l'extrait
+  const mid = found('a'.repeat(500) + 'CIBLE' + 'z'.repeat(500), 'CIBLE');
+  assert.equal(mid.text.length, 200);
+  assert.equal(mid.at, 97); // centré : (200 − 5) >> 1 caractères avant
+  assert.equal(mid.text.slice(mid.at, mid.at + 5), 'CIBLE');
 });

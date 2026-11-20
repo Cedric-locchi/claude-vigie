@@ -19,7 +19,7 @@ const NARROW = '(max-width: 820px)';
 /**
  * Vue Fichiers de la session, en trois panneaux séparés : rail d'activité en pilule (Projet, Rechercher, Claude), fenêtre d'outil
  * (en-tête de 32 px et ses boutons ; redimensionnable, masquable, tiroir sur écran étroit), éditeur (onglets, code, barre d'état) ;
- * ⌘P ouvre la fenêtre flottante « Aller au fichier ».
+ * ⌘P ouvre la fenêtre flottante « Aller au fichier », ⌘F la recherche dans le fichier ouvert.
  */
 @Component({
   selector: 'app-session-files',
@@ -89,6 +89,7 @@ const NARROW = '(max-width: 820px)';
             <p class="muted">Choisis-le dans l’arbre ou cherche-le : tu vois et retouches ici ce que Claude fait au code.</p>
             <dl class="keys">
               <dt>Aller au fichier</dt><dd><kbd class="mono">{{ vm.keys.mod }}P</kbd></dd>
+              <dt>Chercher dans le fichier</dt><dd><kbd class="mono">{{ vm.keys.mod }}F</kbd></dd>
               <dt>Chercher dans le contenu</dt><dd><kbd class="mono">{{ vm.keys.mod }}{{ vm.keys.shift }}F</kbd></dd>
               <dt>Enregistrer</dt><dd><kbd class="mono">{{ vm.keys.mod }}S</kbd></dd>
               <dt>Quitter la vue Fichiers</dt><dd><kbd class="mono">{{ vm.keys.mod }}{{ vm.keys.shift }}E</kbd></dd>
@@ -179,6 +180,7 @@ export class SessionFilesComponent {
   private readonly finder = viewChild.required(FilesFinderComponent);
   private readonly project = viewChild(FilesProjectComponent);
   private readonly searchView = viewChild(FilesSearchComponent);
+  private readonly editor = viewChild(CodeEditorComponent);
   protected readonly title = (v: string): string => VIEWS.find((x) => x.id === v)!.label;
 
   constructor() {
@@ -197,6 +199,8 @@ export class SessionFilesComponent {
     const r = this.vm.shortcut(e);
     if (r === 'quick') this.finder().open();
     else if (r === 'search') this.focusSearch();
+    // Après rendu : un aperçu Markdown vient peut-être de laisser place à l'éditeur.
+    else if (r === 'find') afterNextRender(() => this.editor()?.openFind(), { injector: this.injector });
   }
 
   /** Masquer (bouton ou Échap dans le tiroir) : le focus revient au bouton de la vue dans la barre d'activité. */

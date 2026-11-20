@@ -1,4 +1,4 @@
-import { DOCUMENT, Injectable, Signal, computed, effect, inject, linkedSignal, signal } from '@angular/core';
+import { DOCUMENT, Injectable, Signal, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
 import { Router } from '@angular/router';
 import { AttentionService, KEYS } from '../../../core/attention.service';
 import { ConfirmService } from '../../../core/confirm.service';
@@ -179,11 +179,29 @@ export class SessionPageVm {
     this.agentsOpen.update((open) => !open);
   }
 
-  /** `drafts` : saisie non enregistrée des onglets Diff et Fichiers (absente d'une page sans onglet d'édition, specs comprises). */
-  connect(id: Signal<string>, drafts?: Drafts): void {
+  /**
+   * `drafts` : saisie non enregistrée des onglets Diff et Fichiers (absente d'une page sans onglet d'édition, specs comprises) ;
+   * `log` : paramètre `?log=` de l'URL (palette de recherche dans les sessions).
+   */
+  connect(id: Signal<string>, drafts?: Drafts, log?: Signal<string | undefined>): void {
     this.source.set(id);
     this.drafts.set(drafts ?? null);
+    this.log.set(log ?? null);
   }
+
+  private readonly log = signal<Signal<string | undefined> | null>(null);
+  /**
+   * Palette de recherche (`?log=terme`, décision 049) : le paramètre est retiré de l'URL (un retour en arrière ne rouvre pas le Journal),
+   * puis Historique > Journal s'ouvre filtré sur le terme. Ne suit que le paramètre.
+   */
+  private readonly openLogFromUrl = effect(() => {
+    const q = this.log()?.();
+    if (!q) return;
+    untracked(() => {
+      void this.router.navigate(['/sessions', this.id()], { replaceUrl: true });
+      void this.openLog(q);
+    });
+  });
 
   /** Diff : l'onglet reste monté tant qu'une saisie y existe, on peut changer de vue sans la perdre. */
   readonly diffUnsaved = computed(() => this.drafts()?.diff() ?? false);
@@ -248,12 +266,16 @@ export class SessionPageVm {
     this.historyMode.set(mode);
   }
 
-  /** Recherche pré-remplie du journal (« Voir dans le journal » depuis la chronologie). */
-  readonly logQuery = signal('');
+  /**
+   * Recherche pré-remplie du journal (« Voir dans le journal » depuis la chronologie ou Fichiers, palette de recherche) ;
+   * un objet par demande : le même terme redemandé est réappliqué même si on l'a effacé entre-temps.
+   */
+  readonly logQuery = signal<{ q: string } | null>(null);
 
+  /** Historique > Journal filtré sur `query` ; rien pour une discussion (pas d'onglet Historique). */
   async openLog(query: string): Promise<void> {
-    if (!(await this.showView('history'))) return;
-    this.logQuery.set(query);
+    if (this.isChat() || !(await this.showView('history'))) return;
+    this.logQuery.set({ q: query });
     this.historyMode.set('log');
   }
 

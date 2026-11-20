@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gitMarks, indent, lineCol, lineCount, lineOffset } from './code-editor';
+import { FIND_MAX, findAll, findParts, gitMarks, indent, lineCol, lineCount, lineOffset } from './code-editor';
 
 const apply = (text: string, e: NonNullable<ReturnType<typeof indent>>) => text.slice(0, e.from) + e.insert + text.slice(e.to);
 
@@ -88,5 +88,40 @@ describe('indent', () => {
     const c = indent('  abc', 4, 4, true)!; // curseur seul
     expect(apply('  abc', c)).toBe('abc');
     expect([c.start, c.end]).toEqual([2, 2]);
+  });
+});
+
+describe('findAll', () => {
+  it('texte littéral, insensible à la casse sauf matchCase', () => {
+    expect(findAll('Export export EXPORT', 'export', false)).toEqual([{ from: 0, to: 6 }, { from: 7, to: 13 }, { from: 14, to: 20 }]);
+    expect(findAll('Export export EXPORT', 'export', true)).toEqual([{ from: 7, to: 13 }]);
+    expect(findAll('a.b axb (x) x', 'a.b', false)).toEqual([{ from: 0, to: 3 }]); // pas une expression régulière
+    expect(findAll('a.b axb (x) x', '(x)', false)).toEqual([{ from: 8, to: 11 }]);
+    expect(findAll('$1 \\d [a]', '\\d', false)).toEqual([{ from: 3, to: 5 }]);
+  });
+
+  it('sans chevauchement, rien pour une saisie vide, plafonné', () => {
+    expect(findAll('aaa', 'aa', false)).toEqual([{ from: 0, to: 2 }]);
+    expect(findAll('abc', '', false)).toEqual([]);
+    expect(findAll('x'.repeat(FIND_MAX + 5), 'x', false)).toHaveLength(FIND_MAX);
+    expect(findAll('x'.repeat(10), 'x', false, 3)).toHaveLength(3);
+  });
+
+  it('Unicode : accents et casse, emoji', () => {
+    expect(findAll('Été, été, ETE', 'été', false)).toEqual([{ from: 0, to: 3 }, { from: 5, to: 8 }]);
+    expect(findAll('a 😀 b 😀', '😀', true)).toEqual([{ from: 2, to: 4 }, { from: 7, to: 9 }]);
+  });
+});
+
+describe('findParts', () => {
+  it('découpe autour des occurrences, la courante marquée ; la concaténation redonne le texte', () => {
+    const text = 'un deux un trois un';
+    const parts = findParts(text, findAll(text, 'un', false), 1);
+    expect(parts).toEqual([
+      { text: 'un', hit: true, cur: false }, { text: ' deux ', hit: false, cur: false }, { text: 'un', hit: true, cur: true },
+      { text: ' trois ', hit: false, cur: false }, { text: 'un', hit: true, cur: false },
+    ]);
+    expect(parts.map((p) => p.text).join('')).toBe(text);
+    expect(findParts('abc', [], -1)).toEqual([{ text: 'abc', hit: false, cur: false }]);
   });
 });

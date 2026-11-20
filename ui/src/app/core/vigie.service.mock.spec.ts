@@ -1,6 +1,6 @@
 import * as C from '@vigie/contract';
 import { TestBed } from '@angular/core/testing';
-import { aConfig, aGitDiff, aProjectFiles, aSessionUsage, fakeResource, aSearchResults, PROJECTS, aSession, aSessionCost, aSettings, aSnapshot, aTerminal, aUsageRows, anAgent, anUsage, provideVigieServiceMock, somePlugins } from './vigie.service.mock';
+import { aConfig, aGitDiff, aProjectFiles, aSessionUsage, fakeResource, aSearchResults, aSessionSearch, PROJECTS, aSession, aSessionCost, aSettings, aSnapshot, aTerminal, aUsageRows, anAgent, anUsage, provideVigieServiceMock, somePlugins } from './vigie.service.mock';
 import { VigieService } from './vigie.service';
 
 // Les fabriques de test suivent le contrat : un mock qui diverge du daemon ferait passer des tests à tort.
@@ -23,6 +23,7 @@ describe('mocks du daemon', () => {
     expect(() => C.SessionCost.parse(aSessionCost())).not.toThrow();
     expect(() => C.Projects.parse(PROJECTS)).not.toThrow();
     expect(() => C.SearchResults.parse(aSearchResults({ truncated: true }))).not.toThrow();
+    expect(() => C.SessionSearch.parse(aSessionSearch())).not.toThrow();
     expect(() => C.GitDiff.parse(aGitDiff({ files: [{ path: 'a.ts', status: 'M', staged: false, unstaged: true, added: 1, removed: 0, patch: '', truncated: false }] }))).not.toThrow();
   });
 

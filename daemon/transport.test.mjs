@@ -86,7 +86,7 @@ test('POST : origine étrangère 403, corps non JSON 415', async () => {
 test('GET /api/* : Sec-Fetch-Site étranger refusé même sans Origin (<img>, fetch no-cors) ; git et git/file contrôlent l’origine ; erreurs conformes', async () => {
   const { ErrorBody } = await import('../contract/index.mjs');
   const { server } = fixture();
-  for (const url of ['/api/snapshot', '/api/settings', '/api/sessions/S', '/api/sessions/S/git', '/api/sessions/S/git/file?path=a.txt', '/api/sessions/S/log', '/api/usage']) {
+  for (const url of ['/api/snapshot', '/api/settings', '/api/sessions/S', '/api/sessions/S/git', '/api/sessions/S/git/file?path=a.txt', '/api/sessions/S/log', '/api/usage', '/api/search?q=ab']) {
     for (const site of ['cross-site', 'same-site']) {
       const r = await request(server, 'GET', url, { headers: { 'sec-fetch-site': site } });
       assert.equal(r.status, 403, `${url} ${site}`);
@@ -466,6 +466,35 @@ test('recherche dans l’explorateur : conforme, origine, session inconnue, q in
   assert.deepEqual([none.status, JSON.parse(none.body)], [400, { error: 'Indique le texte à chercher' }]);
   const one = await get('/api/sessions/S/files/search?q=a');
   assert.deepEqual([one.status, JSON.parse(one.body)], [400, { error: 'Au moins 2 caractères' }]);
+});
+
+test('/api/search : conforme, q invalide 400 ErrorBody ; requête abandonnée → signal annulé, aucune réponse écrite', async () => {
+  const { SessionSearch, ErrorBody } = await import('../contract/index.mjs');
+  const { server, store } = fixture();
+  const get = (url, opts) => request(server, 'GET', url, opts);
+  const r = await get('/api/search?q=ok');
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.deepStrictEqual(SessionSearch.parse(j), j);
+  assert.ok(j.sessions.some((s) => s.id === 'S' && s.count === 1));
+  for (const [url, error] of [['/api/search?q=o', 'Au moins 2 caractères'], ['/api/search', 'Indique le texte à chercher'], [`/api/search?q=${'a'.repeat(201)}`, '200 caractères au plus']]) {
+    const bad = await get(url);
+    assert.deepStrictEqual([bad.status, ErrorBody.parse(JSON.parse(bad.body))], [400, { error }], url);
+  }
+  // Abandon : le store voit son signal annulé et rend null ; le transport n'écrit rien.
+  let signal;
+  const seen = new Promise((resolve) => {
+    store.searchSessions = async (_q, _terms, o) => {
+      signal = o.signal;
+      await new Promise((done) => o.signal.addEventListener('abort', done));
+      resolve();
+      return null;
+    };
+  });
+  const pending = get('/api/search?q=ab', { abortAfter: 20 });
+  await seen;
+  const written = await Promise.race([pending.then(() => true), new Promise((done) => setTimeout(() => done(false), 50))]);
+  assert.deepEqual([signal.aborted, written], [true, false]);
 });
 
 test('POST …/terminals : seul le corps vide passe ; champs d’avant les plugins (miseTask…) refusés avant tout PTY', async () => {

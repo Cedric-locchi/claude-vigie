@@ -32,7 +32,7 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [024](2026-11-13-024-statut-claude.md) | Statut de Claude (status.claude.com) : seule requête sortante | Acceptée (complétée par 046 : deuxième exception, `claude -p` sur clic) | 2026-11-13 |
 | [025](2026-11-13-025-historique-de-consommation.md) | Historique de consommation conservé dans `~/.vigie/usage.json` | Acceptée | 2026-11-13 |
 | [026](2026-11-13-026-budget-bundle-740k.md) | Budget du chargement initial porté à 740 kB | Remplacée par 036 | 2026-11-13 |
-| [027](2026-11-13-027-onglet-fichiers-facon-ide.md) | Onglet Fichiers façon IDE léger, éditeur coloré sans dépendance (remplace la limite « textarea brute » de la 023) | Acceptée | 2026-11-13 |
+| [027](2026-11-13-027-onglet-fichiers-facon-ide.md) | Onglet Fichiers façon IDE léger, éditeur coloré sans dépendance (remplace la limite « textarea brute » de la 023) | Acceptée (limite « pas de recherche intégrée » levée par 049) | 2026-11-13 |
 | [028](2026-11-13-028-graphique-heros-consommation.md) | Un graphique principal pour la page Consommation | Acceptée | 2026-11-13 |
 | [029](2026-11-13-029-selecteur-projets.md) | Sélecteur de projet : GET /api/projects remplace /api/dirs | Acceptée | 2026-11-13 |
 | [030](2026-11-13-030-onglet-xcode.md) | Onglet Xcode : frontière de plateforme par l’outil, DerivedData sous ~/.vigie/xcode | Acceptée (onglet devenu plugin, DerivedData remplacé par 035) | 2026-11-13 |
@@ -54,6 +54,7 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [046](2026-11-19-046-suggestion-de-commit-par-claude.md) | Suggestion de message de commit par `claude -p` : deuxième exception au « local uniquement », sur geste explicite seulement | Acceptée | 2026-11-19 |
 | [047](2026-11-19-047-agent-doc-auditor.md) | Agent `doc-auditor` en lecture seule : la doc vérifiée contre le code en fin de toute session qui modifie le code (complète la 002 et la 045) | Acceptée | 2026-11-19 |
 | [048](2026-11-19-048-multilangue-transloco.md) | Multilangue de l'UI : Transloco, français (source) et anglais, langue choisie dans Réglages ; traduction page par page, Réglages d'abord | Acceptée | 2026-11-19 |
+| [049](2026-11-20-049-recherche-dans-les-sessions.md) | Recherche : ⌘F dans le fichier ouvert (barre, surlignage), ailleurs palette qui cherche dans toutes les sessions du snapshot (`GET /api/search`, cache du journal porté à 200 pistes ; lève la limite « pas de recherche intégrée » de la 027) | Acceptée | 2026-11-20 |
 
 ## En attente de ton choix
 

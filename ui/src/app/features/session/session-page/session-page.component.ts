@@ -380,6 +380,8 @@ import { PageComponent } from '../../../shell/page/page.component';
 })
 export class SessionPageComponent {
   readonly id = input.required<string>();
+  /** `?log=terme` (palette de recherche dans les sessions) : ouvre le Journal filtré sur le terme, puis quitte l'URL. */
+  readonly log = input<string>();
   /** Public : lu par le garde de sortie de la route (discussion). */
   readonly vm = inject(SessionPageVm);
   protected readonly f = f;
@@ -388,6 +390,6 @@ export class SessionPageComponent {
   private readonly filesView = viewChild(SessionFilesComponent);
 
   constructor() {
-    this.vm.connect(this.id, { diff: computed(() => !!this.diffView()?.unsaved()), files: computed(() => !!this.filesView()?.unsaved()) });
+    this.vm.connect(this.id, { diff: computed(() => !!this.diffView()?.unsaved()), files: computed(() => { const f = this.filesView(); return !!f && f.sessionId() === this.vm.id() && f.unsaved(); }) }, this.log);
   }
 }

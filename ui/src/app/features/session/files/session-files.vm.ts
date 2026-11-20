@@ -452,8 +452,8 @@ export class SessionFilesVm {
 
   /** Aide clavier de l'éditeur (aria-describedby). */
   readonly help = computed(() => (this.editing()
-    ? `Tab insère deux espaces, Maj+Tab les retire. Échap puis Tab pour sortir de l’éditeur. ${this.keys.mod}S enregistre.`
-    : 'Lecture seule : bouton Éditer pour modifier.'));
+    ? `Tab insère deux espaces, Maj+Tab les retire. Échap puis Tab pour sortir de l’éditeur. ${this.keys.mod}S enregistre. ${this.keys.mod}F cherche dans le fichier.`
+    : `Lecture seule : bouton Éditer pour modifier. ${this.keys.mod}F cherche dans le fichier.`));
 
   /** Markdown : aperçu mis en forme par défaut, source sur demande (remis à l'aperçu à chaque onglet) ; en édition, toujours la source. */
   readonly showSource = linkedSignal<string | null, boolean>({ source: this.activePath, computation: () => false });
@@ -556,13 +556,20 @@ export class SessionFilesVm {
   }
 
   /**
-   * Raccourcis de la vue (⌘/Ctrl + S, P, Maj+F) ; 'quick' : le composant ouvre la fenêtre « Aller au fichier » ;
-   * 'search' : la vue Rechercher est affichée, le composant met le focus dans son champ.
+   * Raccourcis de la vue (⌘/Ctrl + S, P, F, Maj+F) ; 'quick' : le composant ouvre la fenêtre « Aller au fichier » ;
+   * 'search' : la vue Rechercher est affichée, le composant met le focus dans son champ ; 'find' : le composant ouvre la
+   * recherche dans le fichier (un aperçu Markdown passe d'abord à la source).
    */
-  shortcut(e: KeyboardEvent): 'quick' | 'search' | null {
-    // Pas de conflit : ⌘F / Ctrl+F (Historique) refuse Maj, et la vue n'existe que quand elle est affichée.
-    if (isShortcut(e, 'f', this.mac, true)) {
+  shortcut(e: KeyboardEvent): 'quick' | 'search' | 'find' | null {
+    // ⌘F / Ctrl+F est à la vue tant qu'elle est affichée (elle n'existe qu'à l'écran) : preventDefault, la palette de recherche
+    // dans les sessions (AppVm, écouteur sur window, après document) le voit déjà pris. Sans fichier lisible : comme ⌘⇧F.
+    const find = isShortcut(e, 'f', this.mac);
+    if (find || isShortcut(e, 'f', this.mac, true)) {
       e.preventDefault();
+      if (find && this.active()?.body) {
+        if (this.markdown()) this.showSource.set(true);
+        return 'find';
+      }
       this.showSide('search');
       return 'search';
     }

@@ -178,6 +178,15 @@ export function readTrack(t) {
   return readNewLines(t, (o) => applyRecord(t, o), () => Object.assign(t, newTrack(t.file)));
 }
 
+/**
+ * Extrait d'au plus `size` caractères de `line`, centré sur le terme trouvé en `index` (longueur `length`), sans déborder de la
+ * ligne : `{ text, at }`, `at` = position du terme dans `text`. Partagé par la recherche dans les fichiers et dans les sessions.
+ */
+export function excerpt(line, index, length, size = 200) {
+  const start = Math.max(0, Math.min(index - ((size - length) >> 1), line.length - size));
+  return { text: line.slice(start, start + size), at: index - start };
+}
+
 // ── Journal ──────────────────────────────────────────────────────────────
 const LOG_MAX = 4000;
 const SYSTEM_TITLES = {

@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { checkFile, fail, git, MAX_PATCH, repoRoot, replaceFile, sha256 } from './git.mjs';
+import { excerpt } from './ingest.mjs';
 import { isInside } from './paths.mjs';
 
 const MAX_TREE = 20_000;
@@ -78,16 +79,13 @@ export function writeProjectFile(cwd, rel, content, hash, home) {
   return replaceFile(() => projectFile(cwd, rel), content, hash, home);
 }
 
-const EXCERPT = 200;
-
 /** Lignes de `content` contenant `re` : première occurrence par ligne, extrait centré sur la colonne. */
 function matchLines(content, re) {
   const out = [];
   content.split(/\r?\n/).forEach((l, n) => {
     const m = re.exec(l);
     if (!m) return;
-    const start = Math.max(0, Math.min(m.index - ((EXCERPT - m[0].length) >> 1), l.length - EXCERPT));
-    out.push({ line: n + 1, col: m.index + 1, text: l.slice(start, start + EXCERPT), at: m.index - start });
+    out.push({ line: n + 1, col: m.index + 1, ...excerpt(l, m.index, m[0].length) });
   });
   return out;
 }
