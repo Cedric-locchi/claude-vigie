@@ -49,6 +49,7 @@ export function newTrack(file) {
     tools: new Map(), // tool_use_id → {name, kind, label, start, end, error}
     pending: null, // dernier tool_use sans résultat
     lastError: null,
+    plan: null, // dernier ExitPlanMode : {text, ts}
   };
 }
 
@@ -85,6 +86,9 @@ export function applyRecord(t, o) {
         const file = c.input?.file_path ?? c.input?.notebook_path;
         if (typeof file === 'string' && file) tool.path = file;
         if (c.name === 'AskUserQuestion') tool.question = c.input?.questions?.[0]?.question ?? '';
+        // Plan proposé : certaines lignes ExitPlanMode portent un input {} (ignorées) ; planFilePath n'est pas lu sur disque.
+        // ponytail: texte gardé en entier (5–8 Ko en pratique) ; plafond à poser si un plan géant apparaît.
+        if (c.name === 'ExitPlanMode' && typeof c.input?.plan === 'string' && c.input.plan.trim()) t.plan = { text: c.input.plan, ts };
         t.tools.set(c.id, tool);
         t.pending = tool;
       }

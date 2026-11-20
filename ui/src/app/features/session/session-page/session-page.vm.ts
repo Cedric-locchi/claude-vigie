@@ -20,7 +20,7 @@ const AGENT_FILTERS: { state: SessionState; label: string; states?: SessionState
 ];
 
 /** Vue de la page de session ; `plugin:<id>` : onglet d'un plugin actif qui s'applique au projet (décision 034). */
-export type SessionTab = 'workspace' | 'diff' | 'files' | 'history' | 'usage' | 'config' | `plugin:${string}`;
+export type SessionTab = 'workspace' | 'plan' | 'diff' | 'files' | 'history' | 'usage' | 'config' | `plugin:${string}`;
 /** Onglet Historique : la chronologie par tours ou le journal brut. */
 export type HistoryMode = 'timeline' | 'log';
 /** Saisie non enregistrée des onglets qui éditent des fichiers, lue par la page sur leurs composants. */
@@ -108,27 +108,33 @@ export class SessionPageVm {
     return { total, calls: u.calls, context: u.context, cacheRate: inputSide ? u.cacheRead / inputSide : 0, parts, agents };
   });
 
+  /** Onglet Plan : la session a un plan proposé (ExitPlanMode) ; null tant que le résumé n'est pas chargé. */
+  readonly hasPlan = computed(() => {
+    const s = this.summary();
+    return s ? s.planTs !== null : null;
+  });
+
   /**
-   * Onglet de premier niveau : terminal et agents, chronologie, consommation… en pleine page. Une discussion n'a que Discussion
-   * et Consommation : on y arrive sur Discussion, puis la vue choisie reste (la source bouge aussi avec les onglets de plugins).
-   * Ailleurs, on garde la dernière vue choisie, sauf un onglet de plugin qui disparaît (plugin désactivé, projet qui ne s'y prête
-   * plus) : retour au terminal.
+   * Onglet de premier niveau : terminal et agents, chronologie, consommation… en pleine page. Une discussion n'a que Discussion,
+   * Plan et Consommation : on y arrive sur Discussion, puis la vue choisie reste (la source bouge aussi avec les onglets de plugins).
+   * Ailleurs, on garde la dernière vue choisie, sauf un onglet qui disparaît (plugin désactivé, projet qui ne s'y prête plus,
+   * session sans plan) : retour au terminal.
    */
-  readonly view = linkedSignal<{ chat: boolean; tabs: string[] | null }, SessionTab>({
-    source: () => ({ chat: this.isChat(), tabs: this.pluginsResource.isLoading() ? null : this.plugins().map((p) => `plugin:${p.id}`) }),
-    computation: ({ chat, tabs }, prev) => {
-      if (chat) return prev?.source.chat ? prev.value : 'workspace';
-      const view = prev && !prev.source.chat ? prev.value : lastView;
+  readonly view = linkedSignal<{ chat: boolean; tabs: string[] | null; plan: boolean | null }, SessionTab>({
+    source: () => ({ chat: this.isChat(), tabs: this.pluginsResource.isLoading() ? null : this.plugins().map((p) => `plugin:${p.id}`), plan: this.hasPlan() }),
+    computation: ({ chat, tabs, plan }, prev) => {
+      const view = chat ? (prev?.source.chat ? prev.value : 'workspace') : prev && !prev.source.chat ? prev.value : lastView;
+      if (view === 'plan' && plan === false) return 'workspace';
       return view.startsWith('plugin:') && tabs && !tabs.includes(view) ? 'workspace' : view;
     },
   });
   /**
    * Règle de défilement du gabarit (shell/page) : `fill` pour les vues en colonnes qui défilent chacune (terminal et agents, Diff,
-   * Fichiers, Historique, Config, plugins) ; `scroll` pour celles qui se lisent d'un trait (Consommation, agents d'une session externe).
+   * Fichiers, Historique, Config, plugins) ; `scroll` pour celles qui se lisent d'un trait (Plan, Consommation, agents d'une session externe).
    */
   readonly pageMode = computed(() => {
     const view = this.view();
-    return view === 'usage' || (view === 'workspace' && this.isExternal()) ? ('scroll' as const) : ('fill' as const);
+    return view === 'usage' || view === 'plan' || (view === 'workspace' && this.isExternal()) ? ('scroll' as const) : ('fill' as const);
   });
   private readonly rememberView = effect(() => {
     const view = this.view();

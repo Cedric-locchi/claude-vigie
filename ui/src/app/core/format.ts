@@ -47,6 +47,19 @@ export function elapsed(ms: number): string {
   return duration(ms);
 }
 
+/** Ancienneté : « à l'instant », « il y a 12 min », « il y a 2 h », « il y a 3 j », « il y a 4 mois », « il y a 2 ans ». */
+export function ago(ms: number): string {
+  const min = Math.floor(Math.max(0, ms) / 60_000);
+  if (min < 1) return "à l'instant";
+  if (min < 60) return `il y a ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `il y a ${h} h`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `il y a ${d} j`;
+  if (d < 365) return `il y a ${Math.floor(d / 30)} mois`;
+  const y = Math.floor(d / 365);
+  return `il y a ${y} an${y > 1 ? 's' : ''}`;
+}
 
 /** Texte gardé avant le texte trouvé : au-delà, l'extrait commence par « … » pour que le surlignage reste visible. */
 const BEFORE = 40;

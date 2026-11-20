@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clock, clockSeconds, duration, excerpt, pct, tokens } from './format';
+import { ago, clock, clockSeconds, duration, excerpt, pct, tokens } from './format';
 
 describe('format', () => {
   it('abrège les tokens', () => {
@@ -29,4 +29,16 @@ describe('format', () => {
     expect(excerpt('  export const b = 2;', 2, 6)).toEqual({ pre: '', hit: 'export', post: ' const b = 2;' });
     expect(excerpt('x'.repeat(100) + 'trouvé fin', 100, 6)).toEqual({ pre: '…' + 'x'.repeat(40), hit: 'trouvé', post: ' fin' });
   });
+});
+
+describe('ago', () => {
+  it("écrit l'ancienneté", () => {
+    expect(ago(20_000)).toBe("à l'instant");
+    expect(ago(12 * 60_000)).toBe('il y a 12 min');
+    expect(ago(2.5 * 3_600_000)).toBe('il y a 2 h');
+    expect(ago(3 * 86_400_000)).toBe('il y a 3 j');
+    expect(ago(65 * 86_400_000)).toBe('il y a 2 mois');
+    expect(ago(400 * 86_400_000)).toBe('il y a 1 an');
+  });
+
 });

@@ -31,6 +31,7 @@ export type TraceStep = z.infer<typeof C.TraceStep>;
 export type TraceAgent = z.infer<typeof C.TraceAgent>;
 export type TraceTurn = z.infer<typeof C.TraceTurn>;
 export type SessionTrace = z.infer<typeof C.SessionTrace>;
+export type SessionPlan = z.infer<typeof C.SessionPlan>;
 export type GitFile = z.infer<typeof C.GitFile>;
 export type GitDiff = z.infer<typeof C.GitDiff>;
 export type FileBody = z.infer<typeof C.FileBody>;

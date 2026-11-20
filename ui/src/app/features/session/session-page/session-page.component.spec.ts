@@ -49,7 +49,7 @@ function render(overrides: Partial<SessionPageVm> = {}) {
     connect: vi.fn(), summary: signal(aSession({ title: 'Moteur de suggestions', state: 'waiting', reason: 'permission', detail: 'Bash · xcodebuild test' })),
     stateBadge: signal({ variant: 'waiting', label: 'Attend ton autorisation' }), issues: signal(0),
     waitBar: signal<{ question: boolean; canAllow: boolean; detail: string | null } | null>({ question: false, canAllow: true, detail: 'Bash · xcodebuild test' }),
-    diffCount: signal(4), plugins: signal<{ id: string; name: string; badge?: string }[]>([]), historyMode: signal('timeline'), showHistory: vi.fn(),
+    diffCount: signal(4), hasPlan: signal<boolean | null>(false), plugins: signal<{ id: string; name: string; badge?: string }[]>([]), historyMode: signal('timeline'), showHistory: vi.fn(),
     terminals: signal([claude]), activeTab: signal('t1'), activeTerminal: signal(claude), claudeTerminal: signal(claude),
     agents: signal([mainAgent]), context: signal({ used: 150_000, max: 200_000, pct: 0.75, level: "mid" }), canCompact: signal(true), canInterrupt: signal(false), compact: vi.fn(), isChat: signal(false), visibleAgents: signal([mainAgent]), agentFilters: signal([{ state: "waiting", label: "En attente", count: 1 }]), activeAgentFilter: signal(null), filterAgents: vi.fn(), agentStats: signal({ running: 0, waiting: 1 }), logQuery: signal(''), openLog: vi.fn(), usage: signal(null), openAgent: signal(null), showAgent: vi.fn(), resuming: signal(false), diffUnsaved: signal(false), resumeError: signal(null), resume: vi.fn(), notFound: signal(false), outdated: signal(false),
     canFiles: signal(true), filesKey: { label: 'Ctrl+Shift+E', aria: 'Control+Shift+E' }, toggleFiles: vi.fn(), shortcut: vi.fn(),
@@ -117,6 +117,15 @@ describe('SessionPageComponent', () => {
     TestBed.resetTestingModule();
     const el = render({ plugins: signal([{ id: 'mise', name: 'Tâches mise', badge: '3' }, { id: 'xcode', name: 'Xcode' }]) }).el;
     expect(tabs(el)).toEqual(['Terminal & agents, agent en attente', 'Diff4', 'Tâches mise3', 'Xcode', 'Historique', 'Consommation', 'Config']);
+  });
+
+  it('onglet Plan juste après le premier, seulement quand la session a un plan (discussion comprise)', () => {
+    const tabs = (el: HTMLElement) => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent!.replace(/\s+/g, ' ').trim());
+    expect(tabs(render().el)).not.toContain('Plan');
+    TestBed.resetTestingModule();
+    expect(tabs(render({ hasPlan: signal(true) }).el).slice(0, 3)).toEqual(['Terminal & agents, agent en attente', 'Plan', 'Diff4']);
+    TestBed.resetTestingModule();
+    expect(tabs(render({ hasPlan: signal(true), isChat: signal(true) }).el)).toEqual(['Discussion, agent en attente', 'Plan', 'Consommation']);
   });
 
   it('Diff affiche le nombre de fichiers modifiés, rien si 0', () => {

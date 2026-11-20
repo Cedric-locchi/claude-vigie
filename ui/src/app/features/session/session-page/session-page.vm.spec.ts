@@ -512,6 +512,28 @@ describe('SessionPageVm', () => {
     expect(vm.view()).toBe('workspace');
   });
 
+  it('onglet Plan : présent avec un plan, retombe sur le terminal sans, tient pendant que le résumé manque', () => {
+    const snapshot = signal(aSnapshot({ sessions: [aSession({ planTs: 50_000 })], terminals: [term('t1', 'claude')] }));
+    TestBed.configureTestingModule({
+      providers: [SessionPageVm, provideRouter([]), provideConfirmServiceMock(), provideVigieServiceMock({ snapshot })],
+    });
+    const vm = TestBed.inject(SessionPageVm);
+    vm.connect(signal('s1'));
+    expect(vm.hasPlan()).toBe(true);
+    vm.showView('plan');
+    TestBed.tick();
+    expect([vm.view(), vm.pageMode()]).toEqual(['plan', 'scroll']); // se lit d'un trait
+    snapshot.set(aSnapshot({ sessions: [], terminals: [term('t1', 'claude')] })); // résumé pas (encore) là : on reste
+    expect([vm.hasPlan(), vm.view()]).toEqual([null, 'plan']);
+    snapshot.set(aSnapshot({ sessions: [aSession({ planTs: null })], terminals: [term('t1', 'claude')] }));
+    expect([vm.hasPlan(), vm.view()]).toEqual([false, 'workspace']);
+    // Dernière vue retenue « plan » (effet pas encore relancé) : une session sans plan ouvre sur le terminal.
+    const next = TestBed.runInInjectionContext(() => new SessionPageVm());
+    next.connect(signal('s1'));
+    expect(next.view()).toBe('workspace');
+    TestBed.tick(); // remet la dernière vue du module à « workspace » pour les autres tests
+  });
+
   it('gabarit : fill pour les vues en colonnes, scroll pour celles qui se lisent d’un trait', () => {
     const { vm } = createVm();
     const modes = (['workspace', 'diff', 'files', 'history', 'config', 'usage', 'plugin:npm'] as const).map((v) => (vm.showView(v), vm.pageMode()));

@@ -200,6 +200,9 @@ export function createTransport({ store, port, uiDir, home, platform, chatDir, h
       const cost = store.sessionCost(r[1]);
       return found(res, cost);
     }
+    if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/plan$/))) {
+      return found(res, store.sessionPlan(r[1]));
+    }
     if (req.method === 'GET' && (r = m(/^\/api\/sessions\/([\w-]+)\/trace$/))) {
       const trace = store.sessionTrace(r[1], termList());
       return found(res, trace);

@@ -595,6 +595,27 @@ test('coût d’une session : série par agent et coût par agent égaux au coû
   assert.equal(store.sessionCost('inconnue'), null);
 });
 
+test('plan : planTs dans le snapshot, texte par sessionPlan conforme ; null si inconnue ou sans plan ; session en attente conforme', () => {
+  const { dir, make } = historyFixture();
+  const now = Date.now();
+  fs.writeFileSync(path.join(dir, 'S.jsonl'), usageCall(now - 2000, 'a', 'claude-opus-5-5', 1) + JSON.stringify({
+    type: 'assistant', timestamp: new Date(now - 1000).toISOString(), sessionId: 'S', cwd: '/dev/revu',
+    message: { id: 'p', content: [{ type: 'tool_use', id: 'tp', name: 'ExitPlanMode', input: { plan: '# Plan' } }] },
+  }) + '\n');
+  fs.writeFileSync(path.join(dir, 'T.jsonl'), usageCall(now - 1000, 'c', 'claude-opus-5-5', 1, { sessionId: 'T' }));
+  const store = make();
+  const term = { id: 't', sessionId: 'X', kind: 'claude', title: 'x', cwd: '/dev/revu', shell: 'zsh', pid: 1, cols: 80, rows: 24, exited: false, startedAt: now };
+  const snap = store.snapshot([term]);
+  conforme(C.Snapshot, { ...snap, plugins: [] });
+  assert.deepEqual(['S', 'T', 'X'].map((id) => snap.sessions.find((s) => s.id === id).planTs), [now - 1000, null, null]);
+  conforme(C.SessionDetail, store.detail('X', [term])); // pendingSummary
+  const plan = store.sessionPlan('S');
+  conforme(C.SessionPlan, plan);
+  assert.deepEqual(plan, { text: '# Plan', ts: now - 1000 });
+  assert.equal(store.sessionPlan('T'), null);
+  assert.equal(store.sessionPlan('inconnue'), null);
+});
+
 test('historique : aucun début de prompt archivé, fichier non réécrit sans changement', () => {
   const { dir, historyFile, make } = historyFixture();
   const now = Date.now();
