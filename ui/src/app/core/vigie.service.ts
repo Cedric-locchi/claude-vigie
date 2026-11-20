@@ -1,36 +1,17 @@
 import { DOCUMENT, DestroyRef, Injector, Service, Signal, computed, inject, signal } from '@angular/core';
 import { HttpClient, HttpResourceRef, httpResource } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { Observable, firstValueFrom } from 'rxjs';
 import * as C from '@vigie/contract';
 import { OUTDATED } from '../../plugin-sdk/host';
-import { FileBody, PluginActionBody, PluginActionResult, PluginCallBody, PluginInfo, ProjectFiles, SearchResults, SessionCost, SessionLog, SessionSummary, Settings, SettingsBody, Snapshot, Terminal, TerminalBody, WriteBody } from './models';
+import {
+  BranchBody, CommitBody, CommitSuggestion, EmptyBody, FileBody, InputBody, NewSessionBody, PluginActionBody, PluginActionResult, PluginCallBody, PluginInfo,
+  PluginToggleBody, ProjectFiles, RestoreBody, SearchResults, SessionCost, SessionLog, SessionSummary, Settings, SettingsBody, Snapshot, Terminal, TerminalBody, WriteBody,
+} from './models';
 
-/** Touches envoyées au PTY par les réponses rapides : le terminal reste la seule source d'interaction. */
 /** Discussion sans projet : lancée par Vigie dans ~/.vigie/chat. */
 // ponytail: reconnue par son dossier (même règle que CHAT_DIR du daemon) ; un drapeau dans le snapshot si ça diverge un jour.
 export const isChat = (cwd: string | null | undefined): boolean => !!cwd?.endsWith('/.vigie/chat');
 
-export const KEYS = { allow: '\r', refuse: '\x1b', interrupt: '\x1b' } as const;
-
-/**
- * Réponse rapide (Autoriser, Refuser…) tapée dans le terminal d'une session.
- * Ne lève jamais : renvoie le message à afficher là où l'on a cliqué, ou null si la touche est partie.
- */
-export async function sendReply(vigie: Pick<VigieService, 'sendKeys'>, terminalId: string, keys: string): Promise<string | null> {
-  try {
-    await vigie.sendKeys(terminalId, keys);
-    return null;
-  } catch (e) {
-    const err = e as { status?: number; error?: { error?: string }; message?: string } | null;
-    const reason = err?.error?.error ?? (err?.status === 0 ? 'le daemon ne répond pas' : err?.message || 'erreur inconnue');
-    return `Impossible d'envoyer la réponse au terminal : ${reason}. Réessaie.`;
-  }
-}
-
-/**
- * Accès au daemon. L'état global arrive en continu par WebSocket et ressort en signal ;
- * le reste passe par HTTP.
- */
 /** Silence au-delà duquel la connexion d'état est tenue pour morte. */
 const STALE_MS = 40_000;
 /** Écart entre deux tours du chien de garde (5 s attendues) qui trahit une mise en veille. */
@@ -39,11 +20,46 @@ const WAKE_GAP_MS = 20_000;
 /** Réponse hors contrat : message lisible plutôt que le détail zod (affiché tel quel par certains écrans). Partagé avec les plugins. */
 export { OUTDATED };
 
+/** Daemon injoignable (statut HTTP 0 : connexion refusée ou coupée). Fragment, comme les messages du daemon. */
+export const OFFLINE = 'le daemon ne répond pas';
+
+/**
+ * Message lisible d'un échec d'appel au daemon, le même partout : le message du daemon (corps `ErrorBody` d'une 4xx/5xx),
+ * daemon injoignable (statut 0), réponse hors contrat (OUTDATED), sinon `fallback` (ce que l'écran tentait de faire).
+ * Affiché seul, il commence par une majuscule (les messages du daemon et OFFLINE sont des fragments) ; `inline` le garde
+ * tel quel, pour l'insérer dans une phrase.
+ */
+export function daemonError(e: unknown, fallback: string, { inline = false } = {}): string {
+  const err = e as { status?: unknown; error?: unknown; message?: unknown } | null | undefined;
+  const body = C.ErrorBody.safeParse(err?.error);
+  const msg = body.success ? body.data.error : err?.status === 0 ? OFFLINE : err?.message === OUTDATED ? OUTDATED : fallback;
+  return inline ? msg : msg.charAt(0).toUpperCase() + msg.slice(1);
+}
+
 /** Valide une réponse du daemon contre un schéma du contrat ; lève une erreur lisible si elle n'y correspond pas. */
 const check = <T>(schema: { parse(v: unknown): T }) => (v: unknown): T => {
   try { return schema.parse(v); } catch { throw new Error(OUTDATED); }
 };
 
+/**
+ * Requête que `signal` peut couper : se désabonner annule la requête HTTP et la promesse rejette avec `signal.reason`
+ * (AbortError). L'écouteur d'abandon est retiré dans tous les cas.
+ */
+function abortable<T>(req: Observable<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return firstValueFrom(req);
+  return new Promise<T>((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const abort = () => { sub.unsubscribe(); reject(signal.reason); };
+    const done = () => signal.removeEventListener('abort', abort);
+    const sub = req.subscribe({ next: (v) => { done(); resolve(v); }, error: (e) => { done(); reject(e); } });
+    signal.addEventListener('abort', abort, { once: true });
+  });
+}
+
+/**
+ * Accès au daemon. L'état global arrive en continu par WebSocket et ressort en signal ;
+ * le reste passe par HTTP.
+ */
 @Service()
 export class VigieService {
   private readonly http = inject(HttpClient);
@@ -124,13 +140,14 @@ export class VigieService {
     });
   }
 
-  startSession(body: { cwd: string; command: string }): Promise<Terminal> {
+  startSession(body: NewSessionBody): Promise<Terminal> {
     return firstValueFrom(this.http.post('/api/sessions', body)).then(check(C.Terminal));
   }
 
   /** Discussion sans projet : Claude en mode plan dans un dossier vide (~/.vigie/chat). */
   startChat(): Promise<Terminal> {
-    return firstValueFrom(this.http.post('/api/chat', {})).then(check(C.Terminal));
+    const body: EmptyBody = {};
+    return firstValueFrom(this.http.post('/api/chat', body)).then(check(C.Terminal));
   }
 
   /** Trace découpée en tours ; `version` (dernière activité) déclenche le rechargement. */
@@ -170,7 +187,8 @@ export class VigieService {
 
   /** Active ou désactive un plugin ; le daemon pousse ensuite un snapshot (`plugins`), les onglets se relisent. */
   togglePlugin(id: string, enabled: boolean): Promise<PluginInfo> {
-    return firstValueFrom(this.http.post(`/api/plugins/${id}`, { enabled })).then(check(C.PluginInfo));
+    const body: PluginToggleBody = { enabled };
+    return firstValueFrom(this.http.post(`/api/plugins/${id}`, body)).then(check(C.PluginInfo));
   }
 
   /**
@@ -190,18 +208,7 @@ export class VigieService {
   /** Méthode du backend d'un plugin : JSON libre (`null` possible), validé ensuite par le schéma du plugin ; `{ error }` en 4xx/5xx. */
   pluginCall(sessionId: string, pluginId: string, method: string, params?: unknown, signal?: AbortSignal): Promise<unknown> {
     const body: PluginCallBody = params === undefined ? {} : { params };
-    const req = this.http.post(`/api/sessions/${sessionId}/plugins/${pluginId}/call/${method}`, body);
-    if (!signal) return firstValueFrom(req);
-    // HttpClient n'a pas d'AbortSignal : se désabonner annule la requête XHR/fetch. Rejet avec `signal.reason` (AbortError).
-    return new Promise((resolve, reject) => {
-      if (signal.aborted) return reject(signal.reason);
-      const abort = () => { sub.unsubscribe(); reject(signal.reason); };
-      const sub = req.subscribe({
-        next: (v) => { signal.removeEventListener('abort', abort); resolve(v); },
-        error: (e) => { signal.removeEventListener('abort', abort); reject(e); },
-      });
-      signal.addEventListener('abort', abort, { once: true });
-    });
+    return abortable(this.http.post(`/api/sessions/${sessionId}/plugins/${pluginId}/call/${method}`, body), signal);
   }
 
   /** Action terminal d'un plugin : le terminal ouvert ; `{ error }` en 4xx/5xx. */
@@ -211,22 +218,26 @@ export class VigieService {
 
   /** Tue le process du terminal et retire son onglet. */
   closeTerminal(terminalId: string): Promise<unknown> {
-    return firstValueFrom(this.http.post(`/api/terminals/${terminalId}/close`, {}));
+    const body: EmptyBody = {};
+    return firstValueFrom(this.http.post(`/api/terminals/${terminalId}/close`, body));
+  }
+
+  /** Discussion : terminal fermé et transcript effacé du disque (le daemon refuse toute autre session). */
+  purgeChat(sessionId: string): Promise<unknown> {
+    const body: EmptyBody = {};
+    return firstValueFrom(this.http.post(`/api/chat/${sessionId}/delete`, body));
   }
 
   /** Ferme les terminaux de la session et la retire de Vigie (le transcript de Claude est conservé). */
-  /** Discussion : terminal fermé et transcript effacé du disque (le daemon refuse toute autre session). */
-  purgeChat(sessionId: string): Promise<unknown> {
-    return firstValueFrom(this.http.post(`/api/chat/${sessionId}/delete`, {}));
-  }
-
   deleteSession(sessionId: string): Promise<unknown> {
-    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/delete`, {}));
+    const body: EmptyBody = {};
+    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/delete`, body));
   }
 
   /** Annule les modifications d'un fichier (retour à HEAD ; un fichier non suivi est supprimé). */
   restoreFile(sessionId: string, path: string): Promise<unknown> {
-    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/git/restore`, { path }));
+    const body: RestoreBody = { path };
+    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/git/restore`, body));
   }
 
   /** Contenu actuel d'un fichier modifié, avec son empreinte (à renvoyer à l'écriture). */
@@ -255,11 +266,7 @@ export class VigieService {
    */
   searchFiles(sessionId: string, q: string, matchCase: boolean, signal?: AbortSignal): Promise<SearchResults> {
     const params: Record<string, string> = matchCase ? { q, case: '1' } : { q };
-    return new Promise<unknown>((resolve, reject) => {
-      if (signal?.aborted) return reject(signal.reason);
-      const sub = this.http.get(`/api/sessions/${sessionId}/files/search`, { params }).subscribe({ next: resolve, error: reject });
-      signal?.addEventListener('abort', () => { sub.unsubscribe(); reject(signal.reason); }, { once: true });
-    }).then(check(C.SearchResults));
+    return abortable(this.http.get(`/api/sessions/${sessionId}/files/search`, { params }), signal).then(check(C.SearchResults));
   }
 
   /** Écrit un fichier du projet ; refus si Claude travaille (409), si le fichier a changé (412) ou sous ~/.claude (403). */
@@ -269,20 +276,26 @@ export class VigieService {
 
   /** `git add -A` puis `git commit -m message` dans le dépôt de la session. */
   commit(sessionId: string, message: string): Promise<unknown> {
-    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/git/commit`, { message }));
+    const body: CommitBody = { message };
+    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/git/commit`, body));
   }
 
-  suggestCommitMessage(sessionId: string): Promise<{ message: string }> {
-    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/git/commit-message`, {})).then(check(C.CommitSuggestion));
+  /** Message de commit proposé par Claude (`claude -p` côté daemon, sur ton clic seulement). */
+  suggestCommitMessage(sessionId: string): Promise<CommitSuggestion> {
+    const body: EmptyBody = {};
+    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/git/commit-message`, body)).then(check(C.CommitSuggestion));
   }
 
   /** `git switch -c name` dans le dépôt de la session : les modifs non commitées suivent. */
   createBranch(sessionId: string, name: string): Promise<unknown> {
-    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/git/branch`, { name }));
+    const body: BranchBody = { name };
+    return firstValueFrom(this.http.post(`/api/sessions/${sessionId}/git/branch`, body));
   }
 
+  /** Tape `data` dans le terminal (réponses rapides : voir AttentionService.send). */
   sendKeys(terminalId: string, data: string): Promise<unknown> {
-    return firstValueFrom(this.http.post(`/api/terminals/${terminalId}/input`, { data }));
+    const body: InputBody = { data };
+    return firstValueFrom(this.http.post(`/api/terminals/${terminalId}/input`, body));
   }
 
   terminalSocket(terminalId: string): WebSocket {
@@ -316,7 +329,11 @@ export class VigieService {
     const ws = new WebSocket(this.wsUrl('/ws'));
     this.socket = ws;
     this.lastMessage = Date.now();
-    ws.onopen = () => this.connectedState.set(true);
+    ws.onopen = () => {
+      this.connectedState.set(true);
+      // Réglages illisibles jusque-là (daemon injoignable au premier essai) : relus à la (re)connexion, sinon les seuils restent nuls.
+      if (this.settingsRef && !this.settingsRef.hasValue()) this.settingsRef.reload();
+    };
     ws.onmessage = (e) => {
       this.lastMessage = Date.now();
       let msg: { type?: unknown };

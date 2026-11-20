@@ -3,7 +3,7 @@ import { Injectable, Signal, computed, inject, signal } from '@angular/core';
 import * as f from '../../../core/format';
 import { LogEntry } from '../../../core/models';
 import { CLIENT_OS } from '../../../core/platform';
-import { VigieService } from '../../../core/vigie.service';
+import { VigieService, daemonError } from '../../../core/vigie.service';
 import {
   ALL_KINDS, AxisLabel, GanttBlock, MAX_ZOOM, Scale, StepKind, TraceFilter, TraceRow, allSteps, blockLabel, clusterBars, compressedScale,
   filterRows, gantt, isFiltering, stepPath, thinLabels, turnIntervals, turnRows, zoomAt, zoomTo,
@@ -30,7 +30,8 @@ export class TimelineVm {
   /** Garde la dernière trace pendant un rechargement : pas de clignotement à chaque activité. */
   readonly trace = keepLast(this.resource);
   readonly loading = computed(() => !this.trace() && this.resource.isLoading());
-  readonly failed = computed(() => this.resource.status() === 'error' && !this.trace());
+  /** Pas de trace et la lecture échoue : la raison (daemon injoignable, session inconnue, réponse hors contrat). */
+  readonly loadError = computed(() => (this.resource.status() === 'error' && !this.trace() ? daemonError(this.resource.error(), 'Chronologie indisponible.') : null));
 
   // ── Filtres ──
   readonly kinds = signal<ReadonlySet<StepKind>>(new Set(ALL_KINDS));

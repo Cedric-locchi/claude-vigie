@@ -1,6 +1,6 @@
 // Calculs du Dashboard : fonctions pures, sans Angular (testées à part).
 import { SessionSummary, UsageRow } from '../../../core/models';
-import { addDays, startOfDay, sum } from '../../usage/usage-series';
+import { addDays, startOfDay, sum } from '../../../core/usage-rows';
 
 /** Tiret d'une barre segmentée : vide, rempli (couleur de la carte), au-delà du seuil (rouge), ou état d'une session. */
 export type Segment = 'off' | 'on' | 'hot' | 'wait' | 'turn' | 'ok';

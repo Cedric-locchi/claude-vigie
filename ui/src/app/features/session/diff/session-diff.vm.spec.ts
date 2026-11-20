@@ -1,11 +1,12 @@
 import { signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfirmService } from '../../../core/confirm.service';
 import { provideConfirmServiceMock } from '../../../core/confirm.service.mock';
 import { GitDiff, GitFile } from '../../../core/models';
 import { VigieService } from '../../../core/vigie.service';
-import { provideVigieServiceMock } from '../../../core/vigie.service.mock';
+import { aGitDiff, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
 import { DISCARD_EDIT, SessionDiffVm, parsePatch } from './session-diff.vm';
 
 describe('parsePatch', () => {
@@ -23,27 +24,34 @@ describe('parsePatch', () => {
 
 describe('SessionDiffVm', () => {
   it('garde le diff affiché pendant un rechargement (pas de clignotement)', () => {
-    const value = signal<GitDiff | undefined>({ repo: true, files: [] } as unknown as GitDiff);
-    const resource = { value, hasValue: () => value() !== undefined, status: signal('resolved'), reload: vi.fn() };
+    const resource = fakeResource<GitDiff | undefined>(aGitDiff());
     TestBed.configureTestingModule({
-      providers: [SessionDiffVm, provideVigieServiceMock({ gitResource: (() => resource) as unknown as VigieService['gitResource'] }), provideConfirmServiceMock()],
+      providers: [SessionDiffVm, provideVigieServiceMock({ gitResource: () => resource }), provideConfirmServiceMock()],
     });
     const vm = TestBed.inject(SessionDiffVm);
     vm.connect(signal('s1'), signal(1), signal(true));
     const first = vm.diff();
     expect(first).not.toBeNull();
-    value.set(undefined); // nouvelle URL ?v= : httpResource repasse à undefined
+    resource.set(undefined); // nouvelle URL ?v= : httpResource repasse à undefined
     expect(vm.diff()).toBe(first);
   });
 
+  it('lecture du dépôt en échec : la raison, daemon injoignable compris', () => {
+    TestBed.configureTestingModule({
+      providers: [SessionDiffVm, provideConfirmServiceMock(), provideVigieServiceMock({ gitResource: () => fakeResource(undefined, 'error', new HttpErrorResponse({ status: 0 })) })],
+    });
+    const vm = TestBed.inject(SessionDiffVm);
+    vm.connect(signal('s1'), signal(1), signal(true));
+    expect([vm.diff(), vm.loadError()]).toEqual([null, 'Le daemon ne répond pas']);
+  });
+
   it('ne commite pas un message vide (même règle que le daemon), commite un message rempli', async () => {
-    const value = signal<GitDiff | undefined>({ repo: true, files: [], total: 1, branch: 'main' } as unknown as GitDiff);
-    const resource = { value, hasValue: () => value() !== undefined, status: signal('resolved'), reload: vi.fn() };
+    const resource = fakeResource(aGitDiff());
     const commit = vi.fn(async () => ({ ok: true }));
     const suggestCommitMessage = vi.fn(async () => ({ message: 'feat: suggestions' }));
     TestBed.configureTestingModule({
       providers: [SessionDiffVm, provideConfirmServiceMock(), provideVigieServiceMock({
-        gitResource: (() => resource) as unknown as VigieService['gitResource'], commit, suggestCommitMessage,
+        gitResource: () => resource, commit, suggestCommitMessage,
       })],
     });
     const vm = TestBed.inject(SessionDiffVm);
@@ -65,13 +73,27 @@ describe('SessionDiffVm', () => {
     expect(vm.commitOpen()).toBe(false);
   });
 
+  it('copie le message proposé, tel qu’il est dans le champ', async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(document.defaultView!.navigator, 'clipboard', { value: { writeText }, configurable: true });
+    try {
+      TestBed.configureTestingModule({ providers: [SessionDiffVm, provideConfirmServiceMock(), provideVigieServiceMock({ gitResource: () => fakeResource(aGitDiff()) })] });
+      const vm = TestBed.inject(SessionDiffVm);
+      vm.commitModel.set({ message: 'feat: x' });
+      await vm.copyMessage();
+      expect(writeText).toHaveBeenCalledWith('feat: x');
+      expect(vm.copied()).toBe(true);
+    } finally {
+      Reflect.deleteProperty(document.defaultView!.navigator, 'clipboard');
+    }
+  });
+
   it('nouvelle branche : nom vérifié comme le daemon, puis git switch -c', async () => {
-    const value = signal<GitDiff | undefined>({ repo: true, files: [], total: 0, branch: 'main' } as unknown as GitDiff);
-    const resource = { value, hasValue: () => value() !== undefined, status: signal('resolved'), reload: vi.fn() };
+    const resource = fakeResource(aGitDiff());
     const createBranch = vi.fn(async () => ({ ok: true }));
     TestBed.configureTestingModule({
       providers: [SessionDiffVm, provideConfirmServiceMock(), provideVigieServiceMock({
-        gitResource: (() => resource) as unknown as VigieService['gitResource'], createBranch,
+        gitResource: () => resource, createBranch,
       })],
     });
     const vm = TestBed.inject(SessionDiffVm);
@@ -90,12 +112,11 @@ describe('SessionDiffVm', () => {
   });
 
   describe('édition d’un fichier', () => {
-    const file = (o: Partial<GitFile> = {}) => ({ path: 'a.ts', status: 'M', added: 1, removed: 0, staged: false, unstaged: true, truncated: false, patch: '@@ -1 +1 @@\n-x\n+y\n', ...o }) as GitFile;
+    const file = (o: Partial<GitFile> = {}): GitFile => ({ path: 'a.ts', status: 'M', added: 1, removed: 0, staged: false, unstaged: true, truncated: false, patch: '@@ -1 +1 @@\n-x\n+y\n', ...o });
     function setup(files: GitFile[], extra: Partial<VigieService> = {}, answer = true) {
-      const value = signal<GitDiff | undefined>({ repo: true, files, total: files.length, branch: 'main' } as unknown as GitDiff);
-      const resource = { value, hasValue: () => value() !== undefined, status: signal('resolved'), reload: vi.fn() };
+      const resource = fakeResource(aGitDiff({ files }));
       TestBed.configureTestingModule({
-        providers: [SessionDiffVm, provideConfirmServiceMock(answer), provideVigieServiceMock({ gitResource: (() => resource) as unknown as VigieService['gitResource'], ...extra })],
+        providers: [SessionDiffVm, provideConfirmServiceMock(answer), provideVigieServiceMock({ gitResource: () => resource, ...extra })],
       });
       const vm = TestBed.inject(SessionDiffVm);
       const idle = signal(true);

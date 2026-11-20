@@ -3,7 +3,8 @@ import * as Plot from '@observablehq/plot';
 import { UsageRow } from '../../core/models';
 import { anUsageRow } from '../../core/vigie.service.mock';
 import { heroChart, heroMargins, sessionsChart } from './usage-charts';
-import { addDays, colorOf, compact, dailyByFamily, dayIndexAt, dayTotals, daysBetween, daysOf, heroScale, niceTicks, sessionPoints, stripBlocks } from './usage-series';
+import { addDays } from '../../core/usage-rows';
+import { colorOf, compact, dailyByFamily, dayIndexAt, dayTotals, daysBetween, daysOf, heroScale, niceTicks, sessionPoints, stripBlocks } from './usage-series';
 
 const day = (m: number, d: number) => new Date(2026, m, d).getTime();
 const row = (d: number, model: string, cost: number, extra: Partial<UsageRow> = {}) => anUsageRow({ day: d, model, cost, ...extra });

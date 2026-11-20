@@ -20,21 +20,20 @@ describe('createPluginHost', () => {
     await expect(host.call('tasks', { all: true }, z.object({ n: z.number() }))).resolves.toEqual({ n: 1 });
     expect(deps.vigie.pluginCall).toHaveBeenCalledWith('s1', 'mise', 'tasks', { all: true }, undefined);
     await expect(host.call('tasks', undefined, z.object({ n: z.string() }))).rejects.toThrow(OUTDATED);
-    await expect(host.call('tasks')).resolves.toEqual({ n: 1 }); // sans schéma : tel quel
   });
 
   it('erreur du daemon → son message ; daemon injoignable → message lisible', async () => {
     const { host } = setup({ pluginCall: vi.fn(async () => { throw new HttpErrorResponse({ status: 404, error: { error: 'Méthode inconnue' } }); }) });
-    await expect(host.call('nope')).rejects.toThrow('Méthode inconnue');
+    await expect(host.call('nope', {}, z.unknown())).rejects.toThrow('Méthode inconnue');
     const down = setup({ pluginAction: vi.fn(async () => { throw new HttpErrorResponse({ status: 0 }); }) });
-    await expect(down.host.terminal('run')).rejects.toThrow('Le daemon ne répond pas.');
+    await expect(down.host.terminal('run')).rejects.toThrow('Le daemon ne répond pas');
     expect(down.deps.opened).not.toHaveBeenCalled();
   });
 
   it('call abandonné : signal transmis, rejet avec la raison du signal (AbortError), jamais « a échoué »', async () => {
     const ctrl = new AbortController();
     const { deps, host } = setup({ pluginCall: vi.fn((...a: unknown[]) => new Promise((_, reject) => (a[4] as AbortSignal).addEventListener('abort', () => reject(new Error('annulée'))))) });
-    const p = host.call('graph', {}, undefined, { signal: ctrl.signal });
+    const p = host.call('graph', {}, z.unknown(), { signal: ctrl.signal });
     expect(deps.vigie.pluginCall).toHaveBeenCalledWith('s1', 'mise', 'graph', {}, ctrl.signal);
     ctrl.abort();
     await expect(p).rejects.toThrow('annulée');

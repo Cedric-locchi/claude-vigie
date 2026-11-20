@@ -41,7 +41,6 @@ import { colorOf, compact, dayIndexAt } from '../usage-series';
           </div>
         </div>
         <p id="hero-help" class="small faint help">Glisse sur la bande des fenêtres pour choisir des jours (flèches, Maj+flèches pour étendre, Échap : toute la période) · clic sur une barre : ce jour, Maj+clic : étendre</p>
-        @if (vm.noWindows()) { <p class="small faint">Ton daemon ne fournit pas encore l'historique des fenêtres : redémarre-le après la mise à jour.</p> }
         <p class="sr-only" aria-live="polite">Sélection : {{ vm.rangeLabel() }}</p>
 
         <div class="legend small muted">

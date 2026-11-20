@@ -1,24 +1,94 @@
 // État git du dossier d'une session : fichiers modifiés par rapport à HEAD (indexés ou non, non suivis compris)
 // et leur patch. Seuls restoreFile, commitAll, createBranch et replaceFile (writeWorktreeFile, files.writeProjectFile) modifient le dépôt.
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { claudeConfigPaths, isInside } from './paths.mjs';
 
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'; // dépôt sans commit : on compare à l'arbre vide
 const MAX_FILES = 200;
 export const MAX_PATCH = 100_000;
 
-/** git sans prompt ni pager ; `ok` : codes de sortie attendus (diff --no-index rend 1 quand ça diffère). */
-export function git(cwd, args, ok = [0]) {
+/** Délai d'un git (lecture, restauration, branche) ; un commit a le sien (hooks pre-commit), cf. commitAll. */
+const GIT_TIMEOUT = 120_000;
+const MAX_BUFFER = 32e6;
+
+/** Groupes de processus vivants lancés par `run` (pid du chef) : `killAll` les arrête avec le daemon. */
+const groups = new Set();
+
+/**
+ * Arrête les git et claude -p encore vivants, enfants compris (arrêt du daemon). Embarqué par Electron (utilityProcess) ou
+ * lancé par `vigie start` détaché, le daemon n'a ni launchd ni systemd pour ramasser ses descendants. SIGTERM seul : git retire
+ * son index.lock ; pas de SIGKILL différé, le daemon sort juste après (un minuteur ne partirait pas).
+ */
+export function killAll() {
+  for (const pid of groups) { try { process.kill(-pid, 'SIGTERM'); } catch { /* déjà mort */ } }
+  groups.clear();
+}
+
+const aborted = () => new DOMException('requête abandonnée', 'AbortError');
+
+/**
+ * Lance `cmd` sans shell dans son propre groupe de processus : le délai et l'abandon (`signal`) arrêtent tout le groupe, enfants
+ * d'un hook pre-commit compris (SIGTERM, puis SIGKILL 5 s plus tard s'il traîne). Même principe que `plugins.exec`, mais SIGTERM
+ * d'abord (git nettoie son index.lock) et rejet avec la sortie de l'outil. `input` : écrit sur stdin puis fermé (sinon stdin vide).
+ * → `{ code, stdout, stderr }` ; rejette sur échec du lancement (ENOENT), délai (« ne répond pas »), abandon (AbortError), stdout
+ * > `maxBuffer` (32 Mo par défaut) ou stderr > 32 Mo. `cut` : stdout au-delà de `maxBuffer` arrête l'outil et rend le début de la
+ * sortie (code 0, `cut: true`). Chaque flux a sa borne : des avertissements sur stderr (CRLF…) n'avancent pas la coupure de stdout.
+ */
+function run(cmd, args, { cwd, env, input, timeout, signal, maxBuffer = MAX_BUFFER, cut = false }) {
   return new Promise((resolve, reject) => {
-    execFile('git', ['-c', 'core.quotePath=false', ...args], { cwd, maxBuffer: 32e6, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' } }, (err, stdout, stderr) => {
-      // stderr remonté tel quel : c'est lui qui explique un hook pre-commit ou une signature en échec.
-      if (err && !ok.includes(err.code)) reject(Object.assign(err, { message: (stderr || stdout).trim() || err.message }));
-      else resolve(stdout);
+    if (signal?.aborted) return reject(aborted());
+    const p = spawn(cmd, args, { cwd, env, detached: true, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    if (p.pid) groups.add(p.pid);
+    const out = [], err = [];
+    const size = { out: 0, err: 0 };
+    let why = null;
+    const signalGroup = (sig) => { try { process.kill(-p.pid, sig); } catch { /* déjà mort */ } };
+    const kill = (reason) => {
+      if (why) return;
+      why = reason;
+      signalGroup('SIGTERM');
+      setTimeout(() => signalGroup('SIGKILL'), 5000).unref(); // un enfant qui ignore SIGTERM garderait la sortie ouverte
+    };
+    const timer = setTimeout(() => kill('timeout'), timeout);
+    const onAbort = () => kill('abort');
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const collect = (list, key, max) => (b) => {
+      if (why) return;
+      list.push(b);
+      if ((size[key] += b.length) > max) kill(`overflow-${key}`);
+    };
+    p.stdout.on('data', collect(out, 'out', maxBuffer));
+    p.stderr.on('data', collect(err, 'err', MAX_BUFFER));
+    const settle = () => { groups.delete(p.pid); clearTimeout(timer); signal?.removeEventListener('abort', onAbort); };
+    p.on('error', (e) => { settle(); reject(e); }); // ENOENT, EACCES
+    p.on('close', (code, sig) => {
+      settle();
+      if (why === 'abort') return reject(aborted());
+      if (why === 'overflow-out' && cut) return resolve({ code: 0, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString(), cut: true });
+      if (why) return reject(new Error(why === 'timeout' ? `${cmd} ne répond pas (${timeout / 1000} s)` : `sortie de ${cmd} trop volumineuse`));
+      resolve({ code: code ?? sig, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() });
     });
+    if (input !== undefined) {
+      // Process tué ou sorti avant d'avoir lu : EPIPE sur stdin, sans écouteur il tuerait le daemon.
+      p.stdin.on('error', () => {});
+      p.stdin.end(input);
+    }
   });
+}
+
+/**
+ * git sans prompt ni pager ; `ok` : codes de sortie attendus (diff --no-index rend 1 quand ça diffère).
+ * `timeout` : groupe de git arrêté au-delà (cf. run) ; `signal` : requête abandonnée ; `maxBuffer`, `cut` : cf. run.
+ */
+export async function git(cwd, args, ok = [0], { timeout = GIT_TIMEOUT, signal, maxBuffer, cut } = {}) {
+  const { code, stdout, stderr } = await run('git', ['-c', 'core.quotePath=false', ...args], { cwd, timeout, signal, maxBuffer, cut, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' } });
+  // stderr remonté tel quel : c'est lui qui explique un hook pre-commit ou une signature en échec.
+  if (!ok.includes(code)) throw Object.assign(new Error((stderr || stdout).trim() || `git : code ${code}`), { code });
+  return stdout;
 }
 
 /** `git status --porcelain=v1 -z` → fichiers ; un renommage occupe deux champs (nouveau puis ancien chemin). */
@@ -143,16 +213,21 @@ export async function untrackedPatch(root, file) {
 
 // Cache par cwd : l'UI redemande le diff à chaque activité (~400 ms) ; on sert le même résultat 1,5 s et une requête
 // en cours est partagée. Clé = cwd plutôt que racine, pour éviter aussi le `rev-parse` de chaque appel.
+// Borné : les entrées expirées sont retirées à chaque calcul, il ne reste que les dossiers demandés dans les 1,5 dernières s.
 const TTL = 1500;
 const cache = new Map(); // cwd → { at, p }
 // ponytail: une modification via Vigie vide tout le cache (rare) ; par racine si plusieurs dépôts suivis en souffrent.
 const invalidate = () => cache.clear();
+/** Entrées du cache des diffs (tests : la borne). */
+export const diffCacheSize = () => cache.size;
 
 export function readGitDiff(cwd) {
+  const now = Date.now();
   const hit = cache.get(cwd);
-  if (hit && Date.now() - hit.at < TTL) return hit.p;
+  if (hit && now - hit.at < TTL) return hit.p;
+  for (const [k, v] of cache) if (now - v.at >= TTL) cache.delete(k);
   const p = computeGitDiff(cwd);
-  cache.set(cwd, { at: Date.now(), p });
+  cache.set(cwd, { at: now, p });
   p.catch(() => { if (cache.get(cwd)?.p === p) cache.delete(cwd); });
   return p;
 }
@@ -166,7 +241,9 @@ async function computeGitDiff(cwd) {
     git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
   ]);
   const all = parseStatus(status);
-  // Un seul `git diff` pour tous les fichiers suivis ; préfixes forcés et diff externe coupé, quelle que soit la config.
+  // Un seul `git diff` pour tous les fichiers suivis ; préfixes forcés et diff externe coupé (splitPatch attend le patch de git),
+  // quelle que soit la config. Textconv gardé, comme dans un terminal : rien ne sort de la machine ici (git-crypt, docx… restent
+  // lisibles), et `git status` lance de toute façon les filtres du dépôt. La suggestion de commit, elle, le coupe (décision 046).
   // ponytail: on diffe tout le dépôt même au-delà de MAX_FILES (borné par maxBuffer) ; pathspec des MAX_FILES premiers si ça pèse.
   // Échec (maxBuffer dépassé, git en erreur) : on le journalise et les fichiers suivis sont marqués `truncated` plutôt que vides en silence.
   let diffFailed = false;
@@ -188,11 +265,16 @@ async function computeGitDiff(cwd) {
   return { cwd, repo: true, root, branch, files, total: all.length };
 }
 
-/** Annule les modifications d'un fichier par rapport à HEAD. Seul un chemin présent dans `git status` est accepté. */
-export async function restoreFile(cwd, filePath) {
-  const root = (await git(cwd, ['rev-parse', '--show-toplevel'])).trim();
+/**
+ * Annule les modifications d'un fichier par rapport à HEAD. Seul un chemin présent dans `git status` est accepté, et jamais
+ * dans la config globale de Claude Code (403, comme replaceFile) : restaurer efface ou réécrit le fichier.
+ * `home` : dossier dont `.claude` et `.claude.json` sont protégés (cf. underClaudeConfig).
+ */
+export async function restoreFile(cwd, filePath, home = os.homedir()) {
+  const root = await writableRepo(cwd, home); // git rm / restore --staged écrivent l'index
   const f = parseStatus(await git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])).find((x) => x.path === filePath);
   if (!f) throw new Error('fichier non modifié');
+  for (const p of [f.path, f.from]) if (p && await underClaudeConfig(path.join(root, p), home)) throw fail('config Claude en lecture seule', 403);
   try {
     if (f.status === '?') return await fs.promises.rm(path.join(root, f.path), { force: true });
     if (f.status === 'A' || f.status === 'R') await git(root, ['rm', '-f', '-q', '--', f.path]);
@@ -236,8 +318,7 @@ export async function checkFile(root, rel) {
   const st = await fs.promises.lstat(full).catch(() => null);
   if (!st?.isFile()) throw fail('pas un fichier ordinaire');
   // Un dossier parent lien symbolique ferait sortir du dépôt malgré le lstat du fichier lui-même.
-  const out = path.relative(await fs.promises.realpath(root), await fs.promises.realpath(full));
-  if (out === '..' || out.startsWith('..' + path.sep) || path.isAbsolute(out)) throw fail('fichier hors du dépôt');
+  if (!isInside(await fs.promises.realpath(full), await fs.promises.realpath(root))) throw fail('fichier hors du dépôt');
   if (st.size > MAX_PATCH) throw fail('fichier trop volumineux pour être édité');
   const buf = await fs.promises.readFile(full);
   if (buf.subarray(0, 8000).includes(0)) throw fail('fichier binaire'); // même heuristique que untrackedPatch
@@ -262,12 +343,29 @@ export async function readWorktreeFile(cwd, filePath) {
   return { path: filePath, content, hash: sha256(buf) };
 }
 
-/** Vrai si `full` (déjà résolu) est sous `<home>/.claude` résolu : la config Claude n'est jamais écrite par Vigie. */
-async function underClaudeConfig(full, home) {
-  const dir = path.join(home, '.claude');
-  const real = await fs.promises.realpath(dir).catch(() => path.resolve(dir));
-  const rel = path.relative(real, await fs.promises.realpath(full));
-  return !(rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel));
+/** Chemin résolu (liens suivis) ; fichier disparu (supprimé, à restaurer) : dossier parent résolu + nom. */
+const realish = (p) => fs.promises.realpath(p).catch(() => fs.promises.realpath(path.dirname(p)).then((d) => path.join(d, path.basename(p)), () => path.resolve(p)));
+
+/**
+ * Vrai si `full` est dans la config globale de Claude Code (`paths.claudeConfigPaths` : `~/.claude`, `~/.claude.json`,
+ * `CLAUDE_CONFIG_DIR`), tout résolu : Vigie ne l'écrit jamais. `env` : lu pour CLAUDE_CONFIG_DIR.
+ */
+export async function underClaudeConfig(full, home, env = process.env) {
+  const real = await realish(full);
+  for (const p of claudeConfigPaths({ env, home })) if (isInside(real, await realish(p))) return true;
+  return false;
+}
+
+/**
+ * Racine du dépôt de `cwd`, seulement si ni elle ni le dossier git commun (objets, refs, index d'un worktree lié) ne sont
+ * dans la config globale de Claude (`~/.claude` versionné, ou worktree d'un tel dépôt) : 403 sinon. Garde de toute écriture
+ * dans `.git` (commitAll, createBranch, restoreFile).
+ */
+async function writableRepo(cwd, home) {
+  // Chemins relatifs au cwd de git (`.git`, `../x/.git`) : résolus depuis `cwd`.
+  const [root, common] = (await git(cwd, ['rev-parse', '--show-toplevel', '--git-common-dir'])).trim().split('\n');
+  for (const p of [root, path.resolve(cwd, common)]) if (await underClaudeConfig(p, home)) throw fail('config Claude en lecture seule', 403);
+  return root;
 }
 
 /**
@@ -323,33 +421,64 @@ export function writeWorktreeFile(cwd, filePath, content, hash, home = os.homedi
   return replaceFile(() => editable(cwd, filePath), content, hash, home);
 }
 
-/** Indexe tout (.gitignore respecté) et commite avec `message`. */
-export async function commitAll(cwd, message) {
+/** Indexe tout (.gitignore respecté) et commite avec `message`. `home` : dossier dont `.claude` est protégé (cf. writableRepo). */
+export async function commitAll(cwd, message, home = os.homedir()) {
   if (!message.trim()) throw new Error('message de commit vide');
-  const root = (await git(cwd, ['rev-parse', '--show-toplevel'])).trim();
+  const root = await writableRepo(cwd, home);
   try {
     await git(root, ['add', '-A']);
-    await git(root, ['commit', '-q', '-m', message]);
+    // Hooks pre-commit (tests, lint) : délai plus long qu'une lecture.
+    await git(root, ['commit', '-q', '-m', message], [0], { timeout: 600_000 });
   } finally { invalidate(); }
 }
 
-/** Crée la branche `name` depuis HEAD et bascule dessus ; les modifs non commitées suivent (git switch -c). */
-export async function createBranch(cwd, name) {
-  const root = (await git(cwd, ['rev-parse', '--show-toplevel'])).trim();
+/** Crée la branche `name` depuis HEAD et bascule dessus ; les modifs non commitées suivent (git switch -c). `home` : cf. commitAll. */
+export async function createBranch(cwd, name, home = os.homedir()) {
+  const root = await writableRepo(cwd, home);
   await git(root, ['check-ref-format', '--branch', name]);
   try { await git(root, ['switch', '-c', name]); } finally { invalidate(); }
 }
 
 const MAX_PROMPT_DIFF = 60_000;
+/** Noms de fichiers non suivis dans le prompt : 200 au plus et 20 000 caractères au plus, puis le nombre des autres. */
+const MAX_PROMPT_NAMES = 200;
+const MAX_PROMPT_NAMES_CHARS = 20_000;
 
-/** Message de commit proposé par `claude -p` (sans outils ni transcript) à partir du diff et du style des derniers commits. */
-export async function suggestCommitMessage(cwd, env) {
-  const root = (await git(cwd, ['rev-parse', '--show-toplevel'])).trim();
-  const base = await git(root, ['rev-parse', '--verify', '-q', 'HEAD']).then(() => 'HEAD', () => EMPTY_TREE);
+/** Sortie de `git ls-files --others` → noms pour le prompt, bornés (cf. MAX_PROMPT_NAMES), suivis de `[… N autres]` s'il en reste. */
+function untrackedNames(out) {
+  const names = out.split('\n').filter(Boolean);
+  const kept = [];
+  let size = 0;
+  for (const n of names) {
+    if (kept.length === MAX_PROMPT_NAMES || (size += n.length + 1) > MAX_PROMPT_NAMES_CHARS) break;
+    kept.push(n);
+  }
+  const rest = names.length - kept.length;
+  return [...kept, ...(rest ? [`[… ${rest} autres]`] : [])].join('\n');
+}
+
+// Décision 046 : deuxième exception au « local uniquement ». Seulement sur clic (POST …/git/commit-message), par le binaire
+// `claude` de l'utilisateur (le daemon ne fait aucune requête), `--tools ''` et `--no-session-persistence` ; contenu borné au
+// diff tronqué (MAX_PROMPT_DIFF), aux noms des fichiers non suivis (MAX_PROMPT_NAMES) et aux 15 derniers titres de commit. L'élargir = nouvelle décision.
+// Lancé depuis `workDir` (dossier vide de Vigie), jamais depuis le dépôt : ni CLAUDE.md, ni réglages, hooks ou MCP du projet.
+// `--setting-sources ''` : aucun réglage ni CLAUDE.md utilisateur, projet ou local (seuls les réglages gérés de l'organisation
+// restent, imposés par la CLI) ; `--strict-mcp-config` sans `--mcp-config` : aucun serveur MCP. Pas `--bare` : il coupe l'OAuth des abonnés.
+export const CLAUDE_ARGS = ['-p', '--no-session-persistence', '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--model', 'haiku'];
+/**
+ * Message de commit proposé par `claude -p` (sans outils ni transcript) à partir du diff et du style des derniers commits.
+ * `workDir` : dossier de travail de claude (`~/.vigie/commit-message`, créé au besoin) ;
+ * `signal` : requête abandonnée (claude et les git tués) ; `timeout` : claude tué au-delà.
+ */
+export async function suggestCommitMessage(cwd, env, { workDir, signal, timeout = 120_000 } = {}) {
+  const opts = { signal };
+  const root = (await git(cwd, ['rev-parse', '--show-toplevel'], [0], opts)).trim();
+  const base = await git(root, ['rev-parse', '--verify', '-q', 'HEAD'], [0], opts).then(() => 'HEAD', () => EMPTY_TREE);
   const [diff, untracked, log] = await Promise.all([
-    git(root, ['diff', '--no-color', '-M', base]),
-    git(root, ['ls-files', '--others', '--exclude-standard']),
-    git(root, ['log', '-15', '--format=%s']).catch(() => ''),
+    // Ni diff externe ni textconv (git-crypt déchiffre par textconv) : seul le patch de git part dans le prompt. Lecture arrêtée
+    // au-delà de ce qui entre dans le prompt (3 octets UTF-8 au plus par caractère JS), au lieu d'échouer sur un diff énorme.
+    git(root, ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '-M', base], [0], { ...opts, maxBuffer: 3 * MAX_PROMPT_DIFF + 3, cut: true }),
+    git(root, ['ls-files', '--others', '--exclude-standard'], [0], opts),
+    git(root, ['log', '-15', '--format=%s'], [0], opts).catch(() => ''),
   ]);
   if (!diff.trim() && !untracked.trim()) throw new Error('rien à commiter');
   const prompt = [
@@ -357,16 +486,11 @@ export async function suggestCommitMessage(cwd, env) {
     'Respecte la langue et la convention des commits récents (ex. Conventional Commits si utilisée). Ligne de titre ≤ 72 caractères, puis, si utile, une ligne vide et un corps court expliquant le pourquoi.',
     'Réponds uniquement avec le message, sans bloc de code ni commentaire.',
     `\n## Commits récents\n${log || '(aucun)'}`,
-    `\n## Fichiers non suivis\n${untracked || '(aucun)'}`,
+    `\n## Fichiers non suivis\n${untrackedNames(untracked) || '(aucun)'}`,
     `\n## Diff\n${diff.slice(0, MAX_PROMPT_DIFF)}${diff.length > MAX_PROMPT_DIFF ? '\n[… diff tronqué]' : ''}`,
   ].join('\n');
-  return new Promise((resolve, reject) => {
-    const p = spawn('claude', ['-p', '--no-session-persistence', '--tools', '', '--model', 'haiku'], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
-    let out = '', err = '';
-    p.stdout.on('data', (d) => { out += d; });
-    p.stderr.on('data', (d) => { err += d; });
-    p.on('error', reject);
-    p.on('close', (code) => (code === 0 ? resolve(out.trim()) : reject(new Error(err.trim() || `claude a quitté avec le code ${code}`))));
-    p.stdin.end(prompt);
-  });
+  await fs.promises.mkdir(workDir, { recursive: true });
+  const { code, stdout, stderr } = await run('claude', CLAUDE_ARGS, { cwd: workDir, env, input: prompt, timeout, signal });
+  if (code !== 0) throw new Error(stderr.trim() || `claude a quitté avec le code ${code}`);
+  return stdout.trim();
 }

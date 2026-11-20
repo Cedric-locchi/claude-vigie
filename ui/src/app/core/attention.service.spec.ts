@@ -4,7 +4,6 @@ import { Router, provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Alerts, Snapshot, Usage } from './models';
 import { aSession, aSettings, aSnapshot, anUsage, fakeResource, provideVigieServiceMock } from './vigie.service.mock';
-import { VigieService } from './vigie.service';
 import { AttentionService } from './attention.service';
 import * as f from './format';
 
@@ -172,13 +171,32 @@ describe('AttentionService', () => {
     expect(service.replyError()).toEqual({ id: 'a', message: "Impossible d'envoyer la réponse au terminal : le daemon ne répond pas. Réessaie." });
   });
 
+  it("réponse rapide : rien si la session n'attend plus ; l'échec s'oublie quand la session change d'état", async () => {
+    const sendKeys = vi.fn(async () => { throw { status: 404, error: { error: 'terminal inconnu' } }; });
+    const snapshot = signal<Snapshot | null>(aSnapshot({ sessions: [aSession({ id: 'a', state: 'waiting', reason: 'permission', terminalId: 't1' })] }));
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideVigieServiceMock({ snapshot, sendKeys })] });
+    const service = TestBed.inject(AttentionService);
+    TestBed.tick();
+    expect(await service.send('a', 't1', '/compact')).toBe(false);
+    expect(service.replyError()).toEqual({ id: 'a', message: "Impossible d'envoyer la réponse au terminal : terminal inconnu. Réessaie." });
+    snapshot.set(aSnapshot({ sessions: [aSession({ id: 'a', state: 'waiting', reason: 'permission', terminalId: 't1', lastTs: 70_000 })] }));
+    TestBed.tick();
+    expect(service.replyError()?.id).toBe('a'); // même état : l'échec reste affiché
+    snapshot.set(aSnapshot({ sessions: [aSession({ id: 'a', state: 'running', terminalId: 't1' })] }));
+    TestBed.tick();
+    expect(service.replyError()).toBeNull(); // traitée ailleurs
+    sendKeys.mockClear();
+    await service.reply('a', 'refuse');
+    expect(sendKeys).not.toHaveBeenCalled();
+  });
+
   describe('alertes de consommation', () => {
     const NOW = new Date(2026, 10, 13, 15).getTime();
     function setupAlerts(alerts: Alerts) {
       const snapshot = signal<Snapshot | null>(aSnapshot({ now: NOW, usage: anUsage({ today: { tokens: 1, cost: 5, cacheRate: 0.8 } }) }));
       TestBed.configureTestingModule({
         providers: [provideRouter([{ path: '**', children: [] }]), provideVigieServiceMock({
-          snapshot, settingsResource: (() => fakeResource(aSettings({ alerts }))) as unknown as VigieService['settingsResource'],
+          snapshot, settingsResource: () => fakeResource(aSettings({ alerts })),
         })],
       });
       const service = TestBed.inject(AttentionService);

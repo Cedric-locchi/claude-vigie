@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { checkFile, fail, git, MAX_PATCH, repoRoot, replaceFile, sha256 } from './git.mjs';
+import { isInside } from './paths.mjs';
 
 const MAX_TREE = 20_000;
 // Dossiers repliés hors dépôt : énormes et sans intérêt à parcourir ; listés sans leur contenu.
@@ -125,8 +126,7 @@ export async function searchProjectFiles(cwd, q, { matchCase = false, signal, ma
         const st = await fs.promises.lstat(full);
         if (!st.isFile() || st.size > MAX_PATCH) continue;
         // Un dossier parent devenu lien (a/ → /etc) ferait lire hors du projet malgré le lstat du fichier.
-        const out = path.relative(realRoot, await fs.promises.realpath(full));
-        if (out === '..' || out.startsWith('..' + path.sep) || path.isAbsolute(out)) continue;
+        if (!isInside(await fs.promises.realpath(full), realRoot)) continue;
         const buf = await fs.promises.readFile(full);
         if (buf.subarray(0, 8000).includes(0)) continue; // même heuristique que checkFile
         const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buf); // comme checkFile : col = celle de /files/read

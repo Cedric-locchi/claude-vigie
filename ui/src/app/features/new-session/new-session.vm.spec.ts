@@ -1,14 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { provideVigieServiceMock } from '../../core/vigie.service.mock';
-import { VigieService } from '../../core/vigie.service';
+import { aTerminal, provideVigieServiceMock } from '../../core/vigie.service.mock';
 import { CLIENT_OS, ClientOs } from '../../core/platform';
 import { NewSessionVm, ago, buildCommand, fuzzy } from './new-session.vm';
 
-function createVm(startSession = vi.fn(async () => ({ id: 't1', sessionId: 's1' })), os: ClientOs = 'mac') {
+function createVm(startSession = vi.fn(async () => aTerminal()), os: ClientOs = 'mac') {
   TestBed.configureTestingModule({
-    providers: [NewSessionVm, { provide: CLIENT_OS, useValue: os }, provideRouter([]), provideVigieServiceMock({ startSession: startSession as unknown as VigieService['startSession'] })],
+    providers: [NewSessionVm, { provide: CLIENT_OS, useValue: os }, provideRouter([]), provideVigieServiceMock({ startSession })],
   });
   const vm = TestBed.inject(NewSessionVm);
   const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);

@@ -1,7 +1,7 @@
 import { Injectable, Signal, computed, effect, inject, signal, untracked } from '@angular/core';
 import * as f from '../../../core/format';
 import { Agent, SessionCost, SessionState } from '../../../core/models';
-import { VigieService } from '../../../core/vigie.service';
+import { VigieService, daemonError } from '../../../core/vigie.service';
 import { costChart, cumulByAgent } from './session-cost';
 
 /** Au plus un rechargement par période d'activité : le détail, lui, bouge toutes les 400 ms. */
@@ -57,8 +57,8 @@ export class SessionCostVm {
       if (this.loadedFor !== id) return; // réponse d'une session quittée entre-temps
       this.cost.set(cost);
       this.error.set(null);
-    } catch {
-      if (this.loadedFor === id) this.error.set('Coût indisponible : le daemon est-il à jour ? (redémarre-le après une mise à jour)');
+    } catch (e) {
+      if (this.loadedFor === id) this.error.set(daemonError(e, 'Coût indisponible.'));
     } finally {
       this.loading.set(false);
     }

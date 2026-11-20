@@ -10,7 +10,7 @@ const SHORT = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' 
   selector: 'app-activity-grid',
   template: `
     @let g = grid();
-    <section class="activity" aria-labelledby="activity-title">
+    <section class="activity panel" aria-labelledby="activity-title">
       <header>
         <div>
           <h2 id="activity-title"><svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>Activité</h2>
@@ -64,7 +64,7 @@ const SHORT = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' 
     </section>
   `,
   styles: `
-    .activity { border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+    .activity { padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
     header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
     h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
     .bolt { width: 18px; height: 18px; flex: none; fill: var(--brand); }
@@ -77,7 +77,7 @@ const SHORT = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' 
     /* Sous 13 semaines de cases de 14px, la grille défile ; la semaine en cours reste visible (direction rtl). */
     .scroll { overflow-x: auto; direction: rtl; container-type: inline-size; }
     .grid {
-      /* Autant de semaines que la largeur en tient (weeksFor) ; la case absorbe le reste au pixel près (14 à 18px) ;
+      /* Autant de semaines que la largeur en tient (weeksFor) ; la case absorbe le reste au pixel près (14 à 26px) ;
          1px de marge pour qu'un arrondi ne fasse pas apparaître de barre de défilement. */
       --cell: clamp(14px, (100cqi - 29px) / var(--weeks) - 3px, 26px);
       direction: ltr; display: grid; gap: 3px; width: max-content;

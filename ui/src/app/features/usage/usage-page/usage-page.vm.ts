@@ -3,10 +3,12 @@ import { Injectable, computed, inject, linkedSignal, signal } from '@angular/cor
 import { Router } from '@angular/router';
 import * as f from '../../../core/format';
 import { UsageRow } from '../../../core/models';
-import { VigieService } from '../../../core/vigie.service';
+import { CLIENT_OS, restartCommand } from '../../../core/platform';
+import { VigieService, daemonError } from '../../../core/vigie.service';
 import { heroChart, heroMargins, sessionsChart } from '../usage-charts';
+import { addDays, startOfDay, sum } from '../../../core/usage-rows';
 import {
-  Metric, Range, addDays, byFamily, byModel, dailyByFamily, dayTotals, daysBetween, daysOf, familyOf, groupBy, heroScale, inRange, sessionPoints, startOfDay, stripBlocks, sum,
+  Metric, Range, byFamily, byModel, dailyByFamily, dayTotals, daysBetween, daysOf, familyOf, groupBy, heroScale, inRange, sessionPoints, stripBlocks,
 } from '../usage-series';
 
 export type { Metric } from '../usage-series';
@@ -21,6 +23,8 @@ const monthName = (ts: number) => new Date(ts).toLocaleDateString('fr-FR', { mon
 export class UsagePageVm {
   private readonly vigie = inject(VigieService);
   private readonly router = inject(Router);
+  /** Commande qui relance le daemon, selon l'OS du client (daemon d'avant une mise à jour). */
+  readonly restartCommand = restartCommand(inject(CLIENT_OS));
 
   readonly usage = computed(() => this.vigie.snapshot()?.usage ?? null);
   readonly now = computed(() => this.vigie.snapshot()?.now ?? Date.now());
@@ -58,10 +62,8 @@ export class UsagePageVm {
   /** Garde les dernières lignes pendant un rechargement (chaque minute, ou changement de période) : pas de clignotement. */
   private readonly data = keepLast(this.rowsResource);
   readonly loaded = computed(() => this.data() !== null);
-  /** Daemon injoignable ou trop ancien (sans /api/usage) : on le dit au lieu d'afficher « Chargement… » à vie. */
-  readonly failed = computed(() => this.rowsResource.status() === 'error');
-  /** Daemon antérieur à l'historique des fenêtres (`windows` absent). */
-  readonly noWindows = computed(() => this.loaded() && !this.data()?.windows);
+  /** Lecture en échec (daemon injoignable, trop ancien, réponse hors contrat) : on dit pourquoi au lieu d'afficher « Chargement… » à vie. */
+  readonly loadError = computed(() => (this.rowsResource.status() === 'error' ? daemonError(this.rowsResource.error(), 'Détail de consommation indisponible.') : null));
 
   /** Familles présentes, pour la légende et le filtre. */
   readonly families = computed(() => [...new Set((this.data()?.rows ?? []).map((r) => familyOf(r.model)))].sort(byFamily));
@@ -112,7 +114,7 @@ export class UsagePageVm {
   // --- Graphique héros : barres par jour, cumul, seuil, bande des fenêtres de 5 h ---
   private readonly settings = this.vigie.settingsResource();
   /** Seuil d'alerte du coût du jour (réglages), en métrique coût seulement ; null = pas de seuil. */
-  readonly threshold = computed(() => (this.metric() === 'cost' && this.settings.hasValue() ? this.settings.value()?.alerts?.dailyCost ?? null : null));
+  readonly threshold = computed(() => (this.metric() === 'cost' && this.settings.hasValue() ? this.settings.value().alerts.dailyCost : null));
   readonly spanDays = computed(() => daysOf(this.span()));
   private readonly spanRows = computed(() => this.modelRows().filter((r) => inRange(startOfDay(r.day), this.span())));
   private readonly spanWindows = computed(() => (this.data()?.windows ?? []).filter((w) => inRange(startOfDay(w.start), this.span())));

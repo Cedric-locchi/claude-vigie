@@ -1,9 +1,10 @@
 import { Injectable, Signal, computed, inject, signal } from '@angular/core';
 import { form, submit, validateStandardSchema } from '@angular/forms/signals';
 import { BranchName, CommitBody } from '@vigie/contract';
+import { clipboardCopy } from '../../../core/clipboard';
 import { ConfirmRequest, ConfirmService } from '../../../core/confirm.service';
 import { GitFile } from '../../../core/models';
-import { VigieService } from '../../../core/vigie.service';
+import { VigieService, daemonError } from '../../../core/vigie.service';
 import { keepLast } from '../../../core/signals';
 
 export interface DiffLine {
@@ -39,10 +40,13 @@ export const STATUS: Record<GitFile['status'], { label: string; hint: string }> 
   '?': { label: 'U', hint: 'Non suivi' },
 };
 
-/** Saisie non enregistrée sur le point d'être remplacée ou abandonnée (partagée avec la garde de sortie de la page). */
+/**
+ * Saisie non enregistrée sur le point d'être remplacée ou abandonnée. Partagée avec le garde de la page, qui peut couvrir
+ * plusieurs fichiers (Diff et onglets de Fichiers) : formulation neutre, sans « ce fichier ».
+ */
 export const DISCARD_EDIT: ConfirmRequest = {
   title: 'Abandonner la saisie ?',
-  message: 'Tu as modifié ce fichier sans l’enregistrer : ces modifications seront perdues.',
+  message: 'Tes modifications ne sont pas enregistrées : elles seront perdues.',
   action: 'Abandonner',
   danger: true,
 };
@@ -58,7 +62,8 @@ export class SessionDiffVm {
 
   /** Garde le dernier diff de la même session pendant un rechargement : pas de clignotement ni de scroll perdu à chaque activité. */
   readonly diff = keepLast(this.resource, this.id);
-  readonly failed = computed(() => this.resource.status() === 'error');
+  /** Lecture du dépôt en échec : la raison (daemon injoignable, session inconnue, réponse hors contrat). */
+  readonly loadError = computed(() => (this.resource.status() === 'error' ? daemonError(this.resource.error(), 'État git indisponible.') : null));
 
   readonly totals = computed(() => (this.diff()?.files ?? []).reduce((t, f) => ({ added: t.added + f.added, removed: t.removed + f.removed }), { added: 0, removed: 0 }));
 
@@ -97,7 +102,7 @@ export class SessionDiffVm {
   async restore(f: GitFile): Promise<void> {
     const id = this.id();
     if (!id || !(await this.confirm.restoreFile(f.path, f.status === '?'))) return;
-    await this.run(() => this.vigie.restoreFile(id, f.path));
+    await this.run(() => this.vigie.restoreFile(id, f.path), 'Restauration impossible.');
     this.resource.reload();
   }
 
@@ -109,7 +114,7 @@ export class SessionDiffVm {
       const { message } = await this.vigie.suggestCommitMessage(id);
       this.commitModel.set({ message });
       this.commitOpen.set(true);
-    });
+    }, 'Message de commit indisponible.');
     this.generating.set(false);
   }
 
@@ -125,7 +130,7 @@ export class SessionDiffVm {
       await this.run(async () => {
         await this.vigie.commit(id, this.commitModel().message.trim());
         this.commitOpen.set(false);
-      });
+      }, 'Commit impossible.');
       this.committing.set(false);
       this.resource.reload();
       return undefined;
@@ -152,7 +157,7 @@ export class SessionDiffVm {
       await this.vigie.createBranch(id, name);
       this.branchOpen.set(false);
       this.branchName.set('');
-    });
+    }, 'Branche non créée.');
     this.branching.set(false);
     this.resource.reload();
   }
@@ -196,7 +201,7 @@ export class SessionDiffVm {
       this.draft.set(r.content);
       this.edit.set({ id, path: f.path, hash: r.hash, eol: r.content.includes('\r\n') ? '\r\n' : '\n', content: r.content });
       this.conflict.set(false);
-    });
+    }, 'Lecture du fichier impossible.');
     this.loadingFile.set(false);
   }
 
@@ -216,9 +221,8 @@ export class SessionDiffVm {
       this.edit.set(null);
       this.resource.reload();
     } catch (err) {
-      const msg = message(err);
       if ((err as { status?: number }).status === 412) this.conflict.set(true); // 412 = empreinte périmée ; 409 = Claude travaille
-      else this.error.set(msg);
+      else this.error.set(daemonError(err, 'Enregistrement impossible.'));
     }
     this.saving.set(false);
   }
@@ -227,12 +231,17 @@ export class SessionDiffVm {
     this.commitOpen.set(false);
   }
 
-  private async run(fn: () => Promise<unknown>): Promise<void> {
+  private readonly clipboard = clipboardCopy();
+  /** « Copié » 1,5 s après la copie du message proposé. */
+  readonly copied = this.clipboard.copied;
+
+  copyMessage(): Promise<void> {
+    return this.clipboard.copy(this.commitModel().message);
+  }
+
+  /** Lance une requête ; un échec s'affiche (message du daemon, sinon `fallback` : ce qui n'a pas pu se faire). */
+  private async run(fn: () => Promise<unknown>, fallback: string): Promise<void> {
     this.error.set(null);
-    try { await fn(); } catch (e) { this.error.set(message(e)); }
+    try { await fn(); } catch (e) { this.error.set(daemonError(e, fallback)); }
   }
 }
-
-/** Message d'une erreur HTTP du daemon (`{ error }`), sinon de l'exception. */
-export const message = (e: unknown): string =>
-  (e as { error?: { error?: string } }).error?.error ?? (e instanceof Error ? e.message : 'Le daemon n’a pas répondu.');

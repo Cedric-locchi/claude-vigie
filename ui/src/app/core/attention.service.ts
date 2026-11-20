@@ -1,10 +1,14 @@
-import { DOCUMENT, Service, computed, effect, inject, signal, untracked } from '@angular/core';
+import { DOCUMENT, DestroyRef, Service, computed, effect, inject, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
-import { LogEntry, LogKind, Prefs, TurnPref, UsageAlert, bell, deliver, groupLog, parseLog, pendingSessions, usageAlerts, when } from './attention';
+import { AttentionEntry, AttentionKind, Prefs, TurnPref, UsageAlert, bell, deliver, groupLog, parseLog, pendingSessions, usageAlerts, when } from './attention';
 import { Alerts, SessionState, SessionSummary, Usage } from './models';
 import { readPref, writePref } from './prefs';
 import { SessionView } from './session-view';
-import { KEYS, VigieService, sendReply } from './vigie.service';
+import { VigieService, daemonError } from './vigie.service';
+
+/** Touches envoyées au PTY par les réponses rapides : le terminal reste la seule source d'interaction. */
+export const KEYS = { allow: '\r', refuse: '\x1b', interrupt: '\x1b' } as const;
 
 /** Notification système des attentes (clé historique : coupait tout avant les réglages par type). */
 const NOTIFY_KEY = 'vigie-notify';
@@ -31,7 +35,7 @@ const PAUSE_MS = 3_600_000;
 export interface Toast { id: number; kind: 'waiting' | 'turn'; sessionId: string }
 
 const needsYou = (state: SessionState) => state === 'waiting' || state === 'turn';
-const logKind = (s: SessionSummary): LogKind => (s.state === 'turn' ? 'turn' : (s.reason ?? 'permission'));
+const logKind = (s: SessionSummary): AttentionKind => (s.state === 'turn' ? 'turn' : (s.reason ?? 'permission'));
 
 /**
  * Tout ce qui demande ton attention : ce qui est à traiter (dérivé du snapshot, jamais d'un journal),
@@ -61,7 +65,7 @@ export class AttentionService {
 
   /** Seuils d'alerte de consommation (Réglages) ; null tant que le daemon ne les a pas donnés. */
   private readonly settings = this.vigie.settingsResource();
-  readonly alerts = computed<Alerts | null>(() => (this.settings.hasValue() ? (this.settings.value()?.alerts ?? null) : null));
+  readonly alerts = computed<Alerts | null>(() => (this.settings.hasValue() ? this.settings.value().alerts : null));
   private readonly dismissed = signal({ cost: readPref(COST_DISMISS_KEY), window: readPref(WINDOW_DISMISS_KEY) });
 
   /** À traiter : sessions qui attendent, fins de tour, puis alertes de conso actives. Chaque entrée disparaît quand l'état change. */
@@ -73,7 +77,7 @@ export class AttentionService {
   readonly bell = computed(() => bell(this.vigie.snapshot()?.sessions ?? [], this.usageAlerts().length, this.pausedUntil()));
 
   /** Journal « Plus tôt » : attentes et fins de tour terminées, mémorisées sur cette machine. */
-  private readonly log = signal<LogEntry[]>(parseLog(readPref(LOG_KEY)));
+  private readonly log = signal<AttentionEntry[]>(parseLog(readPref(LOG_KEY)));
   readonly history = computed(() => groupLog(this.log()).map((g) => ({ ...g, when: g.times.slice(0, 3).map((ts) => when(ts, this.now())).join(' · ') })));
 
   private readonly toastList = signal<Toast[]>([]);
@@ -84,11 +88,14 @@ export class AttentionService {
   }));
   private nextId = 1;
 
-  /** Échec de la dernière réponse rapide, sur la ligne (ou le toast) de la session concernée. */
+  /**
+   * Échec du dernier envoi au terminal d'une session, affiché là où elle apparaît (ligne, toast, cloche, page de la session) ;
+   * oublié quand elle change d'état (la demande a été traitée ailleurs).
+   */
   readonly replyError = signal<{ id: string; message: string } | null>(null);
 
   /** État précédent de chaque session ; null tant que le premier snapshot n'est pas arrivé. */
-  private previous: Map<string, { state: SessionState; kind: LogKind; title: string; since: number }> | null = null;
+  private previous: Map<string, { state: SessionState; kind: AttentionKind; title: string; since: number }> | null = null;
   private audio: AudioContext | null = null;
 
   constructor() {
@@ -106,13 +113,16 @@ export class AttentionService {
       const waiting = this.bell().waiting;
       this.document.title = waiting ? `(${waiting}) Vigie` : 'Vigie';
     });
+    const destroy = inject(DestroyRef);
     // Ouvrir une session ferme ses toasts : elle est sous tes yeux.
-    this.router.events.subscribe((e) => {
+    this.router.events.pipe(takeUntilDestroyed(destroy)).subscribe((e) => {
       const id = e instanceof NavigationEnd ? e.urlAfterRedirects.match(/^\/sessions\/([^/?#]+)/)?.[1] : null;
       if (id) this.toastList.update((list) => list.filter((t) => t.sessionId !== id));
     });
     // Un navigateur n'accorde la permission que sur un geste de l'utilisateur : on la demande au premier clic.
-    this.document.addEventListener('pointerdown', () => { if (this.wantsSystem()) void this.askPermission(); }, { once: true });
+    const ask = () => { if (this.wantsSystem()) void this.askPermission(); };
+    this.document.addEventListener('pointerdown', ask, { once: true });
+    destroy.onDestroy(() => this.document.removeEventListener('pointerdown', ask));
   }
 
   /** Notification système des autorisations et questions (le toast et le panneau restent toujours actifs). */
@@ -165,13 +175,22 @@ export class AttentionService {
     this.toastList.update((list) => list.filter((t) => t.id !== id));
   }
 
-  /** Autoriser / Refuser depuis la cloche ou un toast : la touche part dans le terminal claude de la session. */
+  /** Autoriser / Refuser (cloche, toast, barre latérale, Dashboard) : la touche part dans le terminal claude de la session qui attend. */
   async reply(sessionId: string, answer: 'allow' | 'refuse'): Promise<void> {
     const s = this.vigie.snapshot()?.sessions.find((x) => x.id === sessionId);
-    if (!s?.terminalId || s.state !== 'waiting') return;
+    if (s?.terminalId && s.state === 'waiting') await this.send(s.id, s.terminalId, KEYS[answer]);
+  }
+
+  /** Tape `keys` dans un terminal de la session (seul envoi de touches de l'app) ; ne lève jamais : un échec va dans `replyError`. */
+  async send(sessionId: string, terminalId: string, keys: string): Promise<boolean> {
     this.replyError.set(null);
-    const message = await sendReply(this.vigie, s.terminalId, KEYS[answer]);
-    if (message) this.replyError.set({ id: sessionId, message });
+    try {
+      await this.vigie.sendKeys(terminalId, keys);
+      return true;
+    } catch (e) {
+      this.replyError.set({ id: sessionId, message: `Impossible d'envoyer la réponse au terminal : ${daemonError(e, 'erreur inconnue', { inline: true })}. Réessaie.` });
+      return false;
+    }
   }
 
   private async tryOut(): Promise<void> {
@@ -210,6 +229,8 @@ export class AttentionService {
     }));
     this.previous = current;
     if (!before) return; // premier snapshot : ce qui attend déjà n'est pas une nouveauté
+    const err = this.replyError();
+    if (err && before.get(err.id)?.state !== current.get(err.id)?.state) this.replyError.set(null);
     // Journal : une attente ou une fin de tour qui se termine (on note quand elle a commencé, pas comment elle s'est réglée).
     const ended = [...before].filter(([id, p]) => needsYou(p.state) && current.get(id)?.state !== p.state);
     if (ended.length) {

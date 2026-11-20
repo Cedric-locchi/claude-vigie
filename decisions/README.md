@@ -7,7 +7,7 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | # | Décision | Statut | Date |
 |---|---|---|---|
 | [001](2026-11-11-001-public-et-perimetre-produit.md) | Vigie est un outil d'équipe, centré sur trois usages à égalité | Acceptée | 2026-11-11 |
-| [002](2026-11-11-002-agents-et-skills-claude-code.md) | Des agents et des skills Claude Code dédiés au projet | Acceptée | 2026-11-11 |
+| [002](2026-11-11-002-agents-et-skills-claude-code.md) | Des agents et des skills Claude Code dédiés au projet | Acceptée (complétée par 045 et 047) | 2026-11-11 |
 | [003](2026-11-11-003-pas-de-clean-architecture.md) | Pas de Clean Architecture : un découpage léger, rendu explicite | Acceptée | 2026-11-11 |
 | [004](2026-11-11-004-contrat-zod-partage.md) | Le contrat daemon ↔ UI vit dans des schémas Zod partagés (`contract/`) | Acceptée | 2026-11-11 |
 | [005](2026-11-11-005-zod-mini.md) | Toujours `zod/mini`, jamais l'import complet de Zod | Acceptée | 2026-11-11 |
@@ -16,7 +16,7 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [008](2026-11-11-008-plateformes-macos-linux-wsl.md) | Cibles : macOS et Linux ; Windows via WSL | Acceptée | 2026-11-11 |
 | [009](2026-11-11-009-pas-de-ci-pour-l-instant.md) | Pas de CI pour l'instant | Acceptée | 2026-11-11 |
 | [010](2026-11-11-010-fermeture-fenetre-linux.md) | Sous Linux, fermer la fenêtre quitte l'app | Acceptée | 2026-11-11 |
-| [011](2026-11-11-011-securite-du-daemon.md) | Durcissement du daemon local | Acceptée | 2026-11-11 |
+| [011](2026-11-11-011-securite-du-daemon.md) | Durcissement du daemon local | Acceptée (complétée par 044) | 2026-11-11 |
 | [012](2026-11-11-012-purge-des-discussions.md) | Exception unique : les discussions sont effacées de `~/.claude` | Acceptée par défaut (documentée, sans objection de ta part) | 2026-11-11 |
 | [013](2026-11-11-013-polices-embarquees.md) | Polices embarquées au lieu de Google Fonts | Acceptée | 2026-11-11 |
 | [014](2026-11-11-014-palette-oklch-et-cartes-plates.md) | Nouvelle palette OKLCH et cartes spartan plates | Remplacée par 040 | 2026-11-11 |
@@ -29,7 +29,7 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [021](2026-11-12-021-retour-aux-hooks-command.md) | Retour aux hooks `node hook.mjs` (proxy du sandbox) | Acceptée | 2026-11-12 |
 | [022](2026-11-12-022-explorateur-de-fichiers.md) | Explorateur de fichiers du projet d'une session | Acceptée | 2026-11-12 |
 | [023](2026-11-12-023-coloration-syntaxique.md) | Coloration syntaxique dans l'explorateur de fichiers | Acceptée (limite d'édition levée par 027) | 2026-11-12 |
-| [024](2026-11-13-024-statut-claude.md) | Statut de Claude (status.claude.com) : seule requête sortante | Acceptée | 2026-11-13 |
+| [024](2026-11-13-024-statut-claude.md) | Statut de Claude (status.claude.com) : seule requête sortante | Acceptée (complétée par 046 : deuxième exception, `claude -p` sur clic) | 2026-11-13 |
 | [025](2026-11-13-025-historique-de-consommation.md) | Historique de consommation conservé dans `~/.vigie/usage.json` | Acceptée | 2026-11-13 |
 | [026](2026-11-13-026-budget-bundle-740k.md) | Budget du chargement initial porté à 740 kB | Remplacée par 036 | 2026-11-13 |
 | [027](2026-11-13-027-onglet-fichiers-facon-ide.md) | Onglet Fichiers façon IDE léger, éditeur coloré sans dépendance (remplace la limite « textarea brute » de la 023) | Acceptée | 2026-11-13 |
@@ -45,9 +45,15 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [037](2026-11-18-037-front-des-plugins-en-angular.md) | Le plugin porte son front : composants Angular compilés avec l'app, prêts pour Native Federation (remplace la vue déclarative de la 034) | Acceptée | 2026-11-18 |
 | [038](2026-11-18-038-plugins-npm-et-nx.md) | Plugins npm et Nx : lecture sans process pour npm, `nx graph` sans réseau ni écriture dans le dépôt, refus si télémétrie Nx | Acceptée | 2026-11-18 |
 | [039](2026-11-18-039-etude-refonte-visuelle-dashboard.md) | Étude : Dashboard, palette pétrole et relief léger teinté | Acceptée (lots 1 et 2) | 2026-11-18 |
-| [040](2026-11-18-040-palette-petrole-relief-et-points.md) | Palette pétrole, relief léger teinté et fond pointillé (remplace la 014) | Acceptée (palette remplacée par 042) | 2026-11-18 |
+| [040](2026-11-18-040-palette-petrole-relief-et-points.md) | Palette pétrole, relief léger teinté et fond pointillé (remplace la 014) | Acceptée (palette remplacée par 042 ; complétée par 043) | 2026-11-18 |
 | [041](2026-11-18-041-dashboard.md) | La page Sessions devient le Dashboard (indicateurs, heatmap des tokens, graphiques) | Acceptée | 2026-11-18 |
-| [042](2026-11-19-042-palette-trois-couleurs.md) | Palette à trois couleurs (violet, bleu-vert, orange) + vert et rouge ; pastilles des indicateurs (remplace la palette de la 040) | Acceptée | 2026-11-19 |
+| [042](2026-11-19-042-palette-trois-couleurs.md) | Palette à trois couleurs (violet, bleu-vert, orange) + vert et rouge ; pastilles des indicateurs (remplace la palette de la 040) | Acceptée (complétée par 043) | 2026-11-19 |
+| [043](2026-11-19-043-panneaux-detaches-et-icones-de-fichiers.md) | Barre latérale et vues en panneaux détachés sur le fond pointillé ; icônes de types de fichiers colorées (exception aux trois couleurs) | Acceptée | 2026-11-19 |
+| [044](2026-11-19-044-csp-et-images-du-markdown.md) | CSP servie par le daemon, images distantes du Markdown remplacées par leur texte | Acceptée | 2026-11-19 |
+| [045](2026-11-19-045-architecte-angular-et-revue-complete.md) | Agent `angular-architect` en lecture seule ; `/vigie-archi-review` sur le back et le front ; règles de l'audit dans les fiches d'agents et ESLint (complète la 002) | Acceptée (complétée par 047) | 2026-11-19 |
+| [046](2026-11-19-046-suggestion-de-commit-par-claude.md) | Suggestion de message de commit par `claude -p` : deuxième exception au « local uniquement », sur geste explicite seulement | Acceptée | 2026-11-19 |
+| [047](2026-11-19-047-agent-doc-auditor.md) | Agent `doc-auditor` en lecture seule : la doc vérifiée contre le code en fin de toute session qui modifie le code (complète la 002 et la 045) | Acceptée | 2026-11-19 |
+| [048](2026-11-19-048-multilangue-transloco.md) | Multilangue de l'UI : Transloco, français (source) et anglais, langue choisie dans Réglages ; traduction page par page, Réglages d'abord | Acceptée | 2026-11-19 |
 
 ## En attente de ton choix
 

@@ -3,16 +3,15 @@ import { ConfirmService } from '../../../core/confirm.service';
 import { languageOf } from '../../../core/highlight';
 import { duration } from '../../../core/format';
 import { isMarkdown, renderMarkdown } from '../../../core/markdown';
-import { FileBody, GitFile, SessionTrace } from '../../../core/models';
+import { FileBody, GitFile, SessionSummary, SessionTrace } from '../../../core/models';
 import { CLIENT_OS, isShortcut } from '../../../core/platform';
 import { readPref, writePref } from '../../../core/prefs';
 import { counter, keepLast } from '../../../core/signals';
-import { VigieService } from '../../../core/vigie.service';
+import { VigieService, daemonError } from '../../../core/vigie.service';
 import { GitMark, gitMarks, lineCol, lineCount, lineOffset } from './code-editor/code-editor';
 import { Touched, autoOpen, editedDirs, pathResolver, touchedFiles, visibleFiles } from './touched/files-touched';
 import { Here, claudeFile, withFullPath } from './claude-here/claude-here';
-import { SessionPageVm } from '../session-page/session-page.vm';
-import { STATUS, message } from '../diff/session-diff.vm';
+import { STATUS } from '../diff/session-diff.vm';
 
 const WRAP_KEY = 'vigie.files.wrap';
 const readWrap = (): boolean => readPref(WRAP_KEY) === '1';
@@ -149,6 +148,9 @@ export function quickMatch(files: string[], query: string, max = 50): string[] {
   return hits.sort((a, b) => b.s - a.s).slice(0, max).map((h) => h.f);
 }
 
+/** Ce que la page de session donne à la vue Fichiers. */
+export interface FilesPage { summary: Signal<SessionSummary | null>; openLog: (query: string) => void }
+
 /** Vue Fichiers : arbre du projet, ce que Claude touche, onglets de fichiers ouverts, lecture et édition (mêmes règles que l'édition du Diff). */
 @Injectable()
 export class SessionFilesVm {
@@ -157,7 +159,9 @@ export class SessionFilesVm {
   private readonly mac = inject(CLIENT_OS) === 'mac';
   /** Libellés de raccourci selon la plateforme du client (⌘ sur mac, Ctrl ailleurs). */
   readonly keys = this.mac ? { mod: '⌘', shift: '⇧', aria: 'Meta' } : { mod: 'Ctrl+', shift: 'Shift+', aria: 'Control' };
-  private readonly source = signal<{ id: Signal<string>; idle: Signal<boolean> } | null>(null);
+  private readonly source = signal<{ id: Signal<string>; idle: Signal<boolean>; page: FilesPage | null } | null>(null);
+  /** Session vue par la page : résumé en direct et ouverture du journal ; absente hors de la page (specs). */
+  private readonly page = computed(() => this.source()?.page ?? null);
   /** Session affichée (lue aussi par la recherche dans le contenu). */
   readonly id = computed(() => this.source()?.id() ?? null);
   /** Claude ne travaille pas : l'écriture est permise (le daemon applique la même règle, 409 sinon). */
@@ -173,7 +177,7 @@ export class SessionFilesVm {
   /** Fichiers du projet, sans les fichiers système. */
   readonly files = computed(() => visibleFiles(this.project()?.files ?? []));
   readonly loading = computed(() => this.list.isLoading());
-  readonly listError = computed(() => (this.list.status() === 'error' ? message(this.list.error()) : null));
+  readonly listError = computed(() => (this.list.status() === 'error' ? daemonError(this.list.error(), 'Arbre du projet illisible.') : null));
 
   /** État git (statuts de l'arbre, marqueurs de gouttière) : relu à chaque lecture de fichier, pour rester cohérent avec le contenu affiché. */
   private readonly gitVersion = signal(0);
@@ -251,7 +255,7 @@ export class SessionFilesVm {
   // ── Ce que Claude a touché (trace de la session) ─────────────────────────
   /** Un sous-agent travaille : la trace est relue toutes les 5 s (le daemon ne donne en direct que l'outil de l'agent principal). */
   private readonly subTick = signal(0);
-  private readonly subActive = computed(() => (this.page?.summary()?.activeSubagents ?? 0) > 0 && !this.idle());
+  private readonly subActive = computed(() => (this.page()?.summary()?.activeSubagents ?? 0) > 0 && !this.idle());
   private readonly traceRes = this.vigie.traceResource(this.id, computed(() => this.version() + this.subTick()));
   private readonly trace = linkedSignal<{ id: string | null; value: SessionTrace | undefined }, SessionTrace | null>({
     source: () => ({ id: this.id(), value: this.traceRes.hasValue() ? this.traceRes.value() : undefined }),
@@ -268,10 +272,9 @@ export class SessionFilesVm {
   age(t: Touched): string { return duration(this.now() - t.at); }
   /** Le fichier actif tel que Claude l'a touché (mention « Modifié par Claude au tour N »). */
   readonly activeTouch = computed(() => this.touchedByPath().get(this.active()?.path ?? '') ?? null);
-  private readonly page = inject(SessionPageVm, { optional: true });
   /** « Voir dans l'historique » : possible seulement dans la page session (journal filtré sur le fichier). */
-  readonly canShowHistory = !!this.page;
-  showInHistory(t: Touched): void { this.page?.openLog(t.label); }
+  readonly canShowHistory = computed(() => !!this.page());
+  showInHistory(t: Touched): void { this.page()?.openLog(t.label); }
 
   // ── Claude ici : le fichier que Claude lit ou modifie en ce moment ───────
   private readonly resolve = computed(() => { const p = this.project(); return p ? pathResolver(p.root, this.files()) : null; });
@@ -283,7 +286,7 @@ export class SessionFilesVm {
    * ponytail: un sous-agent qui écrit apparaît au prochain relevé de la trace (5 s) ; une cible live dans le résumé du daemon éviterait la relecture.
    */
   readonly here = computed<Here | null>(() => {
-    const r = this.resolve(), s = this.page?.summary();
+    const r = this.resolve(), s = this.page()?.summary();
     if (this.idle() || !r) return null;
     const live = this.liveTurn(), last = live === null ? undefined : this.touched().find((t) => t.turn === live);
     return claudeFile([s?.detail, withFullPath(s?.tool, s?.toolPath)], r) ?? (last ? { path: last.path, edit: last.editTurn === last.turn } : null);
@@ -351,8 +354,8 @@ export class SessionFilesVm {
     });
   }
 
-  connect(id: Signal<string>, idle: Signal<boolean>): void {
-    this.source.set({ id, idle });
+  connect(id: Signal<string>, idle: Signal<boolean>, page: FilesPage | null = null): void {
+    this.source.set({ id, idle, page });
   }
 
   refresh(): void {
@@ -419,6 +422,8 @@ export class SessionFilesVm {
   readonly active = computed(() => this.tabs().find((t) => t.path === this.activePath()) ?? null);
   readonly editing = computed(() => this.active()?.draft != null);
   readonly dirty = computed(() => { const a = this.active(); return !!a && isDirty(a); });
+  /** Un onglet au moins a une saisie non enregistrée : quitter la vue la perdrait (la page demande confirmation). */
+  readonly unsaved = computed(() => this.tabs().some(isDirty));
   readonly loadingFile = signal(false);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
@@ -545,7 +550,7 @@ export class SessionFilesVm {
       await this.read(id, a.path); // nouvelle empreinte
     } catch (err) {
       if ((err as { status?: number }).status === 412) this.setTab(a.path, { conflict: true }); // 412 = empreinte périmée ; 409 = Claude travaille ; 403 = config Claude
-      else this.error.set(message(err));
+      else this.error.set(daemonError(err, 'Enregistrement impossible.'));
     }
     this.saving.set(false);
   }
@@ -595,7 +600,7 @@ export class SessionFilesVm {
       this.gitVersion.update((v) => v + 1);
     } catch (e) {
       body = null;
-      if (still()) this.setTab(path, { error: message(e) });
+      if (still()) this.setTab(path, { error: daemonError(e, 'Lecture du fichier impossible.') });
     }
     this.loadingFile.set(false);
     return still() ? body : null;

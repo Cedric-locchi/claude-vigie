@@ -67,12 +67,36 @@ test('purge : la discussion est effacée du disque, les autres sessions restent'
   fs.writeFileSync(path.join(dir, 'S.jsonl'), line(Date.now() - 60_000, 'chat'));
   fs.writeFileSync(path.join(dir, 'S', 'subagents', 'agent-a.jsonl'), line(Date.now() - 60_000, 'sous-agent'));
   fs.writeFileSync(path.join(dir, 'T.jsonl'), line(Date.now() - 60_000, 'projet'));
-  const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), limitsDir: path.join(tmp, 'limits') });
+  // `line` écrit dans /dev/revu : c'est le dossier des discussions de ce store (purge n'efface qu'une discussion).
+  const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), chatDir: '/dev/revu', limitsDir: path.join(tmp, 'limits') });
   store.scan();
 
   store.purge('S');
   assert.deepEqual(fs.readdirSync(dir), ['T.jsonl']);
   assert.deepEqual([...store.tracks.keys()], [path.join(dir, 'T.jsonl')]);
+});
+
+// root passe outre les droits du dossier : rien à simuler.
+test('purge : un dossier qui résiste ne lève pas, la piste reste et la passe suivante efface', { skip: process.getuid?.() === 0 }, (t) => {
+  const tmp = tempDir('vigie-purge-');
+  const dir = path.join(tmp, 'p');
+  const sub = path.join(dir, 'S', 'subagents');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'S.jsonl'), line(Date.now() - 60_000, 'chat'));
+  fs.writeFileSync(path.join(sub, 'agent-a.jsonl'), line(Date.now() - 60_000, 'sous-agent'));
+  const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), chatDir: '/dev/revu', limitsDir: path.join(tmp, 'limits') });
+  store.scan();
+  const errors = t.mock.method(console, 'error', () => {});
+  fs.chmodSync(path.join(dir, 'S'), 0o555); // EACCES sur subagents/ : claude qui écrit encore, disque protégé…
+  try {
+    assert.doesNotThrow(() => store.purge('S'));
+  } finally { fs.chmodSync(path.join(dir, 'S'), 0o755); }
+  assert.match(errors.mock.calls[0].arguments[0], /pas encore effacée/);
+  assert.ok(fs.existsSync(path.join(dir, 'S.jsonl')));
+  assert.equal(store.isChat('S', []), true); // la piste reste : la passe suivante sait encore quoi effacer
+  store.purge('S');
+  assert.deepEqual(fs.readdirSync(dir), []);
+  assert.equal(store.tracks.size, 0);
 });
 
 test('limites réelles : le plus haut relevé de la fenêtre en cours gagne, les vieilles fenêtres sont ignorées', async () => {
@@ -171,7 +195,7 @@ test('résumé : coût estimé et activité par minute du dernier quart d’heur
   fs.writeFileSync(file, call(now - 14.5 * 60_000, 'a') + call(now - 20_000, 'b') + call(now - 10_000, 'c'));
   const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), limitsDir: path.join(tmp, 'limits') });
   store.scan();
-  conforme(C.Snapshot, store.snapshot([]));
+  conforme(C.Snapshot, { ...store.snapshot([]), plugins: [] }); // plugins : ajouté par le transport
   const s = store.snapshot([]).sessions[0];
   assert.equal(s.cost, 6); // 3 M d'entrée Sonnet à 2 $
   assert.equal(s.activity.length, 15);
@@ -233,7 +257,7 @@ test('trace : tours délimités par les messages, sous-agents rattachés à leur
   const trace = store.sessionTrace('S', []);
   conforme(C.SessionTrace, trace);
   conforme(C.SessionDetail, store.detail('S', []));
-  conforme(C.Snapshot, store.snapshot([]));
+  conforme(C.Snapshot, { ...store.snapshot([]), plugins: [] }); // plugins : ajouté par le transport
   assert.equal(store.snapshot([]).sessions.find((s) => s.id === 'S').toolPath, null); // dernier outil = Task, sans fichier
   assert.deepEqual(trace.turns.map((t) => [t.index, t.prompt, t.steps.map((x) => x.name)]), [[1, 'Corrige le test', ['Read', 'Bash']], [2, '/review', ['Task']]]);
   // Le premier tour s'arrête à la réponse de Claude (42 s), pas au message suivant (2 h plus tard).
@@ -296,7 +320,8 @@ test('sous-agents : comptés par session, oubliés après purge', () => {
     fs.writeFileSync(path.join(dir, `${sid}.jsonl`), rec(sid, now - 60_000, { usage: true }));
     fs.writeFileSync(path.join(dir, sid, 'subagents', 'agent-a.jsonl'), rec(sid, now - 30_000, { usage: true }));
   }
-  const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), limitsDir: path.join(tmp, 'limits') });
+  // `rec` écrit dans /dev/revu, dossier des discussions de ce store : purge efface S.
+  const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), chatDir: '/dev/revu', limitsDir: path.join(tmp, 'limits') });
   store.scan();
   assert.deepEqual(store.snapshot([]).sessions.map((s) => [s.id, s.subagents]).sort(), [['S', 1], ['T', 1]]);
   assert.equal(store.detail('S', []).agents.length, 2);
@@ -406,14 +431,34 @@ test('purgeChats : seules les discussions sont effacées du disque', () => {
   assert.equal(store.isChat('C', []), false);
 });
 
-test("isChat : un même id présent dans un vrai projet n'est jamais traité comme discussion", () => {
-  const { tmp, chat, projA, store } = chatFixture();
+test("isChat : un même id présent dans un vrai projet n'est jamais traité comme discussion ; purge et purgeChats n'effacent rien", () => {
+  const { tmp, chat, projA, dir, store } = chatFixture();
   // Même id C copié dans un autre projet (resume depuis un autre dossier, copie de fichiers) : purge effacerait les deux.
   const other = path.join(tmp, 'projects', 'q');
   fs.mkdirSync(other, { recursive: true });
   fs.writeFileSync(path.join(other, 'C.jsonl'), at('C', projA, Date.now() - 800));
   store.scan();
   assert.equal(store.isChat('C', [{ sessionId: 'C', kind: 'claude', cwd: chat }]), false);
+  // La garde est dans purge : ni le démarrage (purgeChats) ni la deuxième passe de la route (purge seul) n'effacent le vrai transcript.
+  store.purgeChats();
+  store.purge('C');
+  assert.ok(fs.existsSync(path.join(other, 'C.jsonl')));
+  assert.ok(fs.existsSync(path.join(dir, 'C.jsonl')));
+  // Discussion en attente (aucun transcript) : rien sur le disque, purge ne lève pas.
+  store.purge('P');
+});
+
+test('scanFiles : relit seulement les transcripts nommés (principal et sous-agent), ignore le reste', () => {
+  const { dir, projB, store } = chatFixture();
+  const lastText = () => store.snapshot([]).sessions.find((s) => s.id === 'B')?.lastText;
+  fs.appendFileSync(path.join(dir, 'B.jsonl'), at('B', projB, Date.now()).replace('"ok"', '"suite"'));
+  assert.equal(store.scanFiles([path.join(dir, 'meta.json'), path.join(dir, 'x', 'y.jsonl')]), false);
+  assert.equal(store.scanFiles([path.join(dir, 'B.jsonl')]), true);
+  assert.equal(lastText(), 'suite');
+  fs.mkdirSync(path.join(dir, 'B', 'subagents'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'B', 'subagents', 'agent-z.jsonl'), at('B', projB, Date.now()));
+  assert.equal(store.scanFiles([path.join(dir, 'B', 'subagents', 'agent-z.jsonl')]), true);
+  assert.equal(store.snapshot([]).sessions.find((s) => s.id === 'B').subagents, 1);
 });
 
 test('idle : vrai au tour rendu ou terminé, faux au travail, en attente, avec un sous-agent actif ou inconnu', () => {
@@ -589,9 +634,56 @@ test('toolPath : chemin complet du fichier de l’outil en cours, null pour un o
   fs.writeFileSync(file, rec(0, { type: 'user', message: { content: 'go' } }) + tool(1, 'r1', 'Edit', { file_path: '/dev/revu/src/deep/a.ts' }));
   const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), limitsDir: path.join(tmp, 'limits') });
   store.scan();
-  const get = () => { const snap = store.snapshot([]); conforme(C.Snapshot, snap); return snap.sessions.find((s) => s.id === 'S'); };
+  const get = () => { const snap = store.snapshot([]); conforme(C.Snapshot, { ...snap, plugins: [] }); return snap.sessions.find((s) => s.id === 'S'); };
   assert.deepEqual([get().tool, get().toolPath], ['Edit · deep/a.ts','/dev/revu/src/deep/a.ts']);
   fs.appendFileSync(file, tool(2, 'b1', 'Bash', { command: 'npm test' }));
   store.scan();
   assert.equal(get().toolPath, null);
+});
+
+test('relevés de la statusline : relus si le dossier change ou après une minute, servis depuis le cache sinon', (t) => {
+  const tmp = tempDir('vigie-readings-');
+  const limits = path.join(tmp, 'limits');
+  fs.mkdirSync(limits, { recursive: true });
+  const now = Date.now();
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const file = path.join(limits, 'S.json');
+  // Même taille à chaque écriture : seul le contenu change, pas la date du dossier (remise à l'identique).
+  const write = (pct) => {
+    const st = fs.statSync(limits);
+    fs.writeFileSync(file, JSON.stringify({ ts: now, rate_limits: { five_hour: { used_percentage: pct, resets_at: (now + 3_600_000) / 1000 } } }));
+    fs.utimesSync(limits, st.atime, st.mtime);
+  };
+  write(40);
+  const store = createStore({ projectsDir: path.join(tmp, 'projects'), hiddenFile: path.join(tmp, 'hidden.json'), limitsDir: limits });
+  const pct = () => store.snapshot([]).usage.window.pct;
+  assert.equal(pct(), 0.4);
+  write(70); // dossier inchangé : relevé gardé en cache
+  assert.equal(pct(), 0.4);
+  t.mock.timers.tick(60_001); // une minute après : relu quand même (ménage des relevés périmés)
+  assert.equal(pct(), 0.7);
+  write(80);
+  fs.utimesSync(limits, new Date(now + 5000), new Date(now + 5000)); // la statusline écrit par tmp + rename : date du dossier changée
+  assert.equal(pct(), 0.8);
+});
+
+test('journal : 50 pistes gardées en mémoire, la moins récemment lue oubliée puis relue en entier', () => {
+  const tmp = tempDir('vigie-logs-');
+  const dir = path.join(tmp, 'p');
+  fs.mkdirSync(dir, { recursive: true });
+  const ts = Date.now() - 60_000;
+  const rec = (sid, text) => JSON.stringify({ type: 'user', timestamp: new Date(ts).toISOString(), sessionId: sid, cwd: '/dev/revu', message: { content: text } }) + '\n';
+  for (let i = 0; i <= 50; i++) fs.writeFileSync(path.join(dir, `s${i}.jsonl`), rec(`s${i}`, 'avant'));
+  const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), limitsDir: path.join(tmp, 'limits') });
+  store.scan();
+  const text = (sid) => store.sessionLog(sid).entries[0].text;
+  // Réécrit à taille égale : une piste en cache ne relit que la suite (rien), une piste oubliée relit tout.
+  const rewrite = (sid) => fs.writeFileSync(path.join(dir, `${sid}.jsonl`), rec(sid, 'après'));
+  for (let i = 0; i < 50; i++) assert.equal(text(`s${i}`), 'avant'); // 50 pistes en mémoire
+  rewrite('s0');
+  rewrite('s1');
+  assert.equal(text('s0'), 'avant'); // en cache ; relue, elle devient la plus récente (s1 est alors la moins récente)
+  text('s50'); // 51ᵉ : s1 oubliée
+  assert.equal(text('s1'), 'après'); // relue en entier
+  assert.equal(text('s0'), 'avant'); // gardée : lue récemment
 });

@@ -115,7 +115,7 @@ describe('XcodeVm', () => {
   it('ouvre le projet dans Xcode par la méthode « open », sans terminal', async () => {
     const { vm, host } = await setup();
     await vm.openInXcode();
-    expect(host.call).toHaveBeenCalledWith('open');
+    expect(host.call).toHaveBeenCalledWith('open', {}, expect.anything()); // réponse validée (null), comme toutes les méthodes
     expect(host.terminal).not.toHaveBeenCalled();
     expect(vm.launchError()).toBeNull();
   });

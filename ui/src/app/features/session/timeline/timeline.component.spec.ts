@@ -1,8 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { SessionTrace } from '../../../core/models';
+import { SessionLog, SessionTrace } from '../../../core/models';
 import { fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { VigieService } from '../../../core/vigie.service';
 import { TimelineComponent } from './timeline.component';
 
 const MIN = 60_000;
@@ -10,24 +9,24 @@ const TRACE: SessionTrace = {
   now: 100 * MIN, state: 'waiting', waiting: { reason: 'permission', detail: 'Bash · npm run build' },
   turns: [
     { index: 1, start: 0, end: 2 * MIN, prompt: 'Corrige le test', live: false, steps: [
-      { id: 'r1', name: 'Read', kind: 'read', label: 'a.ts', start: 0, end: 1000, error: false, agent: null },
-      { id: 'b1', name: 'Bash', kind: 'command', label: 'npm test', start: 2000, end: 40_000, error: true, agent: null },
+      { id: 'r1', name: 'Read', kind: 'read', label: 'a.ts', start: 0, end: 1000, error: false, interrupted: false, agent: null },
+      { id: 'b1', name: 'Bash', kind: 'command', label: 'npm test', start: 2000, end: 40_000, error: true, interrupted: false, agent: null },
     ] },
     { index: 2, start: 90 * MIN, end: 100 * MIN, prompt: 'Ajoute un onglet', live: true, steps: [
-      { id: 't1', name: 'Task', kind: 'agent', label: 'explorer', start: 90 * MIN, end: 95 * MIN, error: false,
-        agent: { id: 'x', name: 'Explore', description: 'explorer le code', state: 'done', steps: [{ id: 'g1', name: 'Grep', kind: 'other', label: 'timeline', start: 91 * MIN, end: 91 * MIN + 500, error: false }] } },
+      { id: 't1', name: 'Task', kind: 'agent', label: 'explorer', start: 90 * MIN, end: 95 * MIN, error: false, interrupted: false,
+        agent: { id: 'x', name: 'Explore', description: 'explorer le code', state: 'done', steps: [{ id: 'g1', name: 'Grep', kind: 'other', label: 'timeline', start: 91 * MIN, end: 91 * MIN + 500, error: false, interrupted: false }] } },
     ] },
   ],
 };
 
 function render() {
-  const sessionLog = vi.fn(async () => ({ entries: [
+  const sessionLog = vi.fn(async (): Promise<SessionLog> => ({ entries: [
     { id: 'S:1', ts: 2000, kind: 'tool', title: 'Bash · npm test', text: '{ "command": "npm test" }', truncated: false, agent: 'Agent principal', sub: false, ref: 'b1' },
     { id: 'S:2', ts: 40_000, kind: 'error', title: 'Bash', text: 'FAIL a.spec.ts', truncated: false, agent: 'Agent principal', sub: false, ref: 'b1' },
   ] }));
   TestBed.configureTestingModule({ providers: [provideVigieServiceMock({
-    traceResource: (() => fakeResource(TRACE)) as unknown as VigieService['traceResource'],
-    sessionLog: sessionLog as unknown as VigieService['sessionLog'],
+    traceResource: () => fakeResource(TRACE),
+    sessionLog: sessionLog,
   })] });
   const fixture = TestBed.createComponent(TimelineComponent);
   fixture.componentRef.setInput('sessionId', 'S');

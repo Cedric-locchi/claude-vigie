@@ -1,6 +1,7 @@
 import { Injectable, effect, inject, signal, untracked } from '@angular/core';
 import { ITheme, Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { PtyMessage } from '../../../core/models';
 import { Theme, ThemeService } from '../../../core/theme.service';
 import { VigieService } from '../../../core/vigie.service';
 
@@ -75,7 +76,7 @@ export class TerminalVm {
       old?.close();
     };
     open(false);
-    const send = (msg: object) => this.socket?.readyState === WebSocket.OPEN && this.socket.send(JSON.stringify(msg));
+    const send = (msg: PtyMessage) => this.socket?.readyState === WebSocket.OPEN && this.socket.send(JSON.stringify(msg));
     return {
       input: (data: string) => send({ type: 'input', data }),
       resize: (cols: number, rows: number) => send({ type: 'resize', cols, rows }),

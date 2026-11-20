@@ -1,5 +1,5 @@
-import { Injectable, computed, inject, resource, signal } from '@angular/core';
-import { PluginHost, type LauncherTask, type TaskTheme } from '@vigie/plugin-sdk';
+import { Injectable, computed, inject, resource } from '@angular/core';
+import { PluginHost, errorMessage, launcher, type LauncherTask, type TaskTheme } from '@vigie/plugin-sdk';
 import { MiseTasks as MiseTasksSchema } from '../contract.mjs';
 import type { MiseTasks } from './models';
 
@@ -60,35 +60,23 @@ export class MiseVm {
   /** Message de mise (config non approuvée, toml invalide…), sortie brute affichée telle quelle. */
   readonly notice = computed(() => (this.missing() ? null : this.mise()?.error ?? null));
   /** Échec de lecture (daemon, réponse hors contrat) ou de lancement. */
-  readonly error = computed(() => this.launchError() ?? (this.res.status() === 'error' ? this.res.error()?.message || 'Lecture des tâches mise impossible.' : null));
+  readonly error = computed(() => this.launchError() ?? (this.res.status() === 'error' ? errorMessage(this.res.error(), 'Lecture des tâches mise impossible.') : null));
   /** Tâche en cours de lancement (ou `trust`) : un lancement à la fois. */
-  readonly launching = signal<string | null>(null);
-  readonly launchError = signal<string | null>(null);
+  private readonly launches = launcher();
+  readonly launching = this.launches.launching;
+  readonly launchError = this.launches.error;
 
   refresh(): void {
     this.res.reload();
   }
 
   run(task: Pick<LauncherTask, 'id'>): Promise<void> {
-    return this.launch(task.id, () => this.host.terminal('run', { task: task.id }), 'Impossible de lancer la tâche.');
+    return this.launches.run(task.id, () => this.host.terminal('run', { task: task.id }), 'Impossible de lancer la tâche.');
   }
 
   /** `mise trust` dans un terminal : l'utilisateur voit ce qu'il approuve ; la liste se relit au retour sur l'onglet,
    *  et les onglets de la session sont relus (détection). */
   trust(): Promise<void> {
-    return this.launch(TRUST, async () => { await this.host.terminal('trust'); this.host.refresh(); }, 'Impossible de lancer mise trust.');
-  }
-
-  private async launch(id: string, fn: () => Promise<void>, fallback: string): Promise<void> {
-    if (this.launching() !== null) return;
-    this.launching.set(id);
-    this.launchError.set(null);
-    try {
-      await fn();
-    } catch (e) {
-      this.launchError.set((e as Error)?.message || fallback);
-    } finally {
-      this.launching.set(null);
-    }
+    return this.launches.run(TRUST, async () => { await this.host.terminal('trust'); this.host.refresh(); }, 'Impossible de lancer mise trust.');
   }
 }

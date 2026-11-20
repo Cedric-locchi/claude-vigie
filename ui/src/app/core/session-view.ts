@@ -1,9 +1,8 @@
 // Lecture d'une session pour l'affichage, partagée par le tableau de bord et la sidebar.
-import { Agent, SessionState, SessionSummary } from './models';
+import { Agent, Reason, SessionState, SessionSummary } from './models';
 
 export const STATE_LABELS = { waiting: 'Attend', turn: 'À toi', running: 'En cours', done: 'Terminée' } as const;
 
-type Reason = NonNullable<SessionSummary['reason']>;
 /** Seul jeu de libellés d'attente de l'app : long (en-tête, chronologie), court (badges). Sans raison connue : autorisation. */
 const WAIT_LABELS = {
   permission: { long: 'Attend ton autorisation', short: 'Autorisation' },

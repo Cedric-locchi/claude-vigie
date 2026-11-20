@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { localeInstalled, defaultLocale, findOnPath, isWsl, nodeVersionOk, launchdPlist, localeEnv, managedSettingsFile, openUrlCommands, startupMethod, systemdUnit, systemdUserDir } from './platform.mjs';
+import { execFileSync } from 'node:child_process';
+import { localeInstalled, defaultLocale, findOnPath, hasSystemd, isWsl, launchAgentFile, LOGIN_SHELL_ENV_ARGS, nodeVersionOk, launchdPlist, localeEnv, managedSettingsFile, noServiceHelp, openUrlCommands, parseLoginShellEnv, quitsWithLastWindow, startupMethod, systemdUnit, systemdUserDir } from './platform.mjs';
 
 test('isWsl : noyau Microsoft ou WSL_DISTRO_NAME, sous Linux seulement', () => {
   assert.equal(isWsl({ platform: 'darwin', release: '25.0.0' }), false);
@@ -63,6 +64,29 @@ test('launchdPlist : clés et échappement XML', () => {
   assert.ok(!p.includes('/a&b'));
 });
 
+test('launchdPlist et systemdUnit : CLAUDE_CONFIG_DIR de `vigie install` transmis au service, rien sinon', () => {
+  const p = launchdPlist({ ...base, configDir: '/Users/a/cfg & co' });
+  assert.ok(p.includes('<key>SHELL</key><string>/bin/zsh</string><key>CLAUDE_CONFIG_DIR</key><string>/Users/a/cfg &amp; co</string></dict>'));
+  assert.ok(!launchdPlist({ ...base, configDir: null }).includes('CLAUDE_CONFIG_DIR'));
+  const u = systemdUnit({ node: '/n', server: '/s', path: '/p', shell: '/bin/bash', log: '/l', configDir: '/home/a/cfg 50%' });
+  assert.ok(u.includes('\nEnvironment="SHELL=/bin/bash"\nEnvironment="CLAUDE_CONFIG_DIR=/home/a/cfg 50%%"\nRestart=always\n'));
+  assert.ok(!systemdUnit({ node: '/n', server: '/s', path: '/p', log: '/l' }).includes('CLAUDE_CONFIG_DIR'));
+});
+
+test('quitsWithLastWindow : Linux quitte avec la dernière fenêtre, macOS reste dans le Dock', () => {
+  assert.equal(quitsWithLastWindow({ platform: 'linux' }), true);
+  assert.equal(quitsWithLastWindow({ platform: 'darwin' }), false);
+});
+
+test('parseLoginShellEnv : valeurs entre octets nuls, sortie parasite écartée, délimiteurs manquants → null', () => {
+  // Vrai shell POSIX (sh de macOS et de Linux) : printf rend bien les octets nuls, même avec un texte affiché avant et après.
+  const script = `echo "bienvenue"; ${LOGIN_SHELL_ENV_ARGS.at(-1)}; echo "au revoir"`;
+  const out = execFileSync('/bin/sh', ['-c', script], { encoding: 'utf8', env: { PATH: '/a b:/usr/bin:/bin', CLAUDE_CONFIG_DIR: '/c\nd' } });
+  assert.deepEqual(parseLoginShellEnv(out), { PATH: '/a b:/usr/bin:/bin', configDir: '/c\nd' });
+  assert.deepEqual(parseLoginShellEnv('\0/usr/bin\0\0'), { PATH: '/usr/bin', configDir: '' });
+  for (const bad of ['', '/usr/bin\n/cfg', '\0/usr/bin\0', 'x\0y\0\0z\0']) assert.equal(parseLoginShellEnv(bad), null, JSON.stringify(bad));
+});
+
 test('systemdUnit : guillemets, %, $, Restart, WantedBy, PATH, SHELL facultatif', () => {
   const u = systemdUnit({ node: '/home/a/My Node/bin/node', server: '/opt/vi"gie/50%/$x/server.mjs', path: '/usr/bin:/bin', shell: '/bin/bash', log: '/home/a/.vigie/daemon.log' });
   assert.ok(u.includes('ExecStart="/home/a/My Node/bin/node" "/opt/vi\\"gie/50%%/$$x/server.mjs"\n'));
@@ -113,4 +137,31 @@ test('localeInstalled : UTF-8 / utf8 et casse équivalents, absente refusée', (
   const linux = 'C\nC.utf8\nPOSIX\nen_US.utf8\nfr_FR.utf8\n';
   for (const [name, list] of [['fr_FR.UTF-8', mac], ['fr_FR.utf8', mac], ['fr_FR.UTF-8', linux], ['FR_fr.UTF8', linux], ['C.UTF-8', linux]]) assert.equal(localeInstalled(name, list), true, name);
   for (const [name, list] of [['de_DE.UTF-8', mac], ['fr_FR', linux], ['fr_FR.utf8@euro', linux], ['x', '']]) assert.equal(localeInstalled(name, list), false, name);
+});
+
+test('hasSystemd : Linux démarré par systemd avec bus utilisateur ; jamais sous macOS (aucun effet appelé)', () => {
+  const never = () => { throw new Error('effet appelé hors Linux'); };
+  assert.equal(hasSystemd({ platform: 'darwin', exists: never, userBus: never }), false);
+  const seen = [];
+  assert.equal(hasSystemd({ platform: 'linux', exists: (p) => (seen.push(p), true), userBus: () => true }), true);
+  assert.deepEqual(seen, ['/run/systemd/system']);
+  assert.equal(hasSystemd({ platform: 'linux', exists: () => false, userBus: never }), false); // WSL sans [boot] systemd=true
+  assert.equal(hasSystemd({ platform: 'linux', exists: () => true, userBus: () => false }), false); // sudo, SSH sans bus
+});
+
+test('launchAgentFile : ~/Library/LaunchAgents/<label>.plist', () => {
+  assert.equal(launchAgentFile({ home: '/Users/x', label: 'dev.vigie.daemon' }), path.join('/Users/x', 'Library', 'LaunchAgents', 'dev.vigie.daemon.plist'));
+});
+
+test('noServiceHelp : wsl.conf seulement sous WSL ; Linux et macOS proposent ~/.profile', () => {
+  const wsl = noServiceHelp({ platform: 'linux', wsl: true });
+  assert.match(wsl, /\/etc\/wsl\.conf/);
+  assert.match(wsl, /systemd=true/);
+  assert.match(wsl, /~\/\.profile/);
+  for (const platform of ['linux', 'darwin']) {
+    const t = noServiceHelp({ platform, wsl: false });
+    assert.doesNotMatch(t, /wsl/i, platform);
+    assert.match(t, /vigie start/, platform);
+  }
+  assert.match(noServiceHelp({ platform: 'linux', wsl: false }), /systemd utilisateur injoignable/);
 });

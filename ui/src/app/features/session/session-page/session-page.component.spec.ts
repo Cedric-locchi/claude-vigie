@@ -1,11 +1,16 @@
 import { TestBed } from '@angular/core/testing';
-import { Component, input, signal } from '@angular/core';
+import { Component, input, output, signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
+import { By } from '@angular/platform-browser';
 import { describe, expect, it, vi } from 'vitest';
 import { Agent, Terminal } from '../../../core/models';
-import { aSession } from '../../../core/vigie.service.mock';
+import { aSession, aSnapshot, aTerminal, anAgent, provideVigieServiceMock } from '../../../core/vigie.service.mock';
+import { ConfirmService } from '../../../core/confirm.service';
+import { provideConfirmServiceMock } from '../../../core/confirm.service.mock';
 import { TerminalComponent } from '../../terminal/terminal/terminal.component';
 import { SessionCostComponent } from '../cost/session-cost.component';
+import { SessionDiffComponent } from '../diff/session-diff.component';
+import { DISCARD_EDIT } from '../diff/session-diff.vm';
 import { SessionFilesComponent } from '../files/session-files.component';
 import { SessionPageComponent } from './session-page.component';
 import { SessionPageVm } from './session-page.vm';
@@ -23,6 +28,8 @@ class TerminalStub {
 class SessionFilesStub {
   readonly sessionId = input.required<string>();
   readonly idle = input(false);
+  readonly summary = input<unknown>(null);
+  readonly openLog = output<string>();
 }
 
 // Le graphique de coût a son propre VM (testé à part) : bouchon ici.
@@ -35,7 +42,7 @@ class SessionCostStub {
 }
 
 const claude: Terminal = { id: 't1', sessionId: 's1', kind: 'claude', title: 'claude', cwd: '/x', shell: '/bin/zsh -l', pid: 48213, cols: 132, rows: 44, exited: false, startedAt: 0 };
-const mainAgent: Agent = { id: 'main', name: 'Agent principal', sub: false, description: '', state: 'waiting', reason: 'permission', detail: 'Bash · xcodebuild test', lastAction: null, lastText: '', tokens: 204_000, toolCount: 3, firstTs: 0, lastTs: 0, bars: [] };
+const mainAgent: Agent = anAgent({ name: 'Agent principal', state: 'waiting', reason: 'permission', detail: 'Bash · xcodebuild test', tokens: 204_000, toolCount: 3, firstTs: 0, lastTs: 0 });
 
 function render(overrides: Partial<SessionPageVm> = {}) {
   const vm = {
@@ -44,7 +51,7 @@ function render(overrides: Partial<SessionPageVm> = {}) {
     waitBar: signal<{ question: boolean; canAllow: boolean; detail: string | null } | null>({ question: false, canAllow: true, detail: 'Bash · xcodebuild test' }),
     diffCount: signal(4), plugins: signal<{ id: string; name: string; badge?: string }[]>([]), historyMode: signal('timeline'), showHistory: vi.fn(),
     terminals: signal([claude]), activeTab: signal('t1'), activeTerminal: signal(claude), claudeTerminal: signal(claude),
-    agents: signal([mainAgent]), context: signal({ used: 150_000, max: 200_000, pct: 0.75, level: "mid" }), canCompact: signal(true), canInterrupt: signal(false), compact: vi.fn(), isChat: signal(false), visibleAgents: signal([mainAgent]), agentFilters: signal([{ state: "waiting", label: "En attente", count: 1 }]), activeAgentFilter: signal(null), filterAgents: vi.fn(), agentStats: signal({ running: 0, waiting: 1 }), logQuery: signal(''), openLog: vi.fn(), usage: signal(null), openAgent: signal(null), showAgent: vi.fn(), resuming: signal(false), unsaved: signal(false), resumeError: signal(null), resume: vi.fn(), notFound: signal(false), outdated: signal(false),
+    agents: signal([mainAgent]), context: signal({ used: 150_000, max: 200_000, pct: 0.75, level: "mid" }), canCompact: signal(true), canInterrupt: signal(false), compact: vi.fn(), isChat: signal(false), visibleAgents: signal([mainAgent]), agentFilters: signal([{ state: "waiting", label: "En attente", count: 1 }]), activeAgentFilter: signal(null), filterAgents: vi.fn(), agentStats: signal({ running: 0, waiting: 1 }), logQuery: signal(''), openLog: vi.fn(), usage: signal(null), openAgent: signal(null), showAgent: vi.fn(), resuming: signal(false), diffUnsaved: signal(false), resumeError: signal(null), resume: vi.fn(), notFound: signal(false), outdated: signal(false),
     canFiles: signal(true), filesKey: { label: 'Ctrl+Shift+E', aria: 'Control+Shift+E' }, toggleFiles: vi.fn(), shortcut: vi.fn(),
     selectTab: vi.fn(), addShell: vi.fn(), closeTab: vi.fn(), detach: vi.fn(), allow: vi.fn(), refuse: vi.fn(), interrupt: vi.fn(), remove: vi.fn(), agentsOpen: signal(true), toggleAgents: vi.fn(), isExternal: signal(false), view: signal('workspace'), pageMode: signal('fill'), showView: vi.fn(), focusTick: signal(0), goToTerminal: vi.fn(), end: vi.fn(), replyError: signal<string | null>(null),
     ...overrides,
@@ -164,10 +171,9 @@ describe('SessionPageComponent', () => {
 
     TestBed.resetTestingModule();
     const files = render({ view: signal<'workspace' | 'files'>('files'), idle: signal(true) });
-    expect(files.el.querySelector('app-page')!.classList).toContain('files');
     expect(files.el.querySelector<HTMLElement>('[hlmTabsList]')!.hidden).toBe(true); // barre d'onglets masquée
     expect([...files.el.querySelectorAll<HTMLButtonElement>('.head-actions button')].find((b) => b.textContent!.trim() === 'Fichiers')!.getAttribute('aria-pressed')).toBe('true');
-    expect(files.el.querySelector('.files-panel app-session-files')).not.toBeNull();
+    expect(files.el.querySelector('[hlmTabsContent="files"] app-session-files')).not.toBeNull();
     expect(files.el.querySelector('app-wait-bar')).not.toBeNull();
 
     TestBed.resetTestingModule();
@@ -178,8 +184,8 @@ describe('SessionPageComponent', () => {
   it('onglets de vue : terminal et agents, ou historique seul', () => {
     const { el, vm } = render({ view: signal<'workspace' | 'history'>('history') });
     expect(el.querySelector<HTMLElement>('.workspace')!.hidden).toBe(true);
-    expect(el.querySelector('.panel app-timeline')).not.toBeNull();
-    expect(el.querySelector('.panel app-session-log')).toBeNull();
+    expect(el.querySelector('.view app-timeline')).not.toBeNull();
+    expect(el.querySelector('.view app-session-log')).toBeNull();
     [...el.querySelectorAll<HTMLButtonElement>('[hlmTabsTrigger]')].find((b) => b.textContent!.includes('Terminal'))!.click();
     expect(vm.showView).toHaveBeenCalledWith('workspace');
   });
@@ -207,15 +213,15 @@ describe('SessionPageComponent', () => {
   });
 
   it('onglet consommation : répartition des tokens et part par agent', () => {
-    const usage = { total: 1000, calls: 3, context: 800, cacheRate: 0.5, parts: [{ key: 'output', label: 'Sortie', tokens: 1000, share: 1 }], agents: [{ id: 'main', name: 'Agent principal', sub: false, tokens: 1000, cost: 1.5, width: 100 }, { id: 'a1', name: 'Explore', sub: true, tokens: 10, width: 1 }] };
-    const { el } = render({ view: signal<'workspace' | 'usage'>('usage'), pageMode: signal<'fill' | 'scroll'>('scroll'), usage: signal(usage) as unknown as SessionPageVm['usage'] });
+    const usage = { total: 1000, calls: 3, context: 800, cacheRate: 0.5, parts: [{ key: 'output', label: 'Sortie', tokens: 1000, share: 1 }], agents: [{ id: 'main', name: 'Agent principal', sub: false, tokens: 1000, cost: 1.5, width: 100 }, { id: 'a1', name: 'Explore', sub: true, tokens: 10, cost: 0.02, width: 1 }] };
+    const { el } = render({ view: signal<'workspace' | 'usage'>('usage'), pageMode: signal<'fill' | 'scroll'>('scroll'), usage: signal(usage) });
     expect(el.querySelector('app-page')!.getAttribute('data-mode')).toBe('scroll'); // le corps de la page défile
     expect(el.querySelector('.lead')!.textContent).toContain('Depuis le cache'); // seul chiffre mis en avant
     expect(el.querySelector('dl')!.textContent).toContain('Contexte actuel');
     expect(el.textContent).toContain('Agent principal');
     const rows = [...el.querySelectorAll('.agent-row .row')].map((r) => r.textContent);
     expect(rows[0]).toContain('1,50'); // coût par agent
-    expect(rows[1]).toContain('—'); // daemon sans coût par agent
+    expect(rows[1]).toContain('0,02');
     expect(el.querySelector('app-session-cost')).not.toBeNull();
   });
 
@@ -270,8 +276,76 @@ describe('SessionPageComponent', () => {
   it('historique en mode journal : la page tient dans la fenêtre pour que seule la liste défile', () => {
     const { el, vm } = render({ view: signal<'workspace' | 'history'>('history'), historyMode: signal('log') });
     expect(el.querySelector('app-page')!.getAttribute('data-mode')).toBe('fill');
-    expect(el.querySelector('.page-body .panel app-session-log')).not.toBeNull();
+    expect(el.querySelector('.page-body .view app-session-log')).not.toBeNull();
     [...el.querySelectorAll<HTMLButtonElement>('.history button')].find((b) => b.textContent!.includes('Chronologie'))!.click();
     expect(vm.showHistory).toHaveBeenCalledWith('timeline');
   });
 });
+
+// Câblage page ↔ vues d'édition : la page lit `unsaved` sur les composants Diff et Fichiers (viewChild), avec le vrai VM.
+@Component({ selector: 'app-session-diff', template: 'diff', providers: [{ provide: SessionDiffComponent, useExisting: DiffDraftStub }] })
+class DiffDraftStub {
+  readonly sessionId = input.required<string>();
+  readonly lastTs = input(0);
+  readonly idle = input(false);
+  readonly canWorktree = input(false);
+  readonly worktree = output<string>();
+  readonly unsaved = signal(false);
+}
+
+@Component({ selector: 'app-session-files', template: 'fichiers', providers: [{ provide: SessionFilesComponent, useExisting: FilesDraftStub }] })
+class FilesDraftStub {
+  readonly sessionId = input.required<string>();
+  readonly idle = input(false);
+  readonly summary = input<unknown>(null);
+  readonly openLog = output<string>();
+  readonly unsaved = signal(false);
+}
+
+describe('SessionPageComponent : brouillons des vues Diff et Fichiers', () => {
+  it('un Diff modifié reste monté hors de son onglet ; quitter Fichiers modifié demande confirmation, un refus garde la vue', async () => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideConfirmServiceMock(), provideVigieServiceMock({ snapshot: signal(aSnapshot({ terminals: [aTerminal()] })) })],
+    }).overrideComponent(SessionPageComponent, {
+      remove: { imports: [TerminalComponent, SessionCostComponent, SessionDiffComponent, SessionFilesComponent] },
+      add: { imports: [TerminalStub, SessionCostStub, DiffDraftStub, FilesDraftStub] },
+    });
+    const fixture = TestBed.createComponent(SessionPageComponent);
+    fixture.componentRef.setInput('id', 's1');
+    fixture.detectChanges();
+    const { vm } = fixture.componentInstance;
+    const stub = <T>(type: new (...a: never[]) => T): T | undefined => fixture.debugElement.query(By.directive(type))?.componentInstance;
+    const ask = vi.mocked(TestBed.inject(ConfirmService).ask);
+    const show = async (view: 'diff' | 'history' | 'config') => {
+      const ok = await vm.showView(view);
+      fixture.detectChanges();
+      return ok;
+    };
+
+    await show('diff');
+    stub(DiffDraftStub)!.unsaved.set(true);
+    fixture.detectChanges();
+    await show('history');
+    expect(vm.view()).toBe('history');
+    expect(stub(DiffDraftStub)).toBeDefined(); // monté hors de son onglet : la saisie survit
+    expect(ask).not.toHaveBeenCalled();
+    stub(DiffDraftStub)!.unsaved.set(false);
+    fixture.detectChanges();
+    expect(stub(DiffDraftStub)).toBeUndefined();
+
+    await vm.toggleFiles();
+    fixture.detectChanges();
+    stub(FilesDraftStub)!.unsaved.set(true);
+    fixture.detectChanges();
+    ask.mockResolvedValueOnce(false);
+    expect(await show('config')).toBe(false);
+    expect(ask).toHaveBeenCalledWith(DISCARD_EDIT);
+    expect(vm.view()).toBe('files');
+    expect(stub(FilesDraftStub)?.unsaved()).toBe(true); // même instance : le brouillon est intact
+    expect(await show('config')).toBe(true); // abandon confirmé
+    expect(stub(FilesDraftStub)).toBeUndefined();
+    await vm.showView('workspace'); // remet la dernière vue du module
+    TestBed.tick();
+  });
+});
+

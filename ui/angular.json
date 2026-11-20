@@ -3,7 +3,7 @@
   "version": 1,
   "cli": {
     "packageManager": "npm",
-    "analytics": "2951c20a-0b9c-4cab-bf3c-edf56d30d862"
+    "analytics": false
   },
   "newProjectRoot": "projects",
   "projects": {
@@ -43,7 +43,12 @@
                   "maximumError": "8kB"
                 }
               ],
-              "outputHashing": "all"
+              "outputHashing": "all",
+              "optimization": {
+                "scripts": true,
+                "styles": { "minify": true, "inlineCritical": false },
+                "fonts": true
+              }
             },
             "development": {
               "optimization": false,
@@ -55,6 +60,9 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "proxyConfig": "proxy.conf.json"
+          },
           "configurations": {
             "production": {
               "buildTarget": "ui:build:production"
@@ -69,6 +77,7 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "setupFiles": ["src/test-setup.ts"],
+            "providersFile": "src/test-providers.ts",
             "include": ["src/**/*.spec.ts", "../../plugins/*/ui/**/*.spec.ts"]
           }
         }

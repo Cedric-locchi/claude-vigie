@@ -1,12 +1,9 @@
 import type { Signal } from '@angular/core';
-import { OUTDATED, PluginHost } from '../../../../plugin-sdk/host';
-import type { VigieService } from '../../../core/vigie.service';
+import { type CallOptions, OUTDATED, PluginHost, type ResponseSchema } from '../../../../plugin-sdk/host';
+import { type VigieService, daemonError } from '../../../core/vigie.service';
 
-/** Erreur lisible : message du daemon (`{ error }`), daemon injoignable, réponse hors contrat, sinon `fallback`. */
-const reason = (e: unknown, fallback: string): Error => {
-  const err = e as { status?: number; error?: { error?: string }; message?: string } | null;
-  return new Error(err?.error?.error ?? (err?.status === 0 ? 'Le daemon ne répond pas.' : err?.message === OUTDATED ? OUTDATED : fallback));
-};
+/** Erreur lisible pour le plugin : message du daemon (`{ error }`), daemon injoignable, réponse hors contrat, sinon `fallback`. */
+const reason = (e: unknown, fallback: string): Error => new Error(daemonError(e, fallback));
 
 /** Implémentation de `PluginHost` (décision 037) : le plugin ne voit que ça du cœur de Vigie. */
 export function createPluginHost(deps: {
@@ -23,7 +20,7 @@ export function createPluginHost(deps: {
   return {
     sessionId,
     cwd,
-    async call<T>(method: string, params?: unknown, schema?: Parameters<PluginHost['call']>[2], opts?: Parameters<PluginHost['call']>[3]): Promise<T> {
+    async call<T>(method: string, params: unknown, schema: ResponseSchema<T>, opts?: CallOptions): Promise<T> {
       let v: unknown;
       try {
         v = await vigie.pluginCall(sessionId(), pid(), method, params, opts?.signal);
@@ -32,10 +29,9 @@ export function createPluginHost(deps: {
         if (opts?.signal?.aborted) throw e;
         throw reason(e, `« ${method} » a échoué.`);
       }
-      if (!schema) return v as T;
       const r = schema.safeParse(v);
       if (!r.success) throw new Error(OUTDATED);
-      return r.data as T;
+      return r.data;
     },
     async terminal(action, params) {
       try {

@@ -1,13 +1,12 @@
 // Configuration Claude Code qui s'applique à un dossier : instructions, skills, agents, commandes, hooks,
 // permissions, MCP, plugins — par portée (projet, local, utilisateur, organisation) — plus des vérifications.
 // Lecture seule. Aucun secret ne sort : env → noms seulement, chaînes ressemblant à des tokens masquées,
-// ~/.claude.json → uniquement les serveurs MCP. Jamais de .env, de clés ni de credentials.
+// .claude.json (paths.claudeJsonFile) → uniquement les serveurs MCP. Jamais de .env, de clés ni de credentials.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { managedSettingsFile } from './platform.mjs';
+import { claudeConfigDir, claudeJsonFile, expandHome, tildePath } from './paths.mjs';
 
-const MANAGED = managedSettingsFile(process.platform); // null : pas de réglages gérés connus sur cette plateforme
 const REMOTE = 'remote-settings.json'; // réglages gérés côté serveur, synchronisés par Claude Code dans le dossier utilisateur
 const CLAUDE_MD_MAX_LINES = 400;
 const SKILL_DESCRIPTION_MAX = 1024;
@@ -50,9 +49,13 @@ export function frontmatter(text) {
   return out;
 }
 
-export function readClaudeConfig(cwd, home = os.homedir(), managedFile = MANAGED, remoteFile = null) {
-  const userDir = process.env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
-  const tilde = (p) => (p.startsWith(home) ? '~' + p.slice(home.length) : p);
+/**
+ * `managedFile` : réglages gérés de l'organisation (`platform.managedSettingsFile`, passé par le transport ; null = aucun) ;
+ * `procEnv` : lu pour CLAUDE_CONFIG_DIR (dossier utilisateur de Claude Code, cf. paths.claudeConfigDir).
+ */
+export function readClaudeConfig(cwd, home = os.homedir(), managedFile = null, remoteFile = null, procEnv = process.env) {
+  const userDir = claudeConfigDir({ env: procEnv, home });
+  const tilde = (p) => tildePath(p, home);
   const checks = [];
   const check = (level, area, message, file) => checks.push({ level, area, message, ...(file ? { path: tilde(file) } : {}) });
 
@@ -83,7 +86,8 @@ export function readClaudeConfig(cwd, home = os.homedir(), managedFile = MANAGED
     if (text == null) return;
     const lines = text.split('\n').length;
     const imports = [...text.matchAll(/(?:^|\s)@((?:~|\.{1,2})?\/?[\w./-]+\.\w+)/gm)].map(([, ref]) => {
-      const target = ref.startsWith('~') ? path.join(home, ref.slice(1)) : path.resolve(path.dirname(file), ref);
+      // `@~/x` sous le home (expandHome : `~autre/x` reste relatif au fichier, comme tout chemin sans `/` en tête).
+      const target = path.resolve(path.dirname(file), expandHome(ref, home));
       const ok = fs.existsSync(target);
       if (!ok) check('error', 'Instructions', `Import introuvable : @${ref}`, file);
       return { ref, ok };
@@ -202,7 +206,7 @@ export function readClaudeConfig(cwd, home = os.homedir(), managedFile = MANAGED
           // Script référencé par un chemin : doit exister.
           const script = command.match(/(?:^|\s)["']?((?:\$CLAUDE_PROJECT_DIR|\$\{CLAUDE_PROJECT_DIR\}|~|\/)[^\s"']+\.(?:sh|py|js|mjs|cjs|ts|rb))/)?.[1];
           if (script) {
-            const resolved = script.replace(/^\$\{?CLAUDE_PROJECT_DIR\}?/, cwd).replace(/^~/, home);
+            const resolved = expandHome(script.replace(/^\$\{?CLAUDE_PROJECT_DIR\}?/, cwd), home);
             if (!fs.existsSync(resolved)) check('error', 'Hooks', `${event} : le script ${tilde(resolved)} n'existe pas, le hook échouera.`, file);
           }
         }
@@ -243,9 +247,9 @@ export function readClaudeConfig(cwd, home = os.homedir(), managedFile = MANAGED
   if (mcpRaw != null) {
     try { addServers('projet', JSON.parse(mcpRaw).mcpServers, mcpFile); } catch (e) { check('error', 'MCP', `JSON invalide : ${e.message}`, mcpFile); }
   }
-  // ~/.claude.json : on n'en extrait QUE les serveurs MCP (le reste contient des infos de compte).
+  // ~/.claude.json (dans CLAUDE_CONFIG_DIR s'il est défini) : on n'en extrait QUE les serveurs MCP (le reste contient des infos de compte).
   try {
-    const user = JSON.parse(read(path.join(home, '.claude.json')) ?? '{}');
+    const user = JSON.parse(read(claudeJsonFile({ env: procEnv, home })) ?? '{}');
     addServers('utilisateur', user.mcpServers);
     addServers('local', user.projects?.[cwd]?.mcpServers);
   } catch { /* fichier absent ou illisible */ }

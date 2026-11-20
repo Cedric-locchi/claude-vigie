@@ -24,13 +24,15 @@ export class PluginTabVm {
     this.source.set(src);
   }
 
-  /** Composant du plugin ; `null` = pas de front pour ce plugin. */
-  readonly ui = resource({
+  /** Front du plugin chargé à la demande ; valeur `null` = pas de front pour ce plugin. */
+  private readonly ui = resource({
     params: () => this.source()?.pid(),
     loader: async ({ params: pid }) => (Object.hasOwn(this.table, pid) ? (await this.table[pid]()).default : null),
   });
-
-  readonly missing = computed(() => this.ui.status() === 'resolved' && !this.ui.value());
+  /** Chargement du chunk en échec (réseau, build remplacé) : l'écran d'échec passe avant tout. */
+  readonly failed = computed(() => this.ui.status() === 'error');
+  readonly component = computed(() => (this.ui.hasValue() ? this.ui.value() : null));
+  readonly missing = computed(() => this.ui.status() === 'resolved' && !this.component());
 
   /** Injecteur du composant du plugin : `PluginHost` par-dessus celui de l'onglet. */
   readonly injector = computed(() => {

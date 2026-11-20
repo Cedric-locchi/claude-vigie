@@ -9,14 +9,14 @@ import { PluginTabVm } from './plugin-tab.vm';
   imports: [NgComponentOutlet, HlmButton],
   providers: [PluginTabVm],
   template: `
-    @if (vm.ui.value(); as cmp) {
-      <ng-container *ngComponentOutlet="cmp; injector: vm.injector(); inputs: vm.inputs()" />
-    } @else if (vm.ui.error()) {
+    @if (vm.failed()) {
       <div class="fail" role="alert">
         <p class="small text-err">Impossible de charger l’interface de ce plugin.</p>
         <button hlmBtn variant="outline" size="sm" (click)="vm.retry()">Réessayer</button>
         <button hlmBtn variant="ghost" size="sm" (click)="vm.reloadPage()">Recharger la page</button>
       </div>
+    } @else if (vm.component(); as cmp) {
+      <ng-container *ngComponentOutlet="cmp; injector: vm.injector(); inputs: vm.inputs()" />
     } @else if (vm.missing()) {
       <p class="small muted">Ce plugin n’a pas d’interface dans cette version de Vigie.</p>
     } @else {

@@ -1,0 +1,73 @@
+{
+  "settings": {
+    "title": "Réglages",
+    "subtitle": "Mémorisés sur cette machine",
+    "language": {
+      "title": "Langue",
+      "hint": "Langue de l'interface (par défaut, celle du système)."
+    },
+    "theme": {
+      "title": "Thème",
+      "hint": "Apparence de Vigie, en clair ou en sombre.",
+      "light": "Clair",
+      "dark": "Sombre"
+    },
+    "notify": {
+      "title": "Notifications",
+      "hint": "La cloche montre toujours ce qui t'attend. Quand Vigie a le focus, un toast te prévient ; sinon, la notification système.",
+      "blockedMac": "Notifications système bloquées : autorise Vigie (« Electron » en dev) dans Réglages Système › Notifications, ou le site dans ton navigateur.",
+      "blockedWindows": "Notifications système bloquées : autorise ton navigateur dans Paramètres › Système › Notifications, et le site dans ses réglages.",
+      "blockedOther": "Notifications système bloquées : autorise Vigie (« Electron » en dev) dans les réglages de notifications de ton bureau, ou le site dans ton navigateur.",
+      "waiting": {
+        "title": "Autorisations et questions",
+        "hint": "Toujours dans la cloche et en toast. Notification système quand Vigie n'a pas le focus :",
+        "on": "Activée",
+        "off": "Coupée"
+      },
+      "turn": {
+        "title": "Fins de tour",
+        "hint": "Claude a fini et te rend la main.",
+        "inapp": "Dans Vigie",
+        "system": "Système aussi",
+        "off": "Rien"
+      },
+      "usage": {
+        "title": "Alertes de consommation",
+        "hint": "Toast ou notification au franchissement d'un seuil (voir plus bas). La cloche les garde dans tous les cas.",
+        "on": "Activées",
+        "off": "Coupées"
+      },
+      "sound": {
+        "title": "Son",
+        "hint": "Petit carillon : deux notes pour une demande, une pour une fin de tour.",
+        "on": "Activé",
+        "off": "Coupé"
+      },
+      "pause": {
+        "title": "Ne pas déranger",
+        "idle": "Coupe le son et les notifications système pendant 1 h ; la cloche et les toasts continuent.",
+        "untilBefore": "En pause jusqu'à ",
+        "untilAfter": " : ni son ni notification système.",
+        "resume": "Reprendre",
+        "start": "Pause pendant 1 h"
+      }
+    },
+    "locale": {
+      "title": "Locale des terminaux",
+      "hintBefore": "Encodage et langue du shell et de claude (accents, symboles). Vide : automatique",
+      "hintAfter": ". Vaut pour les terminaux ouverts ensuite.",
+      "save": "Enregistrer",
+      "notSaved": "Locale non enregistrée."
+    },
+    "alerts": {
+      "title": "Alertes de consommation",
+      "hint": "Une alerte quand le coût estimé du jour ou la fenêtre de 5 h dépasse ton seuil : une fois par jour pour le coût, une fois par fenêtre. Vide : pas d'alerte.",
+      "saved": "Seuils enregistrés.",
+      "dailyCost": "Coût du jour",
+      "window": "Fenêtre de 5 h",
+      "example": "ex. {{ value }}",
+      "save": "Enregistrer",
+      "notSaved": "Seuils non enregistrés."
+    }
+  }
+}

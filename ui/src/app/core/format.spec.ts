@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { duration, pct, tokens } from './format';
+import { clock, clockSeconds, duration, pct, tokens } from './format';
 
 describe('format', () => {
   it('abrège les tokens', () => {
@@ -18,5 +18,10 @@ describe('format', () => {
 
   it('arrondit les pourcentages', () => {
     expect(pct(0.624)).toBe('62 %');
+  });
+
+  it('heure locale, à la minute ou à la seconde', () => {
+    const ts = new Date(2026, 10, 19, 14, 5, 9).getTime();
+    expect([clock(ts), clockSeconds(ts)]).toEqual(['14:05', '14:05:09']);
   });
 });

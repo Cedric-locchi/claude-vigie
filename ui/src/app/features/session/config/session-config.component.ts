@@ -49,11 +49,11 @@ const COST_HINT = {
     </div>
     @if (vm.auditError(); as err) { <p class="small text-err" role="alert">{{ err }}</p> }
 
-    @if (vm.failed()) {
-      <p class="small text-err" role="alert">Configuration indisponible : le daemon est-il à jour ? (redémarre-le après une mise à jour)</p>
+    @if (vm.loadError(); as err) {
+      <p class="small text-err" role="alert">{{ err }}</p>
     } @else if (vm.current(); as cur) {
       <div class="body">
-        <nav class="nav" aria-label="Rubriques de la configuration">
+        <nav class="nav panel" aria-label="Rubriques de la configuration">
           @for (s of vm.sections(); track s.key) {
             <button type="button" class="nav-item" [class.zero]="!s.count" [attr.aria-current]="vm.section() === s.key ? 'page' : null" (click)="vm.select(s.key)">
               <span>{{ s.label }}</span>
@@ -64,7 +64,7 @@ const COST_HINT = {
           }
         </nav>
 
-        <section class="pane" [attr.aria-label]="cur.label">
+        <section class="pane panel" [attr.aria-label]="cur.label">
           <header class="pane-head">
             <div>
               <h3>{{ cur.label }}</h3>
@@ -195,7 +195,6 @@ const COST_HINT = {
 
     /* Deux panneaux séparés sur le fond pointillé (décision 043) : navigation, contenu ; chacun défile seul. */
     .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 10px; }
-    .nav, .pane { border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--elev-1); background: var(--surface); }
     .nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; overflow-y: auto; }
     .nav-item {
       display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent;

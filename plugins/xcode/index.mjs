@@ -7,7 +7,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { SCRIPT, ScriptParams, XcodeCleanParams, XcodeProject, XcodeRunParams, XcodeTargets } from './contract.mjs';
+import { SCRIPT, ScriptParams, XcodeCleanParams, XcodeOpen, XcodeProject, XcodeRunParams, XcodeTargets } from './contract.mjs';
 
 const MAX_ERROR = 500;
 const MAX_SCRIPTS = 100;
@@ -167,7 +167,7 @@ export default (vigie) => {
         },
         // xed sans PTY : rien à montrer, la fenêtre d'Xcode s'ouvre.
         open: {
-          result: vigie.z.null(),
+          result: XcodeOpen,
           timeout: 10_000,
           async handler({ cwd, signal }) {
             const { container: c } = await container(cwd);

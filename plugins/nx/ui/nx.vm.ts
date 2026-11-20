@@ -1,5 +1,5 @@
-import { Injectable, computed, effect, inject, resource, signal } from '@angular/core';
-import { PluginHost, natureThemes, type LauncherTask, type TaskTheme } from '@vigie/plugin-sdk';
+import { Injectable, computed, effect, inject, resource } from '@angular/core';
+import { PluginHost, errorMessage, launcher, natureThemes, type LauncherTask, type TaskTheme } from '@vigie/plugin-sdk';
 import { NxGraph as NxGraphSchema, NxInfo as NxInfoSchema } from '../contract.mjs';
 import type { NxGraph } from './models';
 
@@ -8,8 +8,6 @@ import type { NxGraph } from './models';
 const lastGraph = new Map<string, NxGraph>();
 
 export const NX_MISSING = 'nx introuvable : installe les dépendances du dépôt ou nx sur le PATH.';
-
-const message = (e: unknown, fallback: string) => (e as Error | undefined)?.message || fallback;
 
 export const NOT_RUNNABLE = 'Nom non lançable depuis Vigie';
 
@@ -52,15 +50,26 @@ export class NxVm {
   private readonly remember = effect(() => {
     if (this.graphRes.hasValue()) lastGraph.set(this.id(), this.graphRes.value());
   });
-  readonly graph = computed<NxGraph | null>(() => (this.graphRes.hasValue() ? this.graphRes.value() : lastGraph.get(this.id()) ?? null));
+  readonly telemetry = computed(() => !!this.info()?.telemetry);
+  /** Rien avec la télémétrie active : un graphe gardé d'avant ne compte plus (la note dit de rafraîchir). */
+  readonly graph = computed<NxGraph | null>(() =>
+    this.telemetry() ? null : this.graphRes.hasValue() ? this.graphRes.value() : lastGraph.get(this.id()) ?? null);
   readonly loadingInfo = computed(() => this.infoRes.isLoading());
   readonly loadingGraph = computed(() => this.graphRes.isLoading());
   readonly loading = computed(() => this.loadingInfo() || this.loadingGraph());
-  readonly telemetry = computed(() => !!this.info()?.telemetry);
   readonly source = computed(() => { const i = this.info(); return i ? (i.local ? 'nx du dépôt (node_modules/.bin/nx)' : 'nx du PATH') : null; });
-  /** Échec de lecture (pas un espace Nx, daemon d'une autre version), nx introuvable, sinon le message de `graph`. */
+  /** Cible en cours de lancement (`projet:cible`) : un lancement à la fois. */
+  private readonly launches = launcher();
+  readonly launching = this.launches.launching;
+  readonly launchError = this.launches.error;
+  /**
+   * Message sous le lanceur : échec du dernier lancement ; sinon échec de lecture (pas un espace Nx, daemon d'une autre
+   * version), nx introuvable, ou le message de `graph` (aucun avec la télémétrie active : pas de graphe, la note l'explique).
+   */
   readonly error = computed(() => {
-    for (const r of [this.infoRes, this.graphRes]) if (r.status() === 'error') return message(r.error(), 'Lecture de l’espace Nx impossible.');
+    const launch = this.launchError();
+    if (launch) return launch;
+    for (const r of [this.infoRes, this.graphRes]) if (r.status() === 'error') return errorMessage(r.error(), 'Lecture de l’espace Nx impossible.');
     const g = this.graph();
     if (g && !g.available) return NX_MISSING;
     return g?.error ?? null;
@@ -68,28 +77,16 @@ export class NxVm {
   readonly projects = computed(() => this.graph()?.projects ?? []);
   readonly themes = computed(() => nxThemes(this.projects()));
   readonly storageKey = computed(() => `nx:${this.host.cwd()}`);
-  /** Cible en cours de lancement (`projet:cible`) : un lancement à la fois. */
-  readonly launching = signal<string | null>(null);
-  readonly launchError = signal<string | null>(null);
 
   refresh(): void {
     this.infoRes.reload();
   }
 
   /** `task.id` = `projet:cible` ; un projet lançable n'a jamais de `:` (ID du contrat). */
-  async run(task: Pick<LauncherTask, 'id'>): Promise<void> {
-    if (this.launching() !== null) return;
+  run(task: Pick<LauncherTask, 'id'>): Promise<void> {
     const i = task.id.indexOf(':');
     const project = task.id.slice(0, i);
     const target = task.id.slice(i + 1);
-    this.launching.set(task.id);
-    this.launchError.set(null);
-    try {
-      await this.host.terminal('run', { project, target });
-    } catch (e) {
-      this.launchError.set(message(e, 'Impossible de lancer la cible.'));
-    } finally {
-      this.launching.set(null);
-    }
+    return this.launches.run(task.id, () => this.host.terminal('run', { project, target }), 'Impossible de lancer la cible.');
   }
 }

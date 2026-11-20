@@ -1,9 +1,8 @@
 import { Injectable, computed, debounced, inject, linkedSignal, resource, signal } from '@angular/core';
 import { SearchMatch, SearchResults } from '../../../../core/models';
 import { keepLast } from '../../../../core/signals';
-import { VigieService } from '../../../../core/vigie.service';
+import { VigieService, daemonError } from '../../../../core/vigie.service';
 import { Row, SessionFilesVm, base, treeKey } from '../session-files.vm';
-import { message } from '../../diff/session-diff.vm';
 
 /** Attente après la dernière frappe avant d'interroger le daemon (ms). */
 export const SEARCH_DELAY = 250;
@@ -80,7 +79,7 @@ export class FilesSearchVm {
   private readonly kept = keepLast(this.res, () => this.files.id());
   private readonly short = computed(() => this.query().length < SEARCH_MIN);
   readonly pending = computed(() => !this.short() && (this.term.isLoading() || this.res.isLoading()));
-  readonly error = computed(() => (!this.short() && this.res.status() === 'error' ? message(this.res.error()) : null));
+  readonly error = computed(() => (!this.short() && this.res.status() === 'error' ? daemonError(this.res.error(), 'Recherche impossible.') : null));
   /** Résultats affichés : aucun sous SEARCH_MIN caractères ni en erreur. */
   readonly found = computed(() => (this.short() || this.error() ? null : this.kept()));
 

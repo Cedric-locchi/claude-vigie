@@ -1,7 +1,7 @@
 // node --test daemon/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { claudeCommand, hooksSettings, httpHooksAllowed, spoolLine } from './launch.mjs';
+import { claudeCommand, hooksSettings, httpHooksAllowed, limitsReading, nodeCommand, spoolLine, userStatusLine } from './launch.mjs';
 
 const F = '/h/.vigie/hooks.json';
 const U = '0b3f9c2e-1a2b-4c3d-8e9f-0123456789ab';
@@ -38,9 +38,9 @@ test('commande sans claude : inchangée ; chemin de hooks avec apostrophe échap
 });
 
 test('hooksSettings : 8 événements, matcher * sur les outils, statusline vers statusline.mjs', () => {
-  const s = hooksSettings('"/usr/bin/node"', '/app/daemon');
-  const hook = { type: 'command', command: '"/usr/bin/node" "/app/daemon/hook.mjs"', timeout: 5 };
-  assert.deepEqual(s.statusLine, { type: 'command', command: '"/usr/bin/node" "/app/daemon/statusline.mjs"' });
+  const s = hooksSettings("'/usr/bin/node'", '/app/daemon');
+  const hook = { type: 'command', command: "'/usr/bin/node' '/app/daemon/hook.mjs'", timeout: 5 };
+  assert.deepEqual(s.statusLine, { type: 'command', command: "'/usr/bin/node' '/app/daemon/statusline.mjs'" });
   assert.deepEqual(Object.keys(s.hooks), ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest', 'Notification', 'Stop', 'SubagentStop', 'SessionEnd']);
   for (const [event, list] of Object.entries(s.hooks)) {
     const tool = ['PreToolUse', 'PostToolUse', 'PermissionRequest'].includes(event);
@@ -48,8 +48,37 @@ test('hooksSettings : 8 événements, matcher * sur les outils, statusline vers 
   }
 });
 
+test('hooksSettings : chemin avec $, backtick ou apostrophe quoté pour le shell (rien de développé)', () => {
+  const s = hooksSettings("'/n'", "/Users/x/$HOME/`id`/l'app");
+  assert.equal(s.statusLine.command, `'/n' '/Users/x/$HOME/\`id\`/l'\\''app/statusline.mjs'`);
+});
+
+test('nodeCommand : node du daemon, sinon du PATH ; dans Electron, PATH puis ELECTRON_RUN_AS_NODE avec le binaire de l’app', () => {
+  let asked = 0;
+  const pathNode = (f) => () => { asked++; return f; };
+  assert.equal(nodeCommand({ electron: false, execPath: '/opt/node', execOk: true, pathNode: pathNode('/usr/bin/node') }), "'/opt/node'");
+  assert.equal(asked, 0); // node du daemon encore là : pas de `node --version`
+  assert.equal(nodeCommand({ electron: false, execPath: '/disparu/node', execOk: false, pathNode: pathNode('/usr/bin/node') }), "'/usr/bin/node'");
+  assert.equal(nodeCommand({ electron: false, execPath: '/disparu/node', execOk: false, pathNode: pathNode(null) }), "'/disparu/node'");
+  assert.equal(nodeCommand({ electron: true, execPath: '/App/Helper', vigieNode: '/App/Vigie', pathNode: pathNode('/usr/bin/node') }), "'/usr/bin/node'");
+  assert.equal(nodeCommand({ electron: true, execPath: '/App/Helper', vigieNode: '/App/Vigie', pathNode: pathNode(null) }), "ELECTRON_RUN_AS_NODE=1 '/App/Vigie'");
+  assert.equal(nodeCommand({ electron: true, execPath: "/A p/l'app", vigieNode: '', pathNode: pathNode(null) }), "ELECTRON_RUN_AS_NODE=1 '/A p/l'\\''app'");
+});
+
+test('statusline : commande de l’utilisateur (~/ développé), relevé gardé seulement avec quota ou contexte, id nettoyé', () => {
+  assert.equal(userStatusLine({ statusLine: { command: '~/bin/line --x' } }, '/h'), '/h/bin/line --x');
+  assert.equal(userStatusLine({ statusLine: { command: 'line' } }, '/h'), 'line');
+  for (const s of [null, {}, { statusLine: {} }, { statusLine: { command: '  ' } }, { statusLine: { command: 42 } }]) assert.equal(userStatusLine(s, '/h'), null);
+  assert.equal(limitsReading({ session_id: 's' }, 1), null);
+  assert.equal(limitsReading(null, 1), null);
+  assert.equal(limitsReading('texte', 1), null);
+  const rl = { five_hour: { used_percentage: 12, resets_at: 9 } };
+  assert.deepEqual(limitsReading({ session_id: '../../x y', rate_limits: rl, model: 'm' }, 7), { name: 'xy.json', data: { ts: 7, rate_limits: rl, context_window: undefined } });
+  assert.equal(limitsReading({ session_id: '../', context_window: { context_window_size: 1 } }, 7).name, 'inconnue.json');
+});
+
 test('hooksSettings avec hookUrl : hooks HTTP vers le daemon, statusline inchangée', () => {
-  const s = hooksSettings('"/usr/bin/node"', '/app/daemon', 'http://127.0.0.1:4317/api/hook');
+  const s = hooksSettings("'/usr/bin/node'", '/app/daemon', 'http://127.0.0.1:4317/api/hook');
   assert.deepEqual(s.hooks.PreToolUse, [{ matcher: '*', hooks: [{ type: 'http', url: 'http://127.0.0.1:4317/api/hook', timeout: 5 }] }]);
   assert.equal(s.statusLine.type, 'command');
 });

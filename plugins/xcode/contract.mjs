@@ -12,6 +12,8 @@ export const Simulator = z.object({ udid: str, name: str, runtime: str, booted: 
 // `available` : faux sans Xcode (Linux, ou Mac avec les seuls Command Line Tools) ; `error` : message à montrer.
 export const XcodeTargets = z.object({ available: z.boolean(), schemes: z.array(str), simulators: z.array(Simulator), error: z.nullable(str) });
 export const XcodeAction = z.enum(['build', 'test', 'clean', 'run']);
+// Méthode `open` (xed) : rien à rendre, la fenêtre d'Xcode s'ouvre.
+export const XcodeOpen = z.null();
 
 // Ni `\` ni `'` : sous fish, `\'` sortirait des guillemets simples de shQuote ; pas de `-` en tête (option de xcodebuild).
 // eslint-disable-next-line no-control-regex -- refuser les caractères de contrôle est le but

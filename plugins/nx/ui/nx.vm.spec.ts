@@ -53,7 +53,22 @@ describe('NxVm', () => {
     const { vm, host } = await setup({ info: anInfo({ telemetry: true }) });
     expect(vm.telemetry()).toBe(true);
     expect(host.call).not.toHaveBeenCalledWith('graph', expect.anything(), expect.anything());
-    expect(vm.projects()).toEqual([]);
+    expect([vm.projects(), vm.error()]).toEqual([[], null]);
+  });
+
+  it('télémétrie activée depuis la dernière lecture : ni projets ni erreur du graphe gardé', async () => {
+    const sessionId = `nx-${++n}`;
+    const create = (replies: Record<string, unknown>) => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [NxVm, { provide: PluginHost, useValue: fakePluginHost({ sessionId: signal(sessionId), call: callReplies(replies) }) }] });
+      return TestBed.inject(NxVm);
+    };
+    const before = create({ info: anInfo(), graph: aGraph({ error: 'nx ne répond pas' }) });
+    await vi.waitFor(() => { TestBed.tick(); expect(before.error()).toBe('nx ne répond pas'); });
+    expect(before.projects()).toHaveLength(2);
+    const after = create({ info: anInfo({ telemetry: true }) });
+    await vi.waitFor(() => { TestBed.tick(); expect(after.telemetry()).toBe(true); });
+    expect([after.graph(), after.projects(), after.error()]).toEqual([null, [], null]);
   });
 
   it('nx introuvable, erreur de nx, réponse hors contrat', async () => {
@@ -121,7 +136,7 @@ describe('NxVm', () => {
     expect(terminal).toHaveBeenCalledTimes(1);
     reject(new Error('Cible invalide'));
     await pending;
-    expect([vm.launchError(), vm.launching()]).toEqual(['Cible invalide', null]);
+    expect([vm.launchError(), vm.error(), vm.launching()]).toEqual(['Cible invalide', 'Cible invalide', null]);
   });
 });
 

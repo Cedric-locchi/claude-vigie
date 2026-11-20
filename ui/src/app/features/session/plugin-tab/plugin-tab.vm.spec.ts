@@ -19,7 +19,7 @@ const setup = (table: Record<string, () => Promise<{ default: typeof FakeUi }>>,
 describe('PluginTabVm', () => {
   it('charge le composant du plugin et lui fournit un PluginHost de la session', async () => {
     const { vm, src } = setup({ mise: async () => ({ default: FakeUi }) });
-    await vi.waitFor(() => expect(vm.ui.value()).toBe(FakeUi));
+    await vi.waitFor(() => expect(vm.component()).toBe(FakeUi));
     expect(vm.missing()).toBe(false);
     expect(vm.inputs()).toEqual({ sessionId: 's1' });
     const host = vm.injector()!.get(PluginHost);
@@ -34,16 +34,17 @@ describe('PluginTabVm', () => {
       TestBed.resetTestingModule();
       const { vm } = setup({ mise: async () => ({ default: FakeUi }) }, pid);
       await vi.waitFor(() => expect(vm.missing()).toBe(true));
-      expect(vm.ui.error()).toBeUndefined();
+      expect(vm.failed()).toBe(false);
     }
   });
 
   it('import en échec : erreur, puis Réessayer recharge', async () => {
     let fail = true;
     const { vm } = setup({ mise: async () => { if (fail) throw new Error('chunk introuvable'); return { default: FakeUi }; } });
-    await vi.waitFor(() => expect(vm.ui.error()).toBeDefined());
+    await vi.waitFor(() => expect(vm.failed()).toBe(true));
+    expect([vm.component(), vm.missing()]).toEqual([null, false]);
     fail = false;
     vm.retry();
-    await vi.waitFor(() => expect(vm.ui.value()).toBe(FakeUi));
+    await vi.waitFor(() => expect(vm.component()).toBe(FakeUi));
   });
 });

@@ -10,16 +10,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isWsl, launchdPlist, openUrlCommands, startupMethod, systemdUnit, systemdUserDir } from '../daemon/platform.mjs';
+import { Snapshot } from '../contract/index.mjs';
+import { claudeConfigDir } from '../daemon/paths.mjs';
+import { hasSystemd, isWsl, launchAgentFile, launchdPlist, noServiceHelp, openUrlCommands, startupMethod, systemdUnit, systemdUserDir } from '../daemon/platform.mjs';
 
 const PORT = Number(process.env.VIGIE_PORT ?? 4317);
-const URL = `http://127.0.0.1:${PORT}`;
+const ORIGIN = `http://127.0.0.1:${PORT}`;
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const SERVER = path.join(ROOT, 'daemon', 'server.mjs');
 const LABEL = 'dev.vigie.daemon';
 const LOG = path.join(os.homedir(), '.vigie', 'daemon.log');
 
-const snapshot = () => fetch(`${URL}/api/snapshot`, { signal: AbortSignal.timeout(1500) }).then((r) => r.json());
+const snapshot = () => fetch(`${ORIGIN}/api/snapshot`, { signal: AbortSignal.timeout(1500) }).then((r) => r.json());
+const WSL = isWsl({ platform: process.platform, release: os.release(), env: process.env });
 const alive = () => snapshot().then(() => true, () => false);
 const pct = (r) => `${Math.round(r * 100)} %`;
 
@@ -37,8 +40,7 @@ async function start() {
 
 /** Première commande disponible de la plateforme ; aucune (ou échec) → on affiche l'URL. */
 function openUrl(url) {
-  const wsl = isWsl({ platform: process.platform, release: os.release(), env: process.env });
-  for (const [cmd, ...args] of openUrlCommands({ platform: process.platform, wsl })) {
+  for (const [cmd, ...args] of openUrlCommands({ platform: process.platform, wsl: WSL })) {
     try {
       execFileSync(cmd, [...args, url], { stdio: 'ignore', timeout: 10_000 });
       return;
@@ -50,13 +52,17 @@ function openUrl(url) {
 }
 
 async function open() {
-  if (await start()) openUrl(URL);
+  if (await start()) openUrl(ORIGIN);
   else process.exitCode = 1;
 }
 
 async function status() {
-  const s = await snapshot().catch(() => null);
-  if (!s) return console.log('Daemon arrêté. Lance `vigie`.');
+  const raw = await snapshot().catch(() => undefined);
+  if (raw === undefined) return console.log('Daemon arrêté. Lance `vigie`.');
+  // Même contrat que l'UI : un daemon d'une autre version ne fait pas planter la commande sur un champ manquant.
+  const parsed = Snapshot.safeParse(raw);
+  if (!parsed.success) { process.exitCode = 1; return console.error('Réponse inattendue du daemon : est-il à jour ? (redémarre-le après une mise à jour)'); }
+  const s = parsed.data;
   const w = s.usage.window;
   console.log(`Fenêtre 5 h : ${w.active ? pct(w.pct) : '—'}${w.real ? '' : ' (estimation)'}${w.weekPct != null ? ` · semaine ${pct(w.weekPct)}` : ''}`);
   const waiting = s.sessions.filter((x) => x.state === 'waiting' || x.state === 'turn');
@@ -68,14 +74,18 @@ async function status() {
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: 'inherit' });
 const tryRun = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore' }); return true; } catch { return false; } };
 
-// systemd --user utilisable : système démarré par systemd (WSL sans `[boot] systemd=true` ne l'est pas) et bus utilisateur joignable.
-const hasSystemd = () => process.platform === 'linux' && fs.existsSync('/run/systemd/system') && tryRun('systemctl', ['--user', 'show-environment']);
-const method = () => startupMethod({ platform: process.platform, hasSystemd: hasSystemd() });
-const PLIST = path.join(os.homedir(), 'Library', 'LaunchAgents', `${LABEL}.plist`);
+// Chemins et tests propres à l'OS dans platform.mjs ; ici, seulement les effets (existsSync, systemctl).
+const systemd = () => hasSystemd({ platform: process.platform, exists: fs.existsSync, userBus: () => tryRun('systemctl', ['--user', 'show-environment']) });
+const method = () => startupMethod({ platform: process.platform, hasSystemd: systemd() });
+const PLIST = launchAgentFile({ home: os.homedir(), label: LABEL });
 const UNIT = path.join(systemdUserDir({ env: process.env, home: os.homedir() }), 'vigie.service');
 
 function install() {
-  const service = { label: LABEL, node: process.execPath, server: SERVER, path: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', log: LOG };
+  // PATH, SHELL et CLAUDE_CONFIG_DIR (s'il est défini, résolu comme le daemon le résout) du moment de l'installation : lancé par
+  // launchd / systemd, le daemon n'a pas l'environnement du shell et lirait ~/.claude au lieu du dossier choisi. Une variable
+  // changée ensuite demande de relancer `vigie install`.
+  const configDir = process.env.CLAUDE_CONFIG_DIR ? claudeConfigDir({ env: process.env, home: os.homedir() }) : null;
+  const service = { label: LABEL, node: process.execPath, server: SERVER, path: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', log: LOG, configDir };
   const m = method();
   if (m === 'launchd') {
     fs.mkdirSync(path.dirname(PLIST), { recursive: true });
@@ -92,15 +102,8 @@ function install() {
     run('systemctl', ['--user', 'restart', 'vigie.service']);
     console.log(`Daemon installé (${UNIT}). Journal : ${LOG}. Désinstaller : vigie uninstall`);
   } else {
-    // Aucun gestionnaire de services : on ne touche à aucun dotfile, on explique.
-    console.log(`${process.platform === 'linux' ? 'systemd utilisateur injoignable : lancé avec sudo, session sans bus (SSH), ou WSL sans systemd ?' : 'Pas de gestionnaire de services pris en charge ici.'} Deux options :
-  1. Activer systemd dans WSL : ajouter dans /etc/wsl.conf
-       [boot]
-       systemd=true
-     puis, côté Windows : wsl --shutdown ; rouvrir le terminal et relancer vigie install.
-  2. Démarrer le daemon à l'ouverture d'un shell : ajouter à ~/.profile
-       vigie start >/dev/null 2>&1
-     (sans relance automatique s'il tombe).`);
+    // Aucun gestionnaire de services : on ne touche à aucun dotfile, on explique (WSL : comment y activer systemd).
+    console.log(noServiceHelp({ platform: process.platform, wsl: WSL }));
   }
 }
 

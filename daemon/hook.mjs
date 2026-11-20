@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Hook Claude Code de repli (hooks HTTP interdits par l'organisation) : ajoute l'événement reçu sur stdin au spool de Vigie,
-// puis sort sans rien dire (sortie vide + code 0 = Claude continue normalement). D'ordinaire, Claude Code poste au daemon (POST /api/hook).
+// Hook Claude Code des sessions lancées par Vigie (décision 021 : chemin par défaut, un process par événement) : ajoute
+// l'événement reçu sur stdin au spool de Vigie, puis sort sans rien dire (sortie vide + code 0 = Claude continue normalement).
+// La route POST /api/hook (hooks HTTP, même spool) reste dans le transport mais n'est plus branchée (cf. launch.hooksSettings).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

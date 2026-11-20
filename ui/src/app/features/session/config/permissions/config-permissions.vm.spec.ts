@@ -3,7 +3,6 @@ import { signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { describe, expect, it } from 'vitest';
 import { aConfig, fakeResource, provideVigieServiceMock } from '../../../../core/vigie.service.mock';
-import { VigieService } from '../../../../core/vigie.service';
 import { ClaudeConfig } from '../../../../core/models';
 import { ConfigPermissionsVm } from './config-permissions.vm';
 import { SessionConfigVm } from '../session-config.vm';
@@ -11,7 +10,7 @@ import { SessionConfigVm } from '../session-config.vm';
 function setup(permissions: ClaudeConfig['permissions']) {
   TestBed.configureTestingModule({
     providers: [SessionConfigVm, ConfigPermissionsVm, provideRouter([]), provideVigieServiceMock({
-      configResource: (() => fakeResource(aConfig({ permissions, checks: [] }))) as unknown as VigieService['configResource'],
+      configResource: () => fakeResource(aConfig({ permissions, checks: [] })),
     })],
   });
   const parent = TestBed.inject(SessionConfigVm);

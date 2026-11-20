@@ -1,6 +1,6 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { PluginInfo } from '../../core/models';
-import { OUTDATED, VigieService } from '../../core/vigie.service';
+import { VigieService, daemonError } from '../../core/vigie.service';
 
 /**
  * Page Plugins (décision 034) : les plugins livrés avec Vigie, un clic active ou désactive.
@@ -10,6 +10,10 @@ import { OUTDATED, VigieService } from '../../core/vigie.service';
 export class PluginsPageVm {
   private readonly vigie = inject(VigieService);
   readonly resource = this.vigie.pluginsResource();
+  /** Liste illisible (daemon injoignable, d'une autre version) : message à la place des cartes. */
+  readonly loadError = computed(() => (this.resource.status() === 'error' ? daemonError(this.resource.error(), 'Liste des plugins illisible.') : null));
+  /** Plugins livrés ; null pendant le premier chargement. */
+  readonly plugins = computed(() => (this.resource.hasValue() ? this.resource.value() : null));
   /** Plugin en cours de bascule : sa carte reste inactive le temps de la requête. */
   readonly busy = signal<string | null>(null);
   /** Échec de la dernière bascule, affiché sur la carte concernée. */
@@ -21,11 +25,9 @@ export class PluginsPageVm {
     this.failure.set(null);
     try {
       const info = await this.vigie.togglePlugin(p.id, !p.enabled);
-      this.resource.value.update((list) => list?.map((x) => (x.id === info.id ? info : x)));
+      if (this.resource.hasValue()) this.resource.value.update((list) => list?.map((x) => (x.id === info.id ? info : x)));
     } catch (e) {
-      const err = e as { error?: { error?: string }; message?: string } | null;
-      const fallback = p.enabled ? 'Désactivation impossible.' : 'Activation impossible.';
-      this.failure.set({ id: p.id, message: err?.error?.error ?? (err?.message === OUTDATED ? OUTDATED : fallback) });
+      this.failure.set({ id: p.id, message: daemonError(e, p.enabled ? 'Désactivation impossible.' : 'Activation impossible.') });
       this.resource.reload(); // l'erreur de chargement du plugin s'affiche sur sa carte
     } finally {
       this.busy.set(null);

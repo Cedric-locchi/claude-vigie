@@ -1,7 +1,6 @@
 ---
 name: frontend-design
 description: Conseils pour un design visuel singulier et réfléchi quand on construit une nouvelle interface ou qu'on en remanie une existante. Aide à fixer une direction esthétique, choisir la typographie et faire des choix qui ne sentent pas le modèle par défaut.
-license: Termes complets dans LICENSE.txt
 ---
 
 # Design frontend

@@ -1,4 +1,6 @@
 // Formatage d'affichage, en français : « 4,2 M », « 312 k », « 1 h 48 ».
+// ponytail: formats en fr-FR quelle que soit la langue de l'UI (« 4,2 M », « 12,34 $ ») ; ils suivront LanguageService
+// (formatters recréés par langue) quand les pages qui les affichent seront traduites.
 const fr1 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
 
 export function tokens(n: number): string {
@@ -23,6 +25,11 @@ export function pct(ratio: number): string {
 
 export function clock(ts: number): string {
   return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Heure à la seconde (« 14:05:09 ») : entrées du journal et du fil d'un agent. */
+export function clockSeconds(ts: number): string {
+  return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 const usd2 = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', maximumFractionDigits: 2 });

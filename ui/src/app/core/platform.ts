@@ -15,7 +15,8 @@ export function clientOs(nav: Nav): ClientOs {
   return 'linux';
 }
 
-export const isMac = (nav: Nav): boolean => clientOs(nav) === 'mac';
+/** Commande qui relance le service du daemon (launchd ou systemd --user, voir bin/vigie.mjs) ; Linux aussi pour un navigateur Windows sur WSL. */
+export const restartCommand = (os: ClientOs): string => (os === 'mac' ? 'launchctl kickstart -k gui/$UID/dev.vigie.daemon' : 'systemctl --user restart vigie');
 
 /** OS du client, injectable pour que les tests simulent une autre plateforme. */
 export const CLIENT_OS = new InjectionToken<ClientOs>('CLIENT_OS', { providedIn: 'root', factory: () => clientOs(navigator) });

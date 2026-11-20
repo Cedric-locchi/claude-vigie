@@ -1,6 +1,6 @@
 import { Component, inject, linkedSignal } from '@angular/core';
 import { HlmAlertDialogImports } from '@spartan-ng/helm/alert-dialog';
-import { ConfirmRequest, ConfirmService } from './confirm.service';
+import { ConfirmRequest, ConfirmService } from '../../core/confirm.service';
 
 /** Boîte de confirmation unique de l'app, pilotée par ConfirmService. */
 @Component({

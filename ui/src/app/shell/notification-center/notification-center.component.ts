@@ -3,10 +3,10 @@ import { RouterLink } from '@angular/router';
 import { HlmButton } from '@spartan-ng/helm/button';
 import { HlmSheetImports } from '@spartan-ng/helm/sheet';
 import { HlmTooltip } from '@spartan-ng/helm/tooltip';
-import { LOG_LABELS } from './attention';
-import { AttentionItemComponent } from './attention-item.component';
-import { AttentionService } from './attention.service';
-import * as f from './format';
+import { LOG_LABELS } from '../../core/attention';
+import { AttentionItemComponent } from '../attention-item/attention-item.component';
+import { AttentionService } from '../../core/attention.service';
+import * as f from '../../core/format';
 
 /**
  * Cloche (barre latérale et barre mobile) + panneau latéral droit.
@@ -26,7 +26,7 @@ import * as f from './format';
     </button>
 
     <hlm-sheet side="right" autoFocus="first-heading" [state]="open() ? 'open' : 'closed'" (stateChanged)="open.set($event === 'open')">
-      <hlm-sheet-content *hlmSheetPortal class="panel" closeLabel="Fermer les notifications">
+      <hlm-sheet-content *hlmSheetPortal class="sheet" closeLabel="Fermer les notifications">
         <hlm-sheet-header class="head">
           <h2 hlmSheetTitle>Notifications</h2>
           <p hlmSheetDescription>Ce qui t'attend, puis ce qui s'est passé plus tôt</p>
@@ -71,7 +71,7 @@ import * as f from './format';
     .bell { position: relative; }
     .count { position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; display: grid; place-items: center; border-radius: 8px; background: var(--wait-fill); color: var(--on-wait); font-size: 10px; font-weight: 600; line-height: 1; }
     .pip { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 4px; background: var(--text-muted); box-shadow: 0 0 0 2px var(--nav); }
-    .panel { width: min(560px, 100vw); max-width: none; padding: 0; gap: 0; }
+    .sheet { width: min(560px, 100vw); max-width: none; padding: 0; gap: 0; }
     .head { padding: 16px 48px 12px 18px; border-bottom: 1px solid var(--line); }
     .pause { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 12px; color: var(--text-2); }
     .scroll { flex: 1; min-height: 0; overflow-y: auto; }

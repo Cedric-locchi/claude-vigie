@@ -1,19 +1,21 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { describe, expect, it, vi } from 'vitest';
-import { aSettings, fakeResource, provideVigieServiceMock } from '../../core/vigie.service.mock';
+import { TranslocoService } from '@jsverse/transloco';
+import { throwError } from 'rxjs';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { LanguageService } from '../../core/language.service';
+import { Settings } from '../../core/models';
 import { VigieService } from '../../core/vigie.service';
+import { aSettings, fakeResource, provideVigieServiceMock } from '../../core/vigie.service.mock';
 import { SettingsPageVm } from './settings-page.vm';
 
-function createVm(saveSettings = vi.fn(async () => aSettings())) {
+function createVm(saveSettings?: VigieService['saveSettings']) {
+  const settings = fakeResource<Settings | undefined>(aSettings({ alerts: { dailyCost: 20, windowPct: 0.8 } }));
   TestBed.configureTestingModule({
-    providers: [SettingsPageVm, provideRouter([]), provideVigieServiceMock({
-      settingsResource: (() => fakeResource(aSettings({ alerts: { dailyCost: 20, windowPct: 0.8 } }))) as unknown as VigieService['settingsResource'],
-      saveSettings,
-    })],
+    providers: [SettingsPageVm, provideRouter([]), provideVigieServiceMock({ settingsResource: () => settings, ...(saveSettings ? { saveSettings } : {}) })],
   });
-  return { vm: TestBed.inject(SettingsPageVm), saveSettings };
+  return { vm: TestBed.inject(SettingsPageVm), saveSettings: vi.mocked(TestBed.inject(VigieService).saveSettings) };
 }
 
 describe('SettingsPageVm', () => {
@@ -54,5 +56,52 @@ describe('SettingsPageVm', () => {
     const { vm, saveSettings } = createVm();
     await vm.saveLocale('  ');
     expect(saveSettings).toHaveBeenCalledWith({ locale: null });
+  });
+
+  it('enregistrer la locale garde les seuils saisis et pas encore enregistrés', async () => {
+    const { vm } = createVm();
+    vm.alertsModel.set({ dailyCost: '33', windowPct: '' });
+    await vm.saveLocale('fr_FR.UTF-8');
+    expect(vm.settings()?.locale).toBe('fr_FR.UTF-8'); // la ressource partagée a changé
+    expect(vm.alertsModel()).toEqual({ dailyCost: '33', windowPct: '' });
+    await vm.saveAlerts(); // seuils enregistrés : la saisie suit le daemon
+    expect(vm.alertsModel()).toEqual({ dailyCost: '33', windowPct: '' });
+    expect(vm.settings()?.alerts).toEqual({ dailyCost: 33, windowPct: null });
+  });
+
+  it("500 sans corps : le message dit ce qui n'a pas été enregistré, pas « daemon injoignable »", async () => {
+    const { vm } = createVm(vi.fn(async () => { throw new HttpErrorResponse({ status: 500, error: null }); }));
+    await vm.saveLocale('fr_FR.UTF-8');
+    expect(vm.localeError()).toBe('Locale non enregistrée.');
+  });
+
+  it('le message de repli suit la langue de l’interface', async () => {
+    const htmlLang = document.documentElement.lang;
+    onTestFinished(() => { document.documentElement.lang = htmlLang; });
+    const { vm } = createVm(vi.fn(async () => { throw new HttpErrorResponse({ status: 500, error: null }); }));
+    await TestBed.inject(LanguageService).set('en');
+    await vm.saveLocale('fr_FR.UTF-8');
+    expect(vm.localeError()).toBe('Locale not saved.');
+  });
+
+  it('catalogue introuvable : le groupe de bascule revient sur la langue active', async () => {
+    const { vm } = createVm();
+    vi.spyOn(TestBed.inject(TranslocoService), 'load').mockReturnValue(throwError(() => new Error('chunk')));
+    const switching = vm.setLang('en');
+    expect(vm.langChoice()).toBe('en');
+    await switching;
+    expect(vm.langChoice()).toBe('fr');
+  });
+
+  it('daemon injoignable : réglages absents, saisies vides, rien ne lève', () => {
+    TestBed.configureTestingModule({
+      providers: [SettingsPageVm, provideRouter([]), provideVigieServiceMock({
+        settingsResource: () => fakeResource(undefined, 'error', new Error('daemon injoignable')),
+      })],
+    });
+    const vm = TestBed.inject(SettingsPageVm);
+    expect(vm.settings()).toBeUndefined();
+    expect(vm.locale()).toBe('');
+    expect(vm.alertsModel()).toEqual({ dailyCost: '', windowPct: '' });
   });
 });

@@ -1,12 +1,12 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { Signal, signal } from '@angular/core';
 import { Router, provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
 import { Usage, UsageRow, UsageRows } from '../../../core/models';
 import { aSettings, aSnapshot, anUsage, anUsageRow, fakeResource, provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { VigieService } from '../../../core/vigie.service';
 import { UsagePageVm } from './usage-page.vm';
-import { addDays } from '../usage-series';
+import { addDays } from '../../../core/usage-rows';
 
 const TODAY = new Date(2026, 10, 13).getTime(); // 13 novembre
 const NOW = TODAY + 15 * 3_600_000;
@@ -31,8 +31,8 @@ function createVm(usage: Usage = anUsage(), rows: UsageRows = ROWS, dailyCost: n
   TestBed.configureTestingModule({
     providers: [UsagePageVm, provideRouter([]), provideVigieServiceMock({
       snapshot: signal(aSnapshot({ now: NOW, usage })),
-      usageResource: ((d: Signal<number>) => { days = d; return fakeResource(rows); }) as unknown as VigieService['usageResource'],
-      settingsResource: (() => fakeResource(aSettings({ alerts: { dailyCost, windowPct: null } }))) as unknown as VigieService['settingsResource'],
+      usageResource: (d: Signal<number>) => { days = d; return fakeResource(rows); },
+      settingsResource: () => fakeResource(aSettings({ alerts: { dailyCost, windowPct: null } })),
     })],
   });
   const vm = TestBed.inject(UsagePageVm);
@@ -57,6 +57,18 @@ describe('UsagePageVm', () => {
     expect(vm.rangeLabel()).toBe('Depuis le 1er novembre');
     vm.setPeriod('n’importe quoi');
     expect(vm.period()).toBe('month');
+  });
+
+  it('lecture en échec : la raison (daemon injoignable, sinon le repli), pas « Chargement… » à vie', () => {
+    const vmWith = (error: Error) => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [UsagePageVm, provideRouter([]), provideVigieServiceMock({ usageResource: () => fakeResource<UsageRows | undefined>(undefined, 'error', error) })] });
+      return TestBed.inject(UsagePageVm);
+    };
+    expect(createVm().vm.loadError()).toBeNull();
+    const offline = vmWith(new HttpErrorResponse({ status: 0 }));
+    expect([offline.loadError(), offline.loaded()]).toEqual(['Le daemon ne répond pas', false]);
+    expect(vmWith(new Error('boom')).loadError()).toBe('Détail de consommation indisponible.');
   });
 
   it('totaux, modèles, projets et sessions suivent la période', () => {
@@ -168,9 +180,8 @@ describe('UsagePageVm', () => {
     expect(vm.selection()).toEqual({ from: day(0), to: day(0) });
   });
 
-  it('daemon sans historique des fenêtres : on le dit', () => {
-    const { vm } = createVm(anUsage(), { ...ROWS, windows: undefined });
-    expect(vm.noWindows()).toBe(true);
+  it('aucune fenêtre close sur la période : bande vide', () => {
+    const { vm } = createVm(anUsage(), { ...ROWS, windows: [] });
     expect(vm.strip()).toEqual([]);
   });
 

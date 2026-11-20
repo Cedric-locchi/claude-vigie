@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aSession, anUsageRow } from '../../../core/vigie.service.mock';
-import { addDays } from '../../usage/usage-series';
+import { addDays } from '../../../core/usage-rows';
 import { dailyAverage, segments, sessionSegments, trend } from './dashboard';
 
 const TODAY = new Date(2026, 10, 18).getTime();

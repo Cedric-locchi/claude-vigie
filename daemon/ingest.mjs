@@ -5,9 +5,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const MIN = 60_000;
+/** Segment d'un worktree de Claude Code dans un cwd (`<projet>/.claude/worktrees/<nom>`), séparateur de la plateforme. */
+export const WORKTREES = `${path.sep}.claude${path.sep}worktrees${path.sep}`;
 const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'LS', 'NotebookRead']);
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const AGENT_TOOLS = new Set(['Task', 'Agent']);
+// Échap dans Claude Code : un message « user » dont le seul bloc texte est ce marqueur (forme relevée dans de vrais transcripts,
+// sous-agents compris). Claude Code n'émet pas de hook Stop dans ce cas.
+const INTERRUPTED = /^\[Request interrupted by user( for tool use)?\]$/;
 
 export function toolKind(name) {
   if (READ_TOOLS.has(name)) return 'read';
@@ -38,6 +43,7 @@ export function newTrack(file) {
     file, offset: 0, rest: '',
     sessionId: null, cwd: null, branch: null, model: null, title: null, firstPrompt: null,
     firstTs: 0, lastTs: 0, lastStop: null, lastText: '',
+    interruptTs: 0, // dernier Échap (marqueur INTERRUPTED) : un événement de hook antérieur ne compte plus
     usage: new Map(), // message.id → {ts, model, input, output, cacheCreate, cacheRead}
     prompts: [], // messages de l'humain (début des tours) : {ts, text}
     tools: new Map(), // tool_use_id → {name, kind, label, start, end, error}
@@ -96,6 +102,16 @@ export function applyRecord(t, o) {
     if (t.pending?.id === c.tool_use_id) t.pending = null;
     t.lastError = c.is_error ? textOf(c.content).slice(0, 200) : null;
   }
+  // Interruption : fin de tour (« à toi »), pas un message de l'humain ; l'outil resté sans résultat est clos comme interrompu,
+  // et son erreur éventuelle (refus écrit par Claude Code) n'est pas un « souci ». Un prompt tapé porte `promptSource`, jamais
+  // le marqueur écrit par Claude Code : le même texte tapé à la main reste un message.
+  if (!hadResult && !o.promptSource && INTERRUPTED.test(textOf(msg.content).trim())) {
+    if (t.pending) { t.pending.end ||= ts; t.pending.interrupted = true; t.pending = null; }
+    t.lastError = null;
+    t.lastStop = 'interrupted';
+    t.interruptTs = ts;
+    return;
+  }
   if (!hadResult && !o.isMeta && !o.isSidechain) {
     const text = textOf(msg.content).trim();
     if (text && !text.startsWith('<')) { t.firstPrompt ||= text.slice(0, 200); t.lastStop = null; }
@@ -133,6 +149,28 @@ export function readNewLines(cursor, onRecord, onReset) {
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
   }
+}
+
+/**
+ * Regroupe les événements de `fs.watch` sur `dir` (écouteur rendu) : `flush({ files, full })` part `delay` ms après le premier
+ * événement, pas après le dernier (un délai réarmé à chaque écriture repousserait la lecture tant que Claude écrit, lignes à
+ * moins de 250 ms d'écart). `files` : chemins absolus des noms reçus entre-temps ; `full` : un événement sans nom, scan complet.
+ */
+export function batchWatch(dir, flush, delay = 250) {
+  let timer = null;
+  let files = new Set();
+  let full = false;
+  return (_event, name) => {
+    if (name) files.add(path.join(dir, String(name))); else full = true;
+    if (timer) return;
+    timer = setTimeout(() => {
+      const batch = { files: [...files], full };
+      timer = null;
+      files = new Set();
+      full = false;
+      flush(batch);
+    }, delay);
+  };
 }
 
 /** Lit la suite d'un fichier depuis le dernier offset (lignes partielles conservées). */
@@ -212,15 +250,16 @@ export function trackTokens(t) {
 
 export function projectName(cwd) {
   if (!cwd) return '?';
-  return path.basename(cwd.split('/.claude/worktrees/')[0]);
+  return path.basename(cwd.split(WORKTREES)[0]);
 }
 
 /**
  * État d'un agent : waiting (autorisation/question), running, turn (fin de tour, à toi), done.
- * `live` = dernier événement de hook pour cette session, prioritaire s'il est plus récent que le transcript.
+ * `live` = dernier événement de hook pour cette session, prioritaire s'il est plus récent que le transcript, sauf s'il précède
+ * une interruption (Échap n'émet aucun hook : un PreToolUse d'avant gagnerait sans jamais périmer).
  */
 export function deriveState(t, now, live = null) {
-  if (live && live.ts >= t.lastTs - 2000) {
+  if (live && live.ts >= t.lastTs - 2000 && !(t.interruptTs >= live.ts)) {
     switch (live.event) {
       case 'PermissionRequest': return { state: 'waiting', reason: 'permission', detail: live.detail };
       case 'Notification':
@@ -235,6 +274,7 @@ export function deriveState(t, now, live = null) {
   if (t.pending?.name === 'AskUserQuestion') return { state: 'waiting', reason: 'question', detail: t.pending.question };
   const idle = now - t.lastTs;
   if (t.pending) return { state: idle < 30 * MIN ? 'running' : 'done' };
-  if (t.lastStop === 'end_turn' || t.lastStop === 'stop_sequence') return { state: idle < 30 * MIN ? 'turn' : 'done' };
+  // 'interrupted' : valeur interne (applyRecord), jamais dans le contrat.
+  if (t.lastStop === 'end_turn' || t.lastStop === 'stop_sequence' || t.lastStop === 'interrupted') return { state: idle < 30 * MIN ? 'turn' : 'done' };
   return { state: idle < 10 * MIN ? 'running' : 'done' };
 }

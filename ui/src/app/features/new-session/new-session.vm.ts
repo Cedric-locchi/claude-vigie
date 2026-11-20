@@ -4,7 +4,7 @@ import { form, submit, validateStandardSchema } from '@angular/forms/signals';
 import * as z from 'zod/mini';
 import { Project, ProjectKind } from '../../core/models';
 import { CLIENT_OS, isShortcut } from '../../core/platform';
-import { VigieService } from '../../core/vigie.service';
+import { VigieService, daemonError } from '../../core/vigie.service';
 
 export type Permission = 'default' | 'acceptEdits' | 'plan';
 export type GitMode = 'current' | 'branch' | 'worktree';
@@ -302,8 +302,7 @@ export class NewSessionVm {
         const term = await this.vigie.startSession({ cwd: this.model().cwd, command: this.command() });
         await this.router.navigate(['/sessions', term.sessionId]);
       } catch (e: unknown) {
-        const err = e as { error?: { error?: string }; message?: string };
-        this.error.set(err.error?.error ?? err.message ?? 'Lancement impossible');
+        this.error.set(daemonError(e, 'Lancement impossible.'));
       }
       return undefined;
     });

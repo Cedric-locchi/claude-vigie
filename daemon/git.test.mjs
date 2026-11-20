@@ -4,8 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { commitAll, createBranch, headBranch, parseStatus, readGitDiff, readWorktreeFile, restoreFile, splitPatch, untrackedPatch, writeWorktreeFile } from './git.mjs';
-import { FileBody, GitDiff } from '../contract/index.mjs';
+import { CLAUDE_ARGS, commitAll, createBranch, diffCacheSize, headBranch, killAll, parseStatus, readGitDiff, readWorktreeFile, restoreFile, splitPatch, suggestCommitMessage, underClaudeConfig, untrackedPatch, writeWorktreeFile } from './git.mjs';
+import { CommitSuggestion, FileBody, GitDiff } from '../contract/index.mjs';
 import { tempDir } from './plugins.mjs'; // dossiers temporaires effacés à la fin du fichier
 
 // Sortie conforme au contrat : parse retire les clés inconnues, donc l'égalité échoue sur un champ manquant comme sur un champ en trop.
@@ -140,6 +140,30 @@ test('readGitDiff : modifié, renommé, non suivi et chemin avec espace en un se
   const after = await readGitDiff(dir);
   assert.notEqual(after, d);
   assert.equal(after.total, 0);
+});
+
+test('readGitDiff : cache borné, les entrées expirées (1,5 s) sont retirées au calcul suivant', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const [a, b] = [tempDir('vigie-git-'), tempDir('vigie-git-')];
+  await readGitDiff(a);
+  await readGitDiff(b);
+  assert.ok(diffCacheSize() >= 2);
+  t.mock.timers.tick(1500);
+  await readGitDiff(b); // b expirée : recalculée, a retirée au passage
+  assert.equal(diffCacheSize(), 1);
+});
+
+test('readGitDiff : diff externe coupé (format de splitPatch), textconv gardé (git-crypt lisible, comme dans un terminal)', async () => {
+  const { dir, g } = repo();
+  const bin = tempDir('vigie-bin-');
+  fs.writeFileSync(path.join(bin, 'externe'), '#!/bin/sh\necho EXTERNE\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'conv'), '#!/bin/sh\ntr a-z A-Z < "$1"\n', { mode: 0o755 });
+  g('config', 'diff.external', path.join(bin, 'externe'));
+  g('config', 'diff.conv.textconv', path.join(bin, 'conv'));
+  fs.writeFileSync(path.join(dir, '.git', 'info', 'attributes'), '*.txt diff=conv\n');
+  const patch = (await readGitDiff(dir)).files.find((f) => f.path === 'a.txt').patch;
+  assert.ok(patch.includes('\n-V1\n+V2\n'), patch);
+  assert.ok(!patch.includes('EXTERNE'), patch);
 });
 
 test('untrackedPatch : fichier trop gros tronqué, vide sans hunk', async () => {
@@ -279,6 +303,149 @@ test('writeWorktreeFile : refuse d’écrire sous <home>/.claude (403), lien com
   assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'v2\n');
   await writeWorktreeFile(dir, 'a.txt', 'v3\n', hash, tempDir('vigie-home-'));
   assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'v3\n');
+});
+
+test('restoreFile : refuse d’effacer ou de restaurer dans la config Claude (403), lien compris ; rien n’est touché', async () => {
+  const { dir } = repo();
+  fs.writeFileSync(path.join(dir, 'neuf.txt'), 'n\n');
+  const home = tempDir('vigie-home-');
+  fs.symlinkSync(dir, path.join(home, '.claude')); // ~/.claude qui mène au dépôt
+  for (const p of ['a.txt', 'neuf.txt']) await assert.rejects(restoreFile(dir, p, home), (e) => e.status === 403 && /lecture seule/.test(e.message), p);
+  assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'v2\n');
+  assert.ok(fs.existsSync(path.join(dir, 'neuf.txt')));
+  await restoreFile(dir, 'a.txt', tempDir('vigie-home-'));
+  assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'v1\n');
+});
+
+test('underClaudeConfig : ~/.claude, ~/.claude.json (lien suivi), CLAUDE_CONFIG_DIR ; fichier supprimé jugé par son dossier', async () => {
+  const { dir } = repo();
+  const file = path.join(dir, 'a.txt');
+  const home = tempDir('vigie-home-');
+  assert.equal(await underClaudeConfig(file, home, {}), false);
+  fs.symlinkSync(file, path.join(home, '.claude.json'));
+  assert.equal(await underClaudeConfig(file, home, {}), true);
+  const other = tempDir('vigie-home-');
+  assert.equal(await underClaudeConfig(file, other, { CLAUDE_CONFIG_DIR: dir }), true);
+  assert.equal(await underClaudeConfig(path.join(dir, 'disparu.txt'), other, { CLAUDE_CONFIG_DIR: dir }), true);
+  assert.equal(await underClaudeConfig(file, other, { CLAUDE_CONFIG_DIR: path.join(other, 'cfg') }), false);
+});
+
+test('suggestCommitMessage : réponse de claude conforme ; lancé hors du dépôt, sans réglages ni MCP ; abandon et délai tuent claude et ses enfants', async () => {
+  const { dir } = repo();
+  const bin = tempDir('vigie-bin-');
+  const workDir = path.join(tempDir('vigie-home-'), '.vigie', 'commit-message'); // créé au premier appel
+  const fake = (body) => { fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 }); };
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  fake('cat >/dev/null; echo "fix: corrige a"');
+  const message = await suggestCommitMessage(dir, env, { workDir });
+  assert.equal(message, 'fix: corrige a');
+  conforme(CommitSuggestion, { message });
+  // Dossier vide de Vigie (pas le dépôt : ni son CLAUDE.md, ni ses hooks), arguments exacts de la décision 046.
+  fake('cat >/dev/null; printf "%s|" "$(pwd -P)" "$@"');
+  assert.equal(await suggestCommitMessage(dir, env, { workDir }), [workDir, ...CLAUDE_ARGS].join('|') + '|');
+  assert.deepEqual(CLAUDE_ARGS, ['-p', '--no-session-persistence', '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--model', 'haiku']);
+  assert.deepEqual(fs.readdirSync(workDir), []);
+  fake('exec sleep 30');
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), 100);
+  const t0 = Date.now();
+  await assert.rejects(suggestCommitMessage(dir, env, { workDir, signal: ac.signal }), (e) => e.name === 'AbortError');
+  // Un enfant de claude (hook, serveur) est arrêté avec lui : groupe de processus tué au délai.
+  const pidFile = path.join(bin, 'enfant.pid');
+  fake(`sleep 30 & echo $! > ${pidFile}; exec sleep 30`);
+  await assert.rejects(suggestCommitMessage(dir, env, { workDir, timeout: 200 }), /ne répond pas/);
+  const child = Number(fs.readFileSync(pidFile, 'utf8'));
+  const alive = () => { try { process.kill(child, 0); return true; } catch { return false; } };
+  for (let i = 0; i < 40 && alive(); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.equal(alive(), false);
+  assert.ok(Date.now() - t0 < 10_000);
+  await assert.rejects(suggestCommitMessage(dir, env, {}), TypeError); // sans workDir : rien n'est lancé
+});
+
+test('suggestCommitMessage : prompt borné (200 noms non suivis, diff tronqué sans échec), ni diff externe ni textconv', async () => {
+  const { dir, g } = repo();
+  const bin = tempDir('vigie-bin-');
+  const workDir = path.join(tempDir('vigie-home-'), 'commit-message');
+  const script = (name, body) => fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  script('claude', 'cat'); // rend le prompt tel quel
+  script('externe', 'echo EXTERNE');
+  script('conv', 'echo TEXTCONV');
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  // Config du dépôt qui ferait passer autre chose que le patch dans le prompt (git-crypt déchiffre par textconv).
+  g('config', 'diff.external', path.join(bin, 'externe'));
+  g('config', 'diff.conv.textconv', path.join(bin, 'conv'));
+  fs.writeFileSync(path.join(dir, '.gitattributes'), '*.txt diff=conv\n');
+  g('add', '.gitattributes'); g('commit', '-qm', 'attributs');
+  for (let i = 0; i < 250; i++) fs.writeFileSync(path.join(dir, `n${String(i).padStart(3, '0')}.txt`), '');
+  fs.writeFileSync(path.join(dir, 'gros.txt'), 'x\n'.repeat(150_000)); // diff de 300 Ko : au-delà de ce que lit le prompt
+  const prompt = await suggestCommitMessage(dir, env, { workDir });
+  assert.ok(prompt.includes('\nn199.txt\n[… 50 autres]\n'));
+  assert.ok(!prompt.includes('n200.txt'));
+  assert.ok(prompt.includes('\n-v1\n+v2\n'));
+  assert.ok(prompt.endsWith('[… diff tronqué]'));
+  assert.ok(prompt.length < 90_000, String(prompt.length));
+  assert.ok(!/EXTERNE|TEXTCONV/.test(prompt));
+});
+
+test('suggestCommitMessage : des avertissements sur stderr (CRLF) n’avancent pas la coupure du diff, la mention suit la troncature', async () => {
+  const { dir, g } = repo();
+  const bin = tempDir('vigie-bin-');
+  fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\ncat\n', { mode: 0o755 }); // rend le prompt
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  // 2 000 fichiers inchangés mais à relire (date changée) : un avertissement CRLF chacun sur stderr (~200 Ko), aucun diff.
+  for (let i = 0; i < 2000; i++) fs.writeFileSync(path.join(dir, `crlf-${String(i).padStart(4, '0')}.txt`), 'a\n');
+  g('add', '.'); g('commit', '-qm', 'crlf');
+  g('config', 'core.autocrlf', 'true');
+  const later = new Date(Date.now() + 60_000);
+  for (let i = 0; i < 2000; i++) fs.utimesSync(path.join(dir, `crlf-${String(i).padStart(4, '0')}.txt`), later, later);
+  fs.writeFileSync(path.join(dir, 'gros.txt'), 'x\n'.repeat(50_000)); // diff de ~150 Ko : sous la lecture bornée, au-delà de MAX_PROMPT_DIFF
+  const prompt = await suggestCommitMessage(dir, env, { workDir: path.join(bin, 'w') });
+  const diff = prompt.slice(prompt.indexOf('\n## Diff\n') + 9);
+  assert.ok(diff.endsWith('\n[… diff tronqué]'));
+  assert.equal(diff.length, 60_000 + '\n[… diff tronqué]'.length);
+});
+
+test('killAll : arrête claude -p et ses enfants encore vivants (SIGTERM au groupe)', async () => {
+  const { dir } = repo();
+  const bin = tempDir('vigie-bin-');
+  const pidFile = path.join(bin, 'enfant.pid');
+  // pid écrit puis renommé : jamais lu à moitié écrit.
+  fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\nsleep 30 & echo $! > ${pidFile}.tmp && mv ${pidFile}.tmp ${pidFile}\nexec sleep 30\n`, { mode: 0o755 });
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const t0 = Date.now();
+  const running = suggestCommitMessage(dir, env, { workDir: path.join(bin, 'w'), timeout: 30_000 });
+  while (!fs.existsSync(pidFile)) await new Promise((r) => setTimeout(r, 20));
+  killAll();
+  await assert.rejects(running, /SIGTERM/);
+  assert.ok(Date.now() - t0 < 10_000, 'groupe non tué par killAll');
+  const child = Number(fs.readFileSync(pidFile, 'utf8'));
+  assert.ok(child > 0);
+  const alive = () => { try { process.kill(child, 0); return true; } catch { return false; } };
+  for (let i = 0; i < 50 && alive(); i++) await new Promise((r) => setTimeout(r, 20));
+  if (alive()) process.kill(child, 'SIGKILL');
+  assert.equal(alive(), false, 'enfant encore vivant après killAll');
+  killAll(); // plus rien à tuer : sans effet
+});
+
+test('commitAll, createBranch : refusés (403) dans un dépôt de la config Claude, worktree lié compris ; rien n’est écrit', async () => {
+  const { dir, g } = repo();
+  const home = tempDir('vigie-home-');
+  fs.symlinkSync(dir, path.join(home, '.claude')); // ~/.claude versionné, qui mène au dépôt
+  const head = () => g('rev-parse', 'HEAD').toString();
+  const before = head();
+  const denied = (e) => e.status === 403 && /lecture seule/.test(e.message);
+  await assert.rejects(commitAll(dir, 'feat: x', home), denied);
+  await assert.rejects(createBranch(dir, 'feat/x', home), denied);
+  // Worktree hors de ~/.claude : son commit écrirait les objets et les refs dans le .git commun, sous ~/.claude.
+  const wt = path.join(tempDir('vigie-wt-'), 'w');
+  g('worktree', 'add', '-q', wt);
+  await assert.rejects(commitAll(wt, 'feat: x', home), denied);
+  await assert.rejects(createBranch(wt, 'feat/y', home), denied);
+  assert.equal(head(), before);
+  assert.equal(g('branch', '--list', 'feat/*').toString(), '');
+  // Hors de la config : la même branche passe.
+  await createBranch(dir, 'feat/x', tempDir('vigie-home-'));
+  assert.equal((await readGitDiff(dir)).branch, 'feat/x');
 });
 
 test('headBranch : branche nommée, HEAD détachée, .git fichier relatif, worktree réel, hors dépôt', async () => {

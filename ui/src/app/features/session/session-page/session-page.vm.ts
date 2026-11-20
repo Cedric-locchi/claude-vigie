@@ -1,34 +1,36 @@
 import { DOCUMENT, Injectable, Signal, computed, effect, inject, linkedSignal, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { AttentionService, KEYS } from '../../../core/attention.service';
 import { ConfirmService } from '../../../core/confirm.service';
 import { DISCARD_EDIT } from '../diff/session-diff.vm';
 import { SessionDetail, SessionState } from '../../../core/models';
-import { KEYS, OUTDATED, VigieService, isChat, sendReply } from '../../../core/vigie.service';
+import { OUTDATED, VigieService, daemonError, isChat } from '../../../core/vigie.service';
 import { stateLabel } from '../../../core/session-view';
-import type { WaitBar } from '../agents/wait-bar/wait-bar.component';
 import { counter, keepLast } from '../../../core/signals';
 import { CLIENT_OS, isShortcut } from '../../../core/platform';
-import type { PageMode } from '../../../shell/page/page.component';
 
-/** Filtres de la liste des agents, dans l'ordre d'urgence. */
-/** « Non terminés » regroupe ceux qui t'attendent (question, autorisation, fin de tour) et ceux qui tournent ;
- *  pas de puce « À toi » ni « En cours » à part : la rangée de filtres tient sur une ligne. */
+/**
+ * Filtres de la liste des agents, dans l'ordre d'urgence. « Non terminés » regroupe ceux qui t'attendent (question,
+ * autorisation, fin de tour) et ceux qui tournent ; pas de puce « À toi » ni « En cours » à part : la rangée tient sur une ligne.
+ */
 const AGENT_FILTERS: { state: SessionState; label: string; states?: SessionState[] }[] = [
   { state: 'waiting', label: 'En attente' },
   { state: 'running', label: 'Non terminés', states: ['waiting', 'running', 'turn'] },
   { state: 'done', label: 'Terminés' },
 ];
 
-/** `plugin:<id>` : onglet d'un plugin actif qui s'applique au projet (décision 034). */
-export type SessionView = 'workspace' | 'diff' | 'files' | 'history' | 'usage' | 'config' | `plugin:${string}`;
+/** Vue de la page de session ; `plugin:<id>` : onglet d'un plugin actif qui s'applique au projet (décision 034). */
+export type SessionTab = 'workspace' | 'diff' | 'files' | 'history' | 'usage' | 'config' | `plugin:${string}`;
 /** Onglet Historique : la chronologie par tours ou le journal brut. */
 export type HistoryMode = 'timeline' | 'log';
+/** Saisie non enregistrée des onglets qui éditent des fichiers, lue par la page sur leurs composants. */
+export interface Drafts { diff: Signal<boolean>; files: Signal<boolean> }
 
 /**
  * Dernière vue choisie : survit au changement de session (même si la page est recréée en passant par la liste).
  * ponytail: mémoire du module, perdue au rechargement ; localStorage si on veut la garder entre deux lancements.
  */
-let lastView: SessionView = 'workspace';
+let lastView: SessionTab = 'workspace';
 
 @Injectable()
 export class SessionPageVm {
@@ -36,7 +38,9 @@ export class SessionPageVm {
   private readonly document = inject(DOCUMENT);
   private readonly router = inject(Router);
   private readonly confirm = inject(ConfirmService);
+  private readonly attention = inject(AttentionService);
   private readonly source = signal<Signal<string> | null>(null);
+  private readonly drafts = signal<Drafts | null>(null);
 
   readonly id = computed(() => this.source()?.() ?? null);
   readonly detailResource = this.vigie.sessionResource(this.id);
@@ -75,7 +79,7 @@ export class SessionPageVm {
   /** Agents en souci : badge à part, seulement s'il y en a. */
   readonly issues = computed(() => this.agents().filter((a) => a.issue).length);
   /** Barre d'attente au-dessus du terminal : la session attend et on peut répondre ici. Session externe : rien (pas de terminal). */
-  readonly waitBar = computed((): WaitBar | null => {
+  readonly waitBar = computed(() => {
     const s = this.summary();
     if (s?.state !== 'waiting' || !this.claudeTerminal()) return null;
     return { question: s.reason === 'question', canAllow: s.reason === 'permission', detail: s.detail ?? (s.reason === 'question' ? null : s.tool) };
@@ -88,8 +92,8 @@ export class SessionPageVm {
   /** Consommation de la session : répartition des tokens, taux de cache et part de chaque agent. */
   readonly usage = computed(() => {
     const d = this.detail();
-    const u = d?.usage;
-    if (!d || !u) return null; // daemon d'avant cet onglet : pas encore de `usage`
+    if (!d) return null;
+    const u = d.usage;
     const total = u.input + u.output + u.cacheCreate + u.cacheRead;
     if (!total) return null;
     const inputSide = u.input + u.cacheCreate + u.cacheRead;
@@ -104,17 +108,27 @@ export class SessionPageVm {
     return { total, calls: u.calls, context: u.context, cacheRate: inputSide ? u.cacheRead / inputSide : 0, parts, agents };
   });
 
-  /** Onglet de premier niveau : terminal et agents, chronologie ou consommation en pleine page. */
-  /** Une discussion n'a que Discussion et Consommation : on y arrive toujours sur Discussion. Ailleurs, on garde la dernière vue choisie. */
-  readonly view = linkedSignal<boolean, SessionView>({ source: this.isChat, computation: (chat, prev) => (chat ? 'workspace' : prev && !prev.source ? prev.value : lastView) });
+  /**
+   * Onglet de premier niveau : terminal et agents, chronologie, consommation… en pleine page. Une discussion n'a que Discussion
+   * et Consommation : on y arrive sur Discussion, puis la vue choisie reste (la source bouge aussi avec les onglets de plugins).
+   * Ailleurs, on garde la dernière vue choisie, sauf un onglet de plugin qui disparaît (plugin désactivé, projet qui ne s'y prête
+   * plus) : retour au terminal.
+   */
+  readonly view = linkedSignal<{ chat: boolean; tabs: string[] | null }, SessionTab>({
+    source: () => ({ chat: this.isChat(), tabs: this.pluginsResource.isLoading() ? null : this.plugins().map((p) => `plugin:${p.id}`) }),
+    computation: ({ chat, tabs }, prev) => {
+      if (chat) return prev?.source.chat ? prev.value : 'workspace';
+      const view = prev && !prev.source.chat ? prev.value : lastView;
+      return view.startsWith('plugin:') && tabs && !tabs.includes(view) ? 'workspace' : view;
+    },
+  });
   /**
    * Règle de défilement du gabarit (shell/page) : `fill` pour les vues en colonnes qui défilent chacune (terminal et agents, Diff,
    * Fichiers, Historique, Config, plugins) ; `scroll` pour celles qui se lisent d'un trait (Consommation, agents d'une session externe).
    */
-  readonly pageMode = computed<PageMode>(() => {
+  readonly pageMode = computed(() => {
     const view = this.view();
-    if (view === 'usage') return 'scroll';
-    return view === 'workspace' && this.isExternal() ? 'scroll' : 'fill';
+    return view === 'usage' || (view === 'workspace' && this.isExternal()) ? ('scroll' as const) : ('fill' as const);
   });
   private readonly rememberView = effect(() => {
     const view = this.view();
@@ -165,12 +179,39 @@ export class SessionPageVm {
     this.agentsOpen.update((open) => !open);
   }
 
-  connect(id: Signal<string>): void {
+  /** `drafts` : saisie non enregistrée des onglets Diff et Fichiers (absente d'une page sans onglet d'édition, specs comprises). */
+  connect(id: Signal<string>, drafts?: Drafts): void {
     this.source.set(id);
+    this.drafts.set(drafts ?? null);
   }
 
-  showView(view: SessionView): void {
+  /** Diff : l'onglet reste monté tant qu'une saisie y existe, on peut changer de vue sans la perdre. */
+  readonly diffUnsaved = computed(() => this.drafts()?.diff() ?? false);
+  /** Fichiers : la vue n'est montée qu'affichée, la quitter perdrait les brouillons de ses onglets. */
+  private readonly filesUnsaved = computed(() => this.drafts()?.files() ?? false);
+  private readonly unsaved = computed(() => this.diffUnsaved() || this.filesUnsaved());
+
+  /** Une saisie non enregistrée (Diff, Fichiers) demande confirmation avant d'être perdue ; true = on peut continuer. */
+  private async discardDrafts(): Promise<boolean> {
+    return !this.unsaved() || this.confirm.ask(DISCARD_EDIT);
+  }
+
+  /**
+   * Rechargement, fermeture de la fenêtre ou de l'onglet : une saisie non enregistrée fait demander au navigateur (ou à
+   * Electron) de confirmer. Le texte du dialogue est celui du navigateur.
+   */
+  beforeUnload(e: BeforeUnloadEvent): void {
+    if (!this.unsaved()) return;
+    e.preventDefault();
+    e.returnValue = ''; // navigateurs qui ignorent encore preventDefault ici
+  }
+
+  /** Seul changement de vue : quitter Fichiers avec une saisie non enregistrée demande confirmation. false = on reste. */
+  async showView(view: SessionTab): Promise<boolean> {
+    const current = this.view();
+    if (view !== current && current === 'files' && this.filesUnsaved() && !(await this.confirm.ask(DISCARD_EDIT))) return false;
     this.view.set(view);
+    return true;
   }
 
   private readonly mac = inject(CLIENT_OS) === 'mac';
@@ -179,13 +220,16 @@ export class SessionPageVm {
   /** Bouton Fichiers : absent pour une discussion (pas de projet). */
   readonly canFiles = computed(() => !!this.summary() && !this.isChat());
   /** Vue quittée en entrant dans Fichiers, rendue en ressortant. */
-  private beforeFiles: SessionView = 'workspace';
+  private beforeFiles: SessionTab = 'workspace';
 
   /** Bouton Fichiers (ou ⌘⇧E) : la vue Fichiers occupe la page sous l'en-tête ; recliquer rend la vue précédente. */
-  toggleFiles(): void {
-    if (this.view() === 'files') return this.view.set(this.beforeFiles);
+  async toggleFiles(): Promise<void> {
+    if (this.view() === 'files') {
+      await this.showView(this.beforeFiles);
+      return;
+    }
     this.beforeFiles = this.view();
-    this.view.set('files');
+    await this.showView('files');
   }
 
   /**
@@ -195,7 +239,7 @@ export class SessionPageVm {
   shortcut(e: KeyboardEvent): void {
     if (!this.canFiles() || !isShortcut(e, 'e', this.mac, true)) return;
     e.preventDefault();
-    this.toggleFiles();
+    void this.toggleFiles();
   }
 
   readonly historyMode = signal<HistoryMode>('timeline');
@@ -207,10 +251,10 @@ export class SessionPageVm {
   /** Recherche pré-remplie du journal (« Voir dans le journal » depuis la chronologie). */
   readonly logQuery = signal('');
 
-  openLog(query: string): void {
+  async openLog(query: string): Promise<void> {
+    if (!(await this.showView('history'))) return;
     this.logQuery.set(query);
     this.historyMode.set('log');
-    this.view.set('history');
   }
 
   /**
@@ -237,16 +281,11 @@ export class SessionPageVm {
   private readonly pluginsResource = this.vigie.sessionPluginsResource(this.pluginsId);
   /** Garde la dernière liste de la même session pendant un rechargement : les onglets ne clignotent pas. */
   private readonly lastPlugins = keepLast(this.pluginsResource, this.pluginsId);
-  readonly plugins = computed(() => (this.pluginsId() && this.vigie.snapshot()?.plugins?.length ? this.lastPlugins() ?? [] : []));
+  readonly plugins = computed(() => (this.pluginsId() && this.vigie.snapshot()?.plugins.length ? this.lastPlugins() ?? [] : []));
   /** Relit les onglets de plugins (un plugin le demande, ex. après `mise trust`). */
   reloadTabs(): void {
     this.pluginsResource.reload();
   }
-  /** Onglet de plugin affiché qui disparaît (plugin désactivé, projet qui ne s'y prête plus) : retour au terminal. */
-  private readonly dropPlugin = effect(() => {
-    const view = this.view();
-    if (view.startsWith('plugin:') && !this.pluginsResource.isLoading() && !this.plugins().some((p) => `plugin:${p.id}` === view)) this.view.set('workspace');
-  });
 
   /** Redonne le focus au terminal, même déjà actif. */
   readonly focusTick = signal(0);
@@ -262,20 +301,30 @@ export class SessionPageVm {
 
   selectTab(id: string): void {
     this.activeTab.set(id);
-    this.view.set('workspace');
+    void this.showView('workspace');
   }
 
   async addShell(): Promise<void> {
     const id = this.id();
     if (!id) return;
-    const term = await this.vigie.openShell(id);
-    this.activeTab.set(term.id);
+    this.actionError.set(null);
+    try {
+      const term = await this.vigie.openShell(id);
+      this.activeTab.set(term.id);
+    } catch (e) {
+      this.actionError.set(daemonError(e, 'Ouverture du shell impossible.'));
+    }
   }
 
   /** Ferme un onglet shell ; s'il était affiché, on revient au terminal claude. */
   async closeTab(terminalId: string): Promise<void> {
     if (this.activeTab() === terminalId) this.activeTab.set(this.claudeTerminal()?.id ?? null);
-    await this.vigie.closeTerminal(terminalId);
+    this.actionError.set(null);
+    try {
+      await this.vigie.closeTerminal(terminalId);
+    } catch (e) {
+      this.actionError.set(daemonError(e, 'Fermeture du terminal impossible.'));
+    }
   }
 
   detach(terminalId: string): void {
@@ -293,29 +342,41 @@ export class SessionPageVm {
     this.resumeError.set(null);
     try {
       await this.vigie.resumeSession(s);
-      this.view.set('workspace');
+      await this.showView('workspace');
     } catch (e) {
-      this.resumeError.set((e as { error?: { error?: string } })?.error?.error ?? 'Reprise impossible.');
+      this.resumeError.set(daemonError(e, 'Reprise impossible.'));
     } finally {
       this.resuming.set(false);
     }
   }
 
+  /** Session supprimée : les brouillons ont déjà été abandonnés, le garde de sortie ne redemande pas. */
+  private removed = false;
+
+  /**
+   * Supprime la session puis revient au Dashboard. Les brouillons sont abandonnés avant la confirmation de suppression : un refus
+   * plus tard (au garde de la route) laisserait sur une session déjà supprimée.
+   */
   async remove(): Promise<void> {
     // Discussion : quitter la page suffit, le garde de la route demande confirmation puis efface.
     if (this.isChat()) return void this.router.navigate(['/']);
     const s = this.summary();
-    if (!s || !(await this.confirm.deleteSession({ title: s.title, terminalId: this.claudeTerminal()?.id ?? null }))) return;
-    await this.vigie.deleteSession(s.id);
+    if (!s || !(await this.discardDrafts())) return;
+    if (!(await this.confirm.deleteSession({ title: s.title, terminalId: this.claudeTerminal()?.id ?? null }))) return;
+    this.actionError.set(null);
+    try {
+      await this.vigie.deleteSession(s.id);
+    } catch (e) {
+      this.actionError.set(daemonError(e, 'Suppression impossible.'));
+      return;
+    }
+    this.removed = true;
     await this.router.navigate(['/']);
   }
 
-  /** Saisie non enregistrée dans l'onglet Diff (publiée par l'onglet, qui reste monté tant qu'elle existe). */
-  readonly unsaved = signal(false);
-
-  /** Garde de sortie : quitter une discussion l'efface (après confirmation). Les autres sessions passent. */
+  /** Garde de sortie : une saisie non enregistrée (Diff, Fichiers) demande confirmation ; quitter une discussion l'efface (après confirmation). */
   async leave(): Promise<boolean> {
-    if (this.unsaved() && !(await this.confirm.ask(DISCARD_EDIT))) return false;
+    if (!this.removed && !(await this.discardDrafts())) return false;
     const id = this.id();
     if (!id || !this.isChat()) return true;
     if (!(await this.confirm.leaveChat())) return false;
@@ -324,7 +385,7 @@ export class SessionPageVm {
     } catch {
       // On reste sur la page : partir maintenant ferait croire la discussion effacée alors qu'elle est encore sur le disque.
       // ponytail: pas d'échappatoire si le daemon reste injoignable (la navigation est bloquée) ; le daemon efface les discussions au démarrage.
-      this.replyError.set('La discussion n’a pas pu être supprimée : le daemon répond-il ? Réessaie de quitter.');
+      this.actionError.set('La discussion n’a pas pu être supprimée : le daemon répond-il ? Réessaie de quitter.');
       return false;
     }
     return true;
@@ -334,17 +395,16 @@ export class SessionPageVm {
   readonly context = computed(() => {
     const u = this.detail()?.usage;
     if (!u?.context) return null;
-    const max = u.contextMax ?? 200_000;
+    const max = u.contextMax;
     const pct = u.context / max;
     return { used: u.context, max, pct, level: pct >= 0.8 ? 'high' : pct >= 0.6 ? 'mid' : 'ok' };
   });
-  /** /compact ne se tape que quand Claude attend ton message : sur une demande, Entrée validerait la demande. */
-  /** Bloqué seulement sur une autorisation / question : là, l'Entrée validerait la réponse. Sinon Claude exécute ou met en file le /compact. */
   /** Claude ne travaille pas : fin de tour ou terminé, sans sous-agent actif (même règle que `store.idle` du daemon). */
   readonly idle = computed(() => {
     const s = this.summary();
     return !!s && (s.state === 'turn' || s.state === 'done') && s.activeSubagents === 0;
   });
+  /** /compact bloqué seulement sur une autorisation / question : là, l'Entrée validerait la réponse. Sinon Claude exécute ou met en file le /compact. */
   readonly canCompact = computed(() => !!this.claudeTerminal() && this.summary()?.state !== 'waiting');
   /** Échap n'a de sens que pendant une réponse de Claude. */
   readonly canInterrupt = computed(() => !!this.claudeTerminal() && this.summary()?.state === 'running');
@@ -378,15 +438,22 @@ export class SessionPageVm {
   refuse(): Promise<void> { return this.send(KEYS.refuse); }
   interrupt(): Promise<void> { return this.send(KEYS.interrupt); }
 
-  /** Échec du dernier envoi au terminal ; oublié quand la session change d'état (la demande a été traitée ailleurs) ou de page. */
-  readonly replyError = linkedSignal<string, string | null>({ source: () => `${this.id()}|${this.summary()?.state}`, computation: () => null });
+  /**
+   * Dernière action de la page en échec (shell ouvert ou fermé, suppression, discussion qui n'a pas pu être effacée en partant) ;
+   * effacé au nouvel essai, oublié quand la session change d'état ou de page.
+   */
+  private readonly actionError = linkedSignal<string, string | null>({ source: () => `${this.id()}|${this.summary()?.state}`, computation: () => null });
+  /** Échec à afficher sous l'en-tête : dernier envoi au terminal de cette session (AttentionService), ou action de la page. */
+  readonly replyError = computed(() => {
+    const e = this.attention.replyError();
+    return this.actionError() ?? (e && e.id === this.id() ? e.message : null);
+  });
 
   private async send(keys: string): Promise<void> {
-    const term = this.claudeTerminal();
-    if (!term) return;
-    this.replyError.set(null);
-    this.selectTab(term.id);
-    const error = await sendReply(this.vigie, term.id, keys);
-    if (error) this.replyError.set(error);
+    const id = this.id(), term = this.claudeTerminal();
+    if (!id || !term) return;
+    // Le terminal s'affiche pour qu'on voie la suite, sauf par-dessus une saisie non enregistrée de Fichiers (la touche part quand même).
+    if (!this.filesUnsaved()) this.selectTab(term.id);
+    await this.attention.send(id, term.id, keys);
   }
 }

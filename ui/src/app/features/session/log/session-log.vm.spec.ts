@@ -3,7 +3,6 @@ import { signal } from '@angular/core';
 import { describe, expect, it, vi } from 'vitest';
 import { LogEntry } from '../../../core/models';
 import { provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { VigieService } from '../../../core/vigie.service';
 import { CLIENT_OS, ClientOs } from '../../../core/platform';
 import { SessionLogVm } from './session-log.vm';
 
@@ -14,7 +13,7 @@ const flush = () => new Promise((r) => setTimeout(r));
 
 function createVm(pages: LogEntry[][]) {
   const sessionLog = vi.fn(async () => ({ entries: pages.shift() ?? [] }));
-  TestBed.configureTestingModule({ providers: [SessionLogVm, provideVigieServiceMock({ sessionLog: sessionLog as unknown as VigieService['sessionLog'] })] });
+  TestBed.configureTestingModule({ providers: [SessionLogVm, provideVigieServiceMock({ sessionLog: sessionLog })] });
   const vm = TestBed.inject(SessionLogVm);
   const lastTs = signal(1);
   vm.connect(signal('S'), lastTs);
@@ -22,6 +21,18 @@ function createVm(pages: LogEntry[][]) {
 }
 
 describe('SessionLogVm', () => {
+  it('recherche imposée par la page (« Voir dans le journal »), modifiable ensuite', () => {
+    TestBed.configureTestingModule({ providers: [SessionLogVm, provideVigieServiceMock()] });
+    const vm = TestBed.inject(SessionLogVm);
+    const query = signal('Bash · npm test');
+    vm.connect(signal('S'), signal(1), query);
+    expect(vm.query()).toBe('Bash · npm test');
+    vm.setQuery('autre');
+    expect(vm.query()).toBe('autre');
+    query.set('Edit · a.ts');
+    expect(vm.query()).toBe('Edit · a.ts');
+  });
+
   it("charge tout, puis seulement la suite à chaque activité, sans doublon", async () => {
     const { vm, sessionLog, lastTs } = createVm([[entry(1), entry(2)], [entry(2), entry(3)]]);
     TestBed.tick(); await flush();

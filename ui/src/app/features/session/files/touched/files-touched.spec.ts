@@ -4,7 +4,7 @@ import { autoOpen, editedDirs, pathResolver, touchedFiles, visibleFiles } from '
 
 const FILES = ['daemon/usage.mjs', 'daemon/store.mjs', 'contract/index.mjs', 'README.md', 'ui/src/index.ts', 'pkg/src/index.ts'];
 const step = (kind: TraceStep['kind'], label: string, start: number): TraceStep & { agent: null } =>
-  ({ id: `${kind}${start}`, name: kind === 'edit' ? 'Edit' : 'Read', kind, label, start, end: start + 1, error: false, agent: null });
+  ({ id: `${kind}${start}`, name: kind === 'edit' ? 'Edit' : 'Read', kind, label, start, end: start + 1, error: false, interrupted: false, agent: null });
 const aTrace = (turns: (TraceStep & { agent: null })[][]): SessionTrace => ({
   now: 10_000, state: 'turn', waiting: null,
   turns: turns.map((steps, i) => ({ index: i + 1, start: 0, end: 0, prompt: '', live: false, steps })),
@@ -63,7 +63,7 @@ describe('visibleFiles', () => {
 describe('touchedFiles avec chemin complet', () => {
   it('lève l’ambiguïté d’un libellé raccourci grâce à `path`', () => {
     const files = ['a/src/index.ts', 'b/src/index.ts'];
-    const step = { id: '1', name: 'Edit', kind: 'edit' as const, label: 'src/index.ts', path: '/r/b/src/index.ts', start: 1, end: 2, error: false, agent: null };
+    const step = { id: '1', name: 'Edit', kind: 'edit' as const, label: 'src/index.ts', path: '/r/b/src/index.ts', start: 1, end: 2, error: false, interrupted: false, agent: null };
     const trace = { now: 3, state: 'turn' as const, waiting: null, turns: [{ index: 1, start: 0, end: 3, prompt: '', live: false, steps: [step] }] };
     expect(touchedFiles(trace, '/r', files).map((t) => t.path)).toEqual(['b/src/index.ts']);
     expect(touchedFiles({ ...trace, turns: [{ ...trace.turns[0], steps: [{ ...step, path: undefined }] }] }, '/r', files)).toEqual([]);

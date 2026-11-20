@@ -1,5 +1,7 @@
-// Lancement d'une session claude par Vigie (commande, réglages injectés), en fonctions pures testables sans PTY.
+// Lancement d'une session claude par Vigie (commande, réglages injectés) et logique des scripts lancés par Claude Code
+// (hook.mjs, statusline.mjs), en fonctions pures testables sans PTY. `node:path` et paths.mjs seulement : les scripts l'importent.
 import path from 'node:path';
+import { expandHome } from './paths.mjs';
 
 // ponytail: quotage POSIX ; sous fish (le PTY lance `$SHELL -l -c`) l'apostrophe passe (`'\''` y est valide) mais pas l'antislash :
 // fish lit `\\` et `\'` comme des échappements même entre guillemets simples. Les terminaux des plugins n'y sont pas exposés :
@@ -58,22 +60,52 @@ export function httpHooksAllowed(managed, url) {
 }
 
 /**
+ * Commande node des scripts lancés par Claude Code (statusline à chaque rafraîchissement, hooks), prête pour le shell.
+ * Hors Electron : le node qui fait tourner le daemon (`execOk` : son fichier existe encore), sinon celui du PATH (nvm, mise, brew
+ * l'ont changé). Dans Electron, `execPath` est le binaire de l'app, lourd à démarrer à chaque fois : node du PATH d'abord, sinon
+ * Electron en mode node (`vigieNode` : binaire de l'app passé par Electron, l'utilityProcess ayant pour execPath le « Helper »).
+ * `pathNode()` : node du PATH assez récent, ou null (appelé seulement si besoin : il lance `node --version`).
+ */
+export function nodeCommand({ electron, execPath, execOk, vigieNode, pathNode }) {
+  if (!electron) return shQuote(execOk ? execPath : (pathNode() ?? execPath));
+  const found = pathNode();
+  return found ? shQuote(found) : 'ELECTRON_RUN_AS_NODE=1 ' + shQuote(vigieNode || execPath);
+}
+
+/**
  * Réglages injectés uniquement dans les sessions lancées par Vigie (claude --settings, écrits dans ~/.vigie/hooks.json) :
- * la config globale n'est pas touchée. `node` : commande node déjà prête pour le shell (préfixe d'env et guillemets compris) ;
- * `scriptsDir` : dossier de hook.mjs et statusline.mjs, hors archive asar.
- * `hookUrl` : hooks postés par Claude Code au daemon (aucun process lancé) ; sans lui, repli sur `node hook.mjs` par événement.
+ * la config globale n'est pas touchée. `node` : commande node déjà prête pour le shell (`nodeCommand`) ;
+ * `scriptsDir` : dossier de hook.mjs et statusline.mjs, hors archive asar (quoté par shQuote : ni `$` ni backtick développés).
+ * Par défaut (`hookUrl` null, décision 021) : un `node hook.mjs` par événement. `hookUrl` : hooks HTTP postés au daemon,
+ * coupés aujourd'hui (le proxy du sandbox de Claude Code les refuse), gardés pour les réactiver.
  */
 export function hooksSettings(node, scriptsDir, hookUrl = null) {
   const hookCmd = hookUrl
     ? { type: 'http', url: hookUrl, timeout: 5 }
-    : { type: 'command', command: `${node} ${JSON.stringify(path.join(scriptsDir, 'hook.mjs'))}`, timeout: 5 };
+    : { type: 'command', command: `${node} ${shQuote(path.join(scriptsDir, 'hook.mjs'))}`, timeout: 5 };
   const withMatcher = [{ matcher: '*', hooks: [hookCmd] }];
   const plain = [{ hooks: [hookCmd] }];
   return {
-    statusLine: { type: 'command', command: `${node} ${JSON.stringify(path.join(scriptsDir, 'statusline.mjs'))}` },
+    statusLine: { type: 'command', command: `${node} ${shQuote(path.join(scriptsDir, 'statusline.mjs'))}` },
     hooks: {
       UserPromptSubmit: plain, PreToolUse: withMatcher, PostToolUse: withMatcher, PermissionRequest: withMatcher,
       Notification: plain, Stop: plain, SubagentStop: plain, SessionEnd: plain,
     },
   };
+}
+
+/** Statusline habituelle de l'utilisateur (réglages de Claude Code), `~/` développé ; null s'il n'en a pas. */
+export function userStatusLine(settings, home) {
+  const cmd = settings?.statusLine?.command;
+  return typeof cmd === 'string' && cmd.trim() ? expandHome(cmd, home) : null;
+}
+
+/**
+ * Relevé que la statusline garde pour Vigie (quota `rate_limits`, taille du contexte `context_window`) : `{ name, data }`,
+ * `name` = fichier de `~/.vigie/limits/` (id de session sans rien d'autre que `[\w-]`) ; null si l'entrée n'a ni l'un ni l'autre.
+ */
+export function limitsReading(e, ts) {
+  if (!e || typeof e !== 'object' || !(e.rate_limits || e.context_window)) return null;
+  const id = String(e.session_id ?? '').replace(/[^\w-]/g, '') || 'inconnue';
+  return { name: `${id}.json`, data: { ts, rate_limits: e.rate_limits, context_window: e.context_window } };
 }

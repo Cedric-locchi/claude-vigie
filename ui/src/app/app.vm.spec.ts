@@ -48,9 +48,11 @@ describe('AppVm', () => {
 
   it('Autoriser depuis la sidebar : un échec s’affiche sur la ligne de la session', async () => {
     const sendKeys = vi.fn(async () => { throw { status: 0 }; });
-    TestBed.configureTestingModule({ providers: [AppVm, provideRouter([]), provideVigieServiceMock({ sendKeys })] });
+    const waiting = aSession({ id: 'a', state: 'waiting', reason: 'permission', terminalId: 't1' });
+    TestBed.configureTestingModule({ providers: [AppVm, provideRouter([]), provideVigieServiceMock({ sendKeys, snapshot: signal(aSnapshot({ sessions: [waiting] })) })] });
     const vm = TestBed.inject(AppVm);
-    await vm.allow(aSession({ id: 'a', terminalId: 't1' }));
+    await vm.allow(waiting);
+    expect(sendKeys).toHaveBeenCalledWith('t1', '\r');
     expect(vm.replyError()).toEqual({ id: 'a', message: "Impossible d'envoyer la réponse au terminal : le daemon ne répond pas. Réessaie." });
   });
 

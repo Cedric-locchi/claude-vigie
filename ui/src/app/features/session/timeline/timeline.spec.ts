@@ -6,7 +6,7 @@ import {
 
 const S = 1000, MIN = 60_000, H = 3_600_000;
 const step = (id: string, name: string, start: number, end: number | null, extra: Partial<TraceStep> = {}): TraceStep =>
-  ({ id, name, kind: name === 'Read' ? 'read' : name === 'Edit' ? 'edit' : name === 'Bash' ? 'command' : name === 'Task' ? 'agent' : 'other', label: `${name.toLowerCase()} ${id}`, start, end, error: false, ...extra });
+  ({ id, name, kind: name === 'Read' ? 'read' : name === 'Edit' ? 'edit' : name === 'Bash' ? 'command' : name === 'Task' ? 'agent' : 'other', label: `${name.toLowerCase()} ${id}`, start, end, error: false, interrupted: false, ...extra });
 const turn = (steps: TraceTurn['steps'], extra: Partial<TraceTurn> = {}): TraceTurn => ({ index: 1, start: 0, end: 10 * MIN, prompt: 'go', live: false, steps, ...extra });
 const all = { kinds: new Set(ALL_KINDS), errorsOnly: false, query: '' };
 

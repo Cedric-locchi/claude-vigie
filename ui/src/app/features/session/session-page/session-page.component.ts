@@ -1,4 +1,4 @@
-import { Component, inject, input } from '@angular/core';
+import { Component, computed, inject, input, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { HlmBadge } from '@spartan-ng/helm/badge';
 import { HlmButton } from '@spartan-ng/helm/button';
@@ -29,13 +29,13 @@ import { PageComponent } from '../../../shell/page/page.component';
   selector: 'app-session-page',
   imports: [PageComponent, Icon, RouterLink, HlmBadge, HlmButton, HlmCardImports, HlmEmptyImports, HlmPopoverImports, HlmProgressImports, HlmTabsImports, HlmToggleGroupImports, HlmTooltip, TerminalComponent, AgentRowComponent, AgentPanelComponent, SessionConfigComponent, SessionCostComponent, SessionDiffComponent, SessionFilesComponent, SessionLogComponent, PluginTabComponent, TimelineComponent, WaitBarComponent],
   providers: [SessionPageVm],
-  host: { '(document:keydown)': 'vm.shortcut($event)' },
+  host: { '(document:keydown)': 'vm.shortcut($event)', '(window:beforeunload)': 'vm.beforeUnload($event)' },
   template: `
     @let files = vm.view() === 'files';
     @if (vm.summary(); as s) {
       <!-- hlmTabs enveloppe le gabarit (display: contents) : la barre d'onglets et les panneaux, projetés, restent sous sa coupe. -->
       <div hlmTabs [tab]="vm.view()" (tabActivated)="vm.showView($any($event))">
-      <app-page [mode]="vm.pageMode()" [class.files]="files">
+      <app-page [mode]="vm.pageMode()">
       <div pageHeader class="flex flex-col gap-3.5">
         <header>
           <a hlmBtn variant="ghost" size="icon" routerLink="/" class="flex-none text-muted-foreground" aria-label="Retour au Dashboard"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7" /></svg></a>
@@ -46,7 +46,7 @@ import { PageComponent } from '../../../shell/page/page.component';
               @if (vm.issues(); as n) { <span hlmBadge variant="issue" class="flex-none">{{ n }} agent{{ n > 1 ? 's' : '' }} en souci</span> }
               @if (vm.context(); as c) {
                 <span class="ctx" [attr.data-level]="c.level" [hlmTooltip]="'Contexte de l’agent principal : ' + f.tokens(c.used) + ' sur ' + f.tokens(c.max) + ' tokens'">
-                  <span class="ctx-bar" aria-hidden="true"><i [style.--p]="c.pct > 1 ? 1 : c.pct"></i></span>
+                  <span class="meter ctx-bar" aria-hidden="true"><span [style.--p]="c.pct > 1 ? 1 : c.pct"></span></span>
                   <span class="mono">{{ f.tokens(c.used) }} / {{ f.tokens(c.max) }} · {{ f.pct(c.pct) }}</span>
                 </span>
               }
@@ -121,7 +121,7 @@ import { PageComponent } from '../../../shell/page/page.component';
 
         <div hlmTabsContent="workspace" class="workspace" [class.no-agents]="!vm.agentsOpen()" [class.is-external]="vm.isExternal()">
           @if (!vm.isExternal()) {
-          <section class="term" aria-label="Terminal de la session">
+          <section class="term panel" aria-label="Terminal de la session">
               <div class="tabs" role="group" aria-label="Terminaux de la session">
                 <!-- Les onglets défilent ; Agents reste toujours visible à droite. -->
                 <div class="strip">
@@ -152,7 +152,7 @@ import { PageComponent } from '../../../shell/page/page.component';
           }
 
           <!-- Une seule carte : l'en-tête (titre, filtres) et la liste, sous le même relief. -->
-          <section class="agents" aria-labelledby="agents-title" [hidden]="!vm.agentsOpen() && !vm.isExternal()">
+          <section class="agents panel" aria-labelledby="agents-title" [hidden]="!vm.agentsOpen() && !vm.isExternal()">
             <div class="agents-head">
             <h2 id="agents-title">Agents</h2>
             @if (vm.agents().length) {
@@ -183,7 +183,7 @@ import { PageComponent } from '../../../shell/page/page.component';
           </section>
         </div>
 
-        <div hlmTabsContent="history" class="panel history">
+        <div hlmTabsContent="history" class="view history">
           @if (vm.view() === 'history') {
             <div hlmToggleGroup type="single" [nullable]="false" variant="outline" size="sm" [spacing]="2" aria-label="Mode de l'historique" [value]="vm.historyMode()" (valueChange)="vm.showHistory($any($event))">
               <button hlmToggleGroupItem value="timeline">Chronologie</button>
@@ -197,26 +197,26 @@ import { PageComponent } from '../../../shell/page/page.component';
           }
         </div>
 
-        <div hlmTabsContent="diff" class="panel">
-          @if (vm.view() === 'diff' || vm.unsaved()) { <app-session-diff [(unsaved)]="vm.unsaved" [sessionId]="s.id" [lastTs]="s.lastTs" [idle]="vm.idle()" [canWorktree]="vm.canCompact()" (worktree)="vm.enterWorktree($event)" /> }
+        <div hlmTabsContent="diff" class="view">
+          @if (vm.view() === 'diff' || vm.diffUnsaved()) { <app-session-diff [sessionId]="s.id" [lastTs]="s.lastTs" [idle]="vm.idle()" [canWorktree]="vm.canCompact()" (worktree)="vm.enterWorktree($event)" /> }
         </div>
 
         <!-- Pas d'onglet : la vue s'ouvre par le bouton Fichiers de l'en-tête, la liste d'onglets est alors masquée. -->
-        <div hlmTabsContent="files" class="panel files-panel" aria-label="Fichiers du projet">
-          @if (vm.view() === 'files') { <app-session-files [sessionId]="s.id" [idle]="vm.idle()" /> }
+        <div hlmTabsContent="files" class="view" aria-label="Fichiers du projet">
+          @if (vm.view() === 'files') { <app-session-files [sessionId]="s.id" [idle]="vm.idle()" [summary]="s" (openLog)="vm.openLog($event)" /> }
         </div>
 
         @for (p of vm.plugins(); track p.id) {
-          <div [hlmTabsContent]="'plugin:' + p.id" class="panel">
+          <div [hlmTabsContent]="'plugin:' + p.id" class="view">
             @if (vm.view() === 'plugin:' + p.id) { <app-plugin-tab [sessionId]="s.id" [cwd]="s.cwd" [pluginId]="p.id" (opened)="vm.selectTab($event)" (refresh)="vm.reloadTabs()" /> }
           </div>
         }
 
-        <div hlmTabsContent="config" class="panel">
+        <div hlmTabsContent="config" class="view">
           @if (vm.view() === 'config') { <app-session-config [sessionId]="s.id" [cwd]="s.cwd" /> }
         </div>
 
-        <div hlmTabsContent="usage" class="panel">
+        <div hlmTabsContent="usage" class="view">
           @if (vm.view() === 'usage') {
             @if (vm.usage(); as u) {
               <div class="flex flex-col gap-3.5">
@@ -246,7 +246,7 @@ import { PageComponent } from '../../../shell/page/page.component';
                   <h3 hlmCardTitle>Par agent</h3>
                   @for (a of u.agents; track a.id) {
                     <div class="agent-row">
-                      <div class="row small"><span>{{ a.name }}@if (a.sub) { <span class="faint"> · sous-agent</span> }</span><span class="mono">{{ f.tokens(a.tokens) }} tok · {{ a.cost != null ? f.usd(a.cost) : '—' }}</span></div>
+                      <div class="row small"><span>{{ a.name }}@if (a.sub) { <span class="faint"> · sous-agent</span> }</span><span class="mono">{{ f.tokens(a.tokens) }} tok · {{ f.usd(a.cost) }}</span></div>
                       <hlm-progress [value]="a.width" aria-hidden="true"><hlm-progress-indicator /></hlm-progress>
                     </div>
                   }
@@ -279,25 +279,23 @@ import { PageComponent } from '../../../shell/page/page.component';
     .head { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .ctx { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--faint); }
-    .ctx-bar { width: 48px; height: 4px; background: var(--line); overflow: hidden; }
-    .ctx-bar i { display: block; height: 100%; background: var(--data); transform: scaleX(var(--p, 0)); transform-origin: left; transition: transform var(--dur) var(--ease); }
+    .ctx-bar { width: 48px; height: 4px; }
     .ctx[data-level='mid'] { color: var(--text-2); }
     .ctx[data-level='high'] { color: var(--err); }
-    .ctx[data-level='high'] .ctx-bar i { background: var(--err); }
+    .ctx[data-level='high'] .ctx-bar > span { background: var(--err); }
     .compact-urgent:not(:disabled) { border-color: var(--err-line); color: var(--err); }
     h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .head-actions { display: flex; gap: 8px; flex: none; }
-    /* Vue Fichiers : ses trois panneaux (rail, arbre, éditeur) se posent sur le fond pointillé, à l'écart régulier des autres vues (décision 043). */
     .views-list { border-bottom: 1px solid var(--line); }
     /* Un panneau = la vue ouverte : en mode fill il prend la hauteur du corps et la passe à ses colonnes. */
-    .panel { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+    .view { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
     /* Le terminal est la zone principale : il prend toute la hauteur restante, les agents défilent à côté. */
     .workspace { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr); gap: 14px; }
     .workspace.no-agents { grid-template-columns: minmax(0, 1fr); }
-    /* Terminal et agents : deux cartes au même relief, en-tête compris. */
-    .term, .agents { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: 12px; box-shadow: var(--elev-1); overflow: hidden; }
-    .term { border: 1px solid var(--line-strong); background: var(--bg-deep); }
+    /* Terminal et agents : deux panneaux (.panel) au même relief, en-tête compris ; le terminal sur le fond le plus profond. */
+    .term, .agents { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .term { border-color: var(--line-strong); background: var(--bg-deep); }
     .term app-terminal { flex: 1; min-height: 0; }
     .tabs { display: flex; align-items: stretch; background: var(--nav); border-bottom: 1px solid var(--surface-2); }
     .tabs button { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border: 0; border-right: 1px solid var(--surface-2); background: transparent; color: var(--text-muted); font-family: var(--mono); font-size: 12px; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
@@ -330,7 +328,6 @@ import { PageComponent } from '../../../shell/page/page.component';
     .workspace.is-external { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
     .is-external .agent-list { overflow: visible; }
     .history { gap: 12px; }
-    .agents { border: 1px solid var(--edge); background: var(--surface); }
     .agents-head { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
     .agent-filters { display: flex; flex-wrap: wrap; gap: 6px; }
     .agent-filter {
@@ -387,7 +384,10 @@ export class SessionPageComponent {
   readonly vm = inject(SessionPageVm);
   protected readonly f = f;
 
+  private readonly diffView = viewChild(SessionDiffComponent);
+  private readonly filesView = viewChild(SessionFilesComponent);
+
   constructor() {
-    this.vm.connect(this.id);
+    this.vm.connect(this.id, { diff: computed(() => !!this.diffView()?.unsaved()), files: computed(() => !!this.filesView()?.unsaved()) });
   }
 }

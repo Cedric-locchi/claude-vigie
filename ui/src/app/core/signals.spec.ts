@@ -1,6 +1,6 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { counter, entering, keepLast } from './signals';
+import { counter, keepLast } from './signals';
 
 /** Ressource factice : `value` undefined = en chargement. */
 const fakeResource = <T>() => {
@@ -45,7 +45,7 @@ describe('counter', () => {
     TestBed.runInInjectionContext(() => {
       const on = signal(false);
       const all = counter(on);
-      const enter = counter(on, entering);
+      const enter = counter(on, (next, was) => next && !was);
       expect([all(), enter()]).toEqual([0, 0]);
       on.set(true);
       expect([all(), enter()]).toEqual([1, 1]);

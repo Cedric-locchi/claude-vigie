@@ -1,10 +1,11 @@
 import { TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Injector, runInInjectionContext, signal } from '@angular/core';
 import { aSession, aSnapshot, aTerminal } from './vigie.service.mock';
-import { KEYS, OUTDATED, VigieService, sendReply } from './vigie.service';
+import { KEYS } from './attention.service';
+import { OFFLINE, OUTDATED, VigieService, daemonError } from './vigie.service';
 
 class FakeSocket {
   static last: FakeSocket;
@@ -84,6 +85,13 @@ describe('VigieService', () => {
     req2.flush({ files: 'non' });
     await expect(bad).rejects.toThrow(OUTDATED);
 
+    const kept = new AbortController();
+    const off = vi.spyOn(kept.signal, 'removeEventListener');
+    const fine = service.searchFiles('s1', 'x', false, kept.signal);
+    http.expectOne((r) => r.url === '/api/sessions/s1/files/search').flush({ files: [], truncated: false });
+    await expect(fine).resolves.toEqual({ files: [], truncated: false });
+    expect(off).toHaveBeenCalledWith('abort', expect.any(Function)); // réponse arrivée : l'écouteur d'abandon est retiré
+
     const ctrl = new AbortController();
     const cut = service.searchFiles('s1', 'lent', false, ctrl.signal);
     const req3 = http.expectOne((r) => r.url === '/api/sessions/s1/files/search');
@@ -92,12 +100,33 @@ describe('VigieService', () => {
     await expect(cut).rejects.toBeDefined();
   });
 
-  it('réponse rapide : null si la touche part, sinon un message lisible (erreur du daemon ou daemon muet)', async () => {
-    expect(await sendReply({ sendKeys: vi.fn(async () => ({ ok: true })) }, 't1', KEYS.allow)).toBeNull();
-    expect(await sendReply({ sendKeys: vi.fn(async () => { throw { status: 404, error: { error: 'terminal inconnu' } }; }) }, 't1', KEYS.allow))
-      .toBe("Impossible d'envoyer la réponse au terminal : terminal inconnu. Réessaie.");
-    expect(await sendReply({ sendKeys: vi.fn(async () => { throw { status: 0, message: 'Http failure' }; }) }, 't1', KEYS.allow))
-      .toBe("Impossible d'envoyer la réponse au terminal : le daemon ne répond pas. Réessaie.");
+  it("message d'erreur : corps du daemon, daemon injoignable, réponse hors contrat, sinon le repli", () => {
+    // Affiché seul : majuscule ; inséré dans une phrase (`inline`) : tel quel.
+    expect(daemonError(new HttpErrorResponse({ status: 404, error: { error: 'terminal inconnu' } }), 'repli')).toBe('Terminal inconnu');
+    expect(daemonError(new HttpErrorResponse({ status: 0, error: new ProgressEvent('error') }), 'repli')).toBe('Le daemon ne répond pas');
+    expect(daemonError(new HttpErrorResponse({ status: 0, error: new ProgressEvent('error') }), 'repli', { inline: true })).toBe(OFFLINE);
+    expect(daemonError(new Error(OUTDATED), 'repli')).toBe(OUTDATED);
+    // 500 sans corps (ou corps qui n'est pas { error }) : ni « injoignable » ni le texte technique d'Angular.
+    expect(daemonError(new HttpErrorResponse({ status: 500, error: null }), 'Réglages non enregistrés.')).toBe('Réglages non enregistrés.');
+    expect(daemonError(new HttpErrorResponse({ status: 502, error: '<html>' }), 'Repli.')).toBe('Repli.');
+    expect(daemonError(new Error('boom'), 'Repli.')).toBe('Repli.');
+    expect(daemonError(undefined, 'Repli.')).toBe('Repli.');
+  });
+
+  it('relit les réglages à la reconnexion quand la première lecture a échoué', async () => {
+    const service = TestBed.inject(VigieService);
+    const http = TestBed.inject(HttpTestingController);
+    const settings = service.settingsResource();
+    TestBed.tick();
+    http.expectOne('/api/settings').flush(null, { status: 0, statusText: 'Unknown Error' });
+    await vi.waitFor(() => expect(settings.status()).toBe('error'));
+    FakeSocket.last.onopen?.(); // le daemon répond de nouveau
+    TestBed.tick();
+    http.expectOne('/api/settings').flush({ locale: null, defaultLocale: 'fr_FR.UTF-8', alerts: { dailyCost: 20, windowPct: null } });
+    await vi.waitFor(() => expect(settings.hasValue()).toBe(true));
+    FakeSocket.last.onopen?.(); // déjà lus : pas de relecture
+    TestBed.tick();
+    http.expectNone('/api/settings');
   });
 
   it('supprime une session', async () => {

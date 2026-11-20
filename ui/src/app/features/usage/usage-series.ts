@@ -1,13 +1,11 @@
 // Mise en forme des séries de la page Consommation : fonctions pures, sans Angular ni Plot (testées à part).
 import * as f from '../../core/format';
 import { QuotaBlock, UsageRow } from '../../core/models';
+import { addDays, startOfDay, sum } from '../../core/usage-rows';
 
 export type Metric = 'cost' | 'tokens';
 export interface Range { from: number; to: number } // débuts de jour locaux, bornes incluses
 
-/** Début du jour local (robuste au changement d'heure). */
-export const startOfDay = (ts: number) => new Date(ts).setHours(0, 0, 0, 0);
-export const addDays = (day: number, n: number) => { const d = new Date(day); d.setDate(d.getDate() + n); return d.setHours(0, 0, 0, 0); };
 /** Nombre de jours de `from` à `to` inclus. */
 export const daysBetween = (from: number, to: number) => Math.round((startOfDay(to) - startOfDay(from)) / 86_400_000) + 1;
 
@@ -27,15 +25,6 @@ export const compact = (metric: Metric) => (n: number) => {
   if (metric === 'tokens') return n >= 1e3 && n < 1e6 && n % 1e3 ? `${(n / 1e3).toLocaleString('fr-FR')} k` : f.tokens(n);
   return Number.isInteger(n) ? usdInt.format(n) : f.usd(n);
 };
-
-export const tokensOf = (r: Pick<UsageRow, 'input' | 'output' | 'cacheCreate' | 'cacheRead'>) => r.input + r.output + r.cacheCreate + r.cacheRead;
-
-export function sum(rows: UsageRow[]) {
-  const t = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, cost: 0 };
-  for (const r of rows) { t.input += r.input; t.output += r.output; t.cacheCreate += r.cacheCreate; t.cacheRead += r.cacheRead; t.cost += r.cost; }
-  const inputSide = t.input + t.cacheCreate + t.cacheRead;
-  return { ...t, tokens: tokensOf(t), cacheRate: inputSide ? t.cacheRead / inputSide : 0 };
-}
 
 export function groupBy<K>(rows: UsageRow[], key: (r: UsageRow) => K): Map<K, UsageRow[]> {
   const m = new Map<K, UsageRow[]>();

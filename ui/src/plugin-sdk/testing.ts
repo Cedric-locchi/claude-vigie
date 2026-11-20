@@ -19,7 +19,7 @@ export function fakePluginHost(overrides: Partial<PluginHost> = {}): PluginHost 
  * une réponse factice hors contrat fait échouer le spec. Une valeur `Error` est rejetée ; une `Promise` reste en attente.
  */
 export function callReplies(replies: Record<string, unknown>): PluginHost['call'] {
-  return vi.fn(async (method: string, _params?: unknown, schema?: ResponseSchema<unknown>, opts?: CallOptions) => {
+  return vi.fn(async (method: string, _params: unknown, schema: ResponseSchema<unknown>, opts?: CallOptions) => {
     if (!Object.hasOwn(replies, method)) throw new Error(`Méthode inconnue : ${method}`);
     const signal = opts?.signal;
     signal?.throwIfAborted();
@@ -28,7 +28,6 @@ export function callReplies(replies: Record<string, unknown>): PluginHost['call'
       ? new Promise((resolve, reject) => { signal.addEventListener('abort', () => reject(signal.reason), { once: true }); Promise.resolve(replies[method]).then(resolve, reject); })
       : replies[method]);
     if (v instanceof Error) throw v;
-    if (!schema) return v;
     const r = schema.safeParse(v);
     if (!r.success) throw new Error(OUTDATED);
     return r.data;

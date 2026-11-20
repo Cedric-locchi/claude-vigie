@@ -3,13 +3,12 @@ import { signal } from '@angular/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent, SessionState } from '../../../core/models';
 import { aSessionCost, anAgent, provideVigieServiceMock } from '../../../core/vigie.service.mock';
-import { VigieService } from '../../../core/vigie.service';
 import { COST_REFRESH_MS, SessionCostVm } from './session-cost.vm';
 
 const flush = () => new Promise((r) => setTimeout(r));
 
 function createVm(sessionCost = vi.fn(async () => aSessionCost())) {
-  TestBed.configureTestingModule({ providers: [SessionCostVm, provideVigieServiceMock({ sessionCost: sessionCost as unknown as VigieService['sessionCost'] })] });
+  TestBed.configureTestingModule({ providers: [SessionCostVm, provideVigieServiceMock({ sessionCost: sessionCost })] });
   const vm = TestBed.inject(SessionCostVm);
   const src = { id: signal('s1'), state: signal<SessionState>('running'), lastTs: signal(1), agents: signal<Agent[]>([anAgent(), anAgent({ id: 'a1', name: 'Explore', sub: true })]) };
   vm.connect(src);

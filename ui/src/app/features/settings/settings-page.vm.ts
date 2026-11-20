@@ -1,14 +1,15 @@
-import { HttpErrorResponse } from '@angular/common/http';
-import { Injectable, inject, linkedSignal, signal } from '@angular/core';
+import { Injectable, computed, inject, linkedSignal, signal } from '@angular/core';
 import { form, submit, validateStandardSchema } from '@angular/forms/signals';
+import { TranslocoService } from '@jsverse/transloco';
 import * as z from 'zod/mini';
 import * as C from '@vigie/contract';
 import { AttentionService } from '../../core/attention.service';
 import { clock } from '../../core/format';
+import { Lang, LanguageService, isLang } from '../../core/language.service';
 import { Alerts } from '../../core/models';
 import { CLIENT_OS } from '../../core/platform';
 import { Theme, ThemeService } from '../../core/theme.service';
-import { VigieService } from '../../core/vigie.service';
+import { VigieService, daemonError } from '../../core/vigie.service';
 
 /** Saisie française (« 20,5 ») → nombre ; vide → null (seuil désactivé). NaN est rejeté par le schéma du contrat. */
 const toNumber = (s: string) => { const t = s.trim().replace(',', '.'); return t === '' ? null : Number(t); };
@@ -33,23 +34,30 @@ const toText = (a: Alerts | undefined) => ({
   windowPct: a?.windowPct != null ? String(Math.round(a.windowPct * 1000) / 10) : '',
 });
 
-const errorOf = (e: unknown) => (e instanceof HttpErrorResponse ? (e.error?.error ?? 'Le daemon ne répond pas') : (e as Error).message);
-
 @Injectable()
 export class SettingsPageVm {
   readonly theme = inject(ThemeService);
+  private readonly language = inject(LanguageService);
+  /** Valeur du groupe de bascule : la langue active, ou celle cliquée pendant son chargement ; revient sur l'active si
+   *  le catalogue manque ou si un autre clic l'a remplacée. */
+  readonly langChoice = linkedSignal<Lang>(() => this.language.lang());
   readonly attention = inject(AttentionService);
   /** OS du navigateur : le chemin des réglages de notifications en dépend. */
   readonly os = inject(CLIENT_OS);
 
   private readonly vigie = inject(VigieService);
-  readonly settings = this.vigie.settingsResource();
+  private readonly transloco = inject(TranslocoService);
+  private readonly resource = this.vigie.settingsResource();
+  /** Réglages du daemon ; undefined pendant le chargement ou s'il ne répond pas (thème et notifications restent réglables). */
+  readonly settings = computed(() => (this.resource.hasValue() ? this.resource.value() : undefined));
 
   /** Saisie, réalignée sur le daemon à chaque chargement des réglages. */
-  readonly locale = linkedSignal(() => this.settings.value()?.locale ?? '');
+  readonly locale = linkedSignal(() => this.settings()?.locale ?? '');
   readonly localeError = signal<string | null>(null);
 
-  readonly alertsModel = linkedSignal(() => toText(this.settings.value()?.alerts));
+  /** Seuils du daemon comparés par valeur : enregistrer la locale (nouveaux réglages, mêmes seuils) ne remet pas la saisie à zéro. */
+  private readonly alerts = computed(() => this.settings()?.alerts, { equal: (a, b) => a?.dailyCost === b?.dailyCost && a?.windowPct === b?.windowPct });
+  readonly alertsModel = linkedSignal(() => toText(this.alerts()));
   readonly alertsForm = form(this.alertsModel, (p) => {
     validateStandardSchema(p, AlertsForm);
   });
@@ -61,7 +69,7 @@ export class SettingsPageVm {
       await this.vigie.saveSettings({ locale: value.trim() || null });
       this.localeError.set(null);
     } catch (e) {
-      this.localeError.set(errorOf(e));
+      this.localeError.set(daemonError(e, this.transloco.translate('settings.locale.notSaved')));
     }
   }
 
@@ -73,7 +81,7 @@ export class SettingsPageVm {
         await this.vigie.saveSettings({ alerts: toAlerts(this.alertsModel()) });
         this.alertsSaved.set(true);
       } catch (e) {
-        this.alertsError.set(errorOf(e));
+        this.alertsError.set(daemonError(e, this.transloco.translate('settings.alerts.notSaved')));
       }
       return undefined;
     });
@@ -88,5 +96,12 @@ export class SettingsPageVm {
 
   setTheme(value: unknown): void {
     if (value === 'light' || value === 'dark') this.theme.set(value as Theme);
+  }
+
+  async setLang(value: unknown): Promise<void> {
+    if (!isLang(value)) return;
+    this.langChoice.set(value);
+    await this.language.set(value);
+    this.langChoice.set(this.language.lang());
   }
 }
