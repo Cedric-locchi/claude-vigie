@@ -1,15 +1,10 @@
 import { Injectable, computed, debounced, inject, linkedSignal, resource, signal } from '@angular/core';
+import { excerpt } from '../../../../core/format';
 import { SearchMatch, SearchResults } from '../../../../core/models';
 import { keepLast } from '../../../../core/signals';
-import { VigieService, daemonError } from '../../../../core/vigie.service';
+import { SEARCH_DELAY, SEARCH_MIN, VigieService, daemonError } from '../../../../core/vigie.service';
 import { Row, SessionFilesVm, base, treeKey } from '../session-files.vm';
 
-/** Attente après la dernière frappe avant d'interroger le daemon (ms). */
-export const SEARCH_DELAY = 250;
-/** Le daemon refuse en dessous (SearchQuery). */
-export const SEARCH_MIN = 2;
-/** Texte gardé avant le texte trouvé : au-delà, l'extrait commence par « … » pour que le surlignage reste visible. */
-const BEFORE = 40;
 
 /** Réponse du daemon avec la requête qui l'a produite : le surlignage suit la réponse affichée, pas la saisie en cours. */
 export type Found = SearchResults & { q: string };
@@ -28,12 +23,6 @@ export interface SearchRow extends Row {
   parts?: { pre: string; hit: string; post: string };
 }
 
-/** Extrait sans l'indentation, coupé avant le texte trouvé s'il est loin ; `hit` : `text.slice(at, at + n)`. */
-export function parts(m: SearchMatch, n: number): { pre: string; hit: string; post: string } {
-  const pre = m.text.slice(0, m.at).trimStart();
-  return { pre: pre.length > BEFORE ? '…' + pre.slice(-BEFORE) : pre, hit: m.text.slice(m.at, m.at + n), post: m.text.slice(m.at + n) };
-}
-
 /** Résultats → lignes affichées ; un fichier replié ne montre que son en-tête. */
 export function searchRows(found: Found, collapsed: Set<string>): SearchRow[] {
   const rows: SearchRow[] = [];
@@ -41,7 +30,7 @@ export function searchRows(found: Found, collapsed: Set<string>): SearchRow[] {
     const open = !collapsed.has(f.path), dir = f.path.slice(0, Math.max(0, f.path.lastIndexOf('/')));
     rows.push({ path: f.path, name: base(f.path), depth: 0, kind: 'dir', open, file: f.path, dir, count: f.matches.length, match: null });
     if (open) for (const m of f.matches) {
-      rows.push({ path: `${f.path}#${m.line}`, name: '', depth: 1, kind: 'file', open: false, file: f.path, dir, count: 0, match: m, parts: parts(m, found.q.length) });
+      rows.push({ path: `${f.path}#${m.line}`, name: '', depth: 1, kind: 'file', open: false, file: f.path, dir, count: 0, match: m, parts: excerpt(m.text, m.at, found.q.length) });
     }
   }
   return rows;

@@ -1,4 +1,4 @@
-/** Fonctions pures de l'éditeur de l'onglet Fichiers (gouttière git, position du curseur, indentation). */
+/** Fonctions pures de l'éditeur de l'onglet Fichiers (gouttière git, position du curseur, indentation, recherche dans le fichier). */
 
 /**
  * Marqueur de gouttière, en numéros de ligne du fichier actuel.
@@ -92,4 +92,34 @@ export function indent(text: string, start: number, end: number, outdent: boolea
   if (!delta) return null;
   const s = outdent ? start - Math.min(first, start - from) : start > from ? start + INDENT.length : start;
   return { from, to, insert: out.join('\n'), start: s, end: start === end ? s : Math.max(s, end + delta) };
+}
+
+/** Résultats surlignés au plus dans le fichier (« 1000+ » au-delà). */
+export const FIND_MAX = 1000;
+
+/** Occurrence trouvée : décalages dans le texte, `to` exclu. */
+export interface Range { from: number; to: number }
+
+/** Occurrences de `q` comme texte littéral, sans chevauchement, insensibles à la casse sauf `matchCase` ; `max` au plus. */
+export function findAll(text: string, q: string, matchCase: boolean, max = FIND_MAX): Range[] {
+  if (!q) return [];
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
+  const out: Range[] = [];
+  for (const m of text.matchAll(re)) {
+    if (out.push({ from: m.index, to: m.index + m[0].length }) >= max) break;
+  }
+  return out;
+}
+
+/** Texte découpé autour des occurrences (calque de surlignage) : la concaténation des morceaux redonne le texte. */
+export function findParts(text: string, matches: Range[], current: number): { text: string; hit: boolean; cur: boolean }[] {
+  const out: { text: string; hit: boolean; cur: boolean }[] = [];
+  let at = 0;
+  matches.forEach((m, i) => {
+    if (m.from > at) out.push({ text: text.slice(at, m.from), hit: false, cur: false });
+    out.push({ text: text.slice(m.from, m.to), hit: true, cur: i === current });
+    at = m.to;
+  });
+  if (at < text.length) out.push({ text: text.slice(at), hit: false, cur: false });
+  return out;
 }

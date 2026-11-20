@@ -279,7 +279,7 @@ La profondeur vient de strates de fond — `abyss` < `night` < `panel` < `panel-
 - **Repos** (`--elev-1`) : cartes spartan (`hlmCard`), panneaux des vues (tableau des sessions, indicateurs, activité, terminal, carte des agents, Diff, Config, Journal, Gantt, cartes de plugins, navigation et contenu du lanceur de tâches).
   - Clair : trois couches resserrées **neutres** (couleur du texte) : contact (`0 1px 2px`, 11 %), proche (`0 4px 10px -2px`, 13 %), portée (`0 10px 20px -8px`, 17 %), même densité qu'avec le pétrole de la 040. Un halo violet teinterait les cartes blanches. Ombre nette, peu diffuse. Cartes **sans filet** (`--edge: transparent`) : l'ombre porte la séparation.
   - Sombre : reflet haut (`inset 0 1px 0`, texte 6 %) + anneau principal (`0 0 0 1px`, 8 %) + ombre noire courte (`0 4px 12px -2px`, 50 %) + portée violette (`0 10px 24px -8px`, 24 %). Le filet reste (`--edge: var(--line)`).
-- **Flottant / survolé** (`--elev-2`) : même famille, plus marquée. Popovers, menus, listes de choix, dialogues (avec un filet `--line` en anneau), notifications, recherche rapide de Fichiers, carte de plugin survolée. En sombre, anneau violet à 14 % et ombre noire plus marquée.
+- **Flottant / survolé** (`--elev-2`) : même famille, plus marquée. Popovers, menus, listes de choix, dialogues (avec un filet `--line` en anneau), notifications, fenêtres flottantes de recherche (« Aller au fichier » de Fichiers, palette de recherche dans les sessions et sa fenêtre « Recherche indisponible » quand elle ne se charge pas ; classes partagées `.palette*` de `styles.css` ; un composant n'en recopie jamais le bloc, il n'y ajoute que la mise en page de son contenu : ses options, ou les marges et le `z-index` de la fenêtre d'erreur, qui n'est pas modale), carte de plugin survolée. En sombre, anneau violet à 14 % et ombre noire plus marquée.
 - **State bar** (`box-shadow: inset 2px 0 0 var(--brand)` ; 3px dans les tableaux) : la barre d'état à gauche d'un élément actif (violet), en cours (bleu-vert, `--run`) ou urgent (orange / rouge). Ce n'est pas une ombre de relief, c'est un indicateur.
 - **Halo d'état** (`box-shadow: 0 0 0 3px` du fond lavé de l'état : `--ok-bg`, `--err-bg`, `--data-bg`, ou `--surface-2` pour un avertissement neutre) : anneau autour d'un point d'état (santé de la config, « Claude est ici » dans Fichiers), pour le détacher.
 
@@ -313,15 +313,17 @@ Précis et retenus.
 - Les panneaux regroupent des lignes séparées par des filets, pas des cartes empilées.
 
 ### Inputs / Fields
-- **Style :** bordure `control` (3:1 sur le fond, WCAG 1.4.11), fond transparent (en sombre, `control` à 30 %), 6,4px de rayon, 36px de haut. Les champs de commande et de chemin sont en mono, sur fond `abyss`.
+- **Style :** bordure `control` (3:1 sur le fond, WCAG 1.4.11), fond transparent (en sombre, `control` à 30 %), 6,4px de rayon, 36px de haut (28px dans la vue Fichiers, plus dense : champ de la vue Rechercher, sur fond `--bg`, et barre de recherche de l'éditeur). Les champs de commande et de chemin sont en mono, sur fond `abyss`. Exception : le champ des fenêtres flottantes de recherche (`.palette-q`, « Aller au fichier » et palette de recherche dans les sessions) n'a ni bordure ni fond, fait 40px de haut et prend un trait bas violet au focus (`.palette-field`).
 - **Focus :** bordure et anneau violet.
 - **Error :** bordure et texte rouge, message court sous le champ (« Choisis un dossier »).
+- **Texte trouvé :** fond `--brand-bg` et trait bas `--brand` (vue Rechercher, palette, barre de recherche de l'éditeur ; le Journal garde un fond violet à 30 % sans trait) ; l'occurrence courante de l'éditeur est en plus cerclée de `--brand`. Jamais d'orange.
 
 ### Navigation
 - Barre latérale en panneau détaché (décision 043) : variante `floating` de spartan, marge autour sur le fond pointillé, fond `panel` (`--sidebar`), rayon 12px, `--elev-1` ; en mobile, panneau coulissant de spartan. Sessions groupées par état (attend → à toi → en cours → terminé, ce dernier repliable).
 - Élément actif : fond `violet-wash`, barre d'état violette à gauche, icône et titre en violet.
 - Session urgente : barre d'état orange, sous-titre orange en mono, point d'état qui pulse (coupé si « réduire les animations »).
 - Replié : chaque session devient son initiale dans un carré de 22px, avec le point d'état en coin.
+- Entrée « Rechercher » sous « Nouvelle session », avec son raccourci (⌘F / Ctrl+F) : ouvre la palette de recherche dans les sessions (décision 049).
 
 ### Ligne de session (signature)
 Une ligne de tableau cliquable en entier : badge d'état, titre + projet · branche, activité en cours, sparkline des 15 dernières minutes, agents, durée et coût alignés à droite en mono, actions à droite. Sparkline en bleu-vert (données). Urgente : fond orange lavé + barre d'état de 3px. Terminée : texte en retrait par la couleur (jamais par l'opacité), sparkline en gris.

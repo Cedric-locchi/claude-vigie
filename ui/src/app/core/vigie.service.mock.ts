@@ -1,7 +1,7 @@
 import { Provider, Signal, computed, isSignal, signal, untracked } from '@angular/core';
 import type { HttpResourceRef } from '@angular/common/http';
 import { vi } from 'vitest';
-import { Agent, ClaudeConfig, GitDiff, PluginInfo, Project, ProjectFiles, SearchResults, SessionCost, SessionSummary, SessionUsage, Settings, SettingsBody, Snapshot, Terminal, Usage, UsageRow, UsageRows } from './models';
+import { Agent, ClaudeConfig, GitDiff, PluginInfo, Project, ProjectFiles, SearchResults, SessionCost, SessionSearch, SessionSummary, SessionUsage, Settings, SettingsBody, Snapshot, Terminal, Usage, UsageRow, UsageRows } from './models';
 import { VigieService } from './vigie.service';
 
 export function aSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -88,6 +88,23 @@ export function aSearchResults(overrides: Partial<SearchResults> = {}): SearchRe
     files: [
       { path: 'src/a.ts', matches: [{ line: 1, col: 1, text: 'export const a = 1;', at: 0 }, { line: 3, col: 3, text: '  export const b = 2;', at: 2 }] },
       { path: 'README.md', matches: [{ line: 2, col: 5, text: 'On export tout.', at: 3 }] },
+    ],
+    truncated: false,
+    ...overrides,
+  };
+}
+
+/** Réponse de GET /api/search?q=npm : la session s1 (deux lignes du journal, la plus récente d'abord), s2 par son seul titre. */
+export function aSessionSearch(overrides: Partial<SessionSearch> = {}): SessionSearch {
+  return {
+    sessions: [
+      {
+        id: 's1', count: 2, hits: [
+          { id: 'S:2', ts: 50_000, kind: 'tool', title: 'Bash · npm test', agent: 'Agent principal', sub: false, text: 'npm test', at: 0 },
+          { id: 'S:1', ts: 40_000, kind: 'prompt', title: 'Ta demande', agent: 'Agent principal', sub: false, text: 'Lance les tests avec npm.', at: 21 },
+        ],
+      },
+      { id: 's2', count: 0, hits: [] },
     ],
     truncated: false,
     ...overrides,
@@ -198,6 +215,7 @@ export function provideVigieServiceMock(overrides: Partial<VigieService> = {}): 
     readProjectFile: vi.fn(async (_id: string, path: string) => ({ path, content: 'export const a = 1;\n', hash: 'a'.repeat(64) })),
     writeProjectFile: vi.fn(async () => ({ ok: true })),
     searchFiles: vi.fn(async () => aSearchResults()),
+    searchSessions: vi.fn(async () => aSessionSearch()),
     closeTerminal: vi.fn(async () => ({ ok: true })),
     sendKeys: vi.fn(async () => ({ ok: true })),
     deleteSession: vi.fn(async () => ({ ok: true })),

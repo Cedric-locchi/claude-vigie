@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { signal } from '@angular/core';
+import { DOCUMENT, EnvironmentInjector, createEnvironmentInjector, signal } from '@angular/core';
 import { Router, provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
 import { aSession, aSnapshot, provideVigieServiceMock } from './core/vigie.service.mock';
@@ -96,5 +96,54 @@ describe('AppVm', () => {
     expect(vm.claudeStatus()).toEqual({ label: 'Claude : panne partielle', tone: 'err', incidents: [{ name: 'Erreurs API', url: 'https://status.claude.com/incidents/x' }] });
     snapshot.set(aSnapshot({ claudeStatus: undefined }));
     expect(vm.claudeStatus()).toBeNull();
+  });
+
+  it('Recharger (palette impossible à charger) : recharge toute l’app', () => {
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideVigieServiceMock()] });
+    const reload = vi.fn();
+    // DOCUMENT factice pour le seul VM : les services racine (AttentionService…) gardent le vrai.
+    const injector = createEnvironmentInjector([AppVm, { provide: DOCUMENT, useValue: { location: { reload } } }], TestBed.inject(EnvironmentInjector));
+    injector.get(AppVm).reloadPage();
+    expect(reload).toHaveBeenCalledOnce();
+    injector.destroy();
+  });
+
+  it('⌘F (mac) / Ctrl+F (ailleurs) ouvre la palette de recherche ; ignoré si déjà pris, avec Maj, dans le terminal hors mac ou dans un dialogue', () => {
+    const vmFor = (os: 'mac' | 'linux') => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [AppVm, provideRouter([]), provideVigieServiceMock(), { provide: CLIENT_OS, useValue: os }] });
+      return TestBed.inject(AppVm);
+    };
+    const term = document.body.appendChild(document.createElement('div'));
+    term.className = 'xterm';
+    const inTerm = term.appendChild(document.createElement('textarea'));
+    const dialog = document.body.appendChild(document.createElement('dialog'));
+    dialog.setAttribute('open', '');
+    const inDialog = dialog.appendChild(document.createElement('input'));
+    /** Touche envoyée sur `target` ; `taken` : un écouteur plus proche l'a déjà prise (preventDefault). */
+    const fire = (vm: AppVm, target: EventTarget, init: KeyboardEventInit, taken = false) => {
+      vm.searchOpen.set(false);
+      const ev = new KeyboardEvent('keydown', { key: 'f', bubbles: true, cancelable: true, ...init });
+      target.addEventListener('keydown', (e) => { if (taken) e.preventDefault(); vm.searchShortcut(e as KeyboardEvent); }, { once: true });
+      target.dispatchEvent(ev);
+      return [vm.searchOpen(), ev.defaultPrevented];
+    };
+
+    const mac = vmFor('mac');
+    expect(mac.searchKey).toBe('⌘F');
+    expect(fire(mac, document.body, { metaKey: true })).toEqual([true, true]);
+    expect(fire(mac, inTerm, { metaKey: true })).toEqual([true, true]); // ⌘F n'est pas au terminal
+    expect(fire(mac, document.body, { ctrlKey: true })).toEqual([false, false]);
+    expect(fire(mac, document.body, { metaKey: true, shiftKey: true, key: 'F' })).toEqual([false, false]);
+    expect(fire(mac, document.body, { metaKey: true }, true)).toEqual([false, true]); // vue Fichiers : recherche dans le fichier
+    expect(fire(mac, inDialog, { metaKey: true })).toEqual([false, false]);
+
+    const linux = vmFor('linux');
+    expect(linux.searchKey).toBe('Ctrl+F');
+    expect(fire(linux, document.body, { ctrlKey: true })).toEqual([true, true]);
+    expect(fire(linux, inTerm, { ctrlKey: true })).toEqual([false, false]); // Ctrl+F appartient au terminal
+    expect(fire(linux, document.body, { metaKey: true })).toEqual([false, false]);
+    term.remove();
+    dialog.remove();
   });
 });

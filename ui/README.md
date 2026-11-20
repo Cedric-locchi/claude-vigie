@@ -29,7 +29,8 @@ rien de l'extérieur. Règles du dépôt : `../CLAUDE.md` ; système visuel : `.
 - `src/app/core/` : services singletons (`VigieService`, `AttentionService`, `ThemeService`, `LanguageService`, `ConfirmService`, `@Service()`, créés au
   démarrage par `provideAppInitializer` quand il le faut), types du contrat (`models.ts`, que des `z.infer`), aides pures partagées
   (`clipboard`, `format`, `markdown`, `platform`, `session-view`, `usage-rows`…) et mocks des specs (`*.mock.ts`).
-- `src/app/shell/` : la coque, hors des pages — barre latérale, cloche et toasts, dialogue de confirmation, gabarit de page (`page/`).
+- `src/app/shell/` : la coque, hors des pages — barre latérale, cloche et toasts, dialogue de confirmation, gabarit de page (`page/`),
+  palette de recherche dans les sessions (`search-palette/`, ⌘F / Ctrl+F, chargée par `@defer` à l'ouverture ; décision 049).
 - `src/app/features/` : une feature par page routée, un dossier par composant (décision 031), sous-composants rangés sous leur
   parent. Une aide utile à deux features remonte dans `core/`, pas d'import d'une feature vers une autre hors des exceptions de la 031.
   Les deux seules admises (un composant voisin réutilisé tel quel) : l'onglet Coût (`session/cost/`) dessine avec

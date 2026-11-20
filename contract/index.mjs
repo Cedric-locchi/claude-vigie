@@ -178,6 +178,17 @@ export const LogEntry = z.object({
 // Pas d'interface dans models.ts : forme inline de VigieService.sessionLog.
 export const SessionLog = z.object({ entries: z.array(LogEntry) });
 
+// ── Recherche dans les sessions (GET /api/search?q=…&case=1, paramètres : SearchQuery) ──
+// Sessions du snapshot (terminal claude ouvert ou activité de moins d'un jour, sous-agents compris ; non masquées), activité la plus
+// récente d'abord, 50 au plus. Cherché : titre de la session, titre et texte des lignes de son journal (LogEntry, texte coupé à
+// 4 000 caractères comme l'onglet Journal). Trouvée par son seul titre : count 0, hits vide. count : lignes du journal trouvées ;
+// hits : les 5 plus récentes ; id = LogEntry.id. text : extrait ≤ 200 caractères de la ligne du texte qui contient le terme ;
+// at : position du terme dans text (UTF-16), null s'il n'est que dans le titre de la ligne (text vide).
+// truncated : plus de 50 sessions trouvées, ou sessions non parcourues (plafond du cache du journal).
+export const SessionSearchHit = z.object({ id: str, ts: num, kind: LogKind, title: str, agent: str, sub: bool, text: str, at: nnum });
+export const SessionSearchResult = z.object({ id: str, count: num, hits: z.array(SessionSearchHit) });
+export const SessionSearch = z.object({ sessions: z.array(SessionSearchResult), truncated: bool });
+
 // ── Config Claude Code (GET /api/sessions/:id/config) ─────────────────────
 export const ConfigScope = z.enum(['organisation', 'utilisateur', 'projet', 'local', 'parent']);
 
@@ -339,7 +350,7 @@ export const HookEvent = z.object({
 }, body);
 export const RestoreBody = z.object({ path: text('Indique le fichier à restaurer') }, body);
 export const FileQuery = z.object({ path: text('Indique le fichier') }, body); // GET …/git/file ou …/files/read (paramètre d'URL)
-// GET /api/sessions/:id/files/search?q=…&case=1 (paramètres d'URL). Texte littéral ; insensible à la casse sauf case=1.
+// GET /api/sessions/:id/files/search?q=…&case=1 et GET /api/search?q=…&case=1 (paramètres d'URL). Texte littéral ; insensible à la casse sauf case=1.
 export const SearchQuery = z.object({
   q: text('Indique le texte à chercher').check(z.minLength(2, 'Au moins 2 caractères'), z.maxLength(200, '200 caractères au plus')),
   case: z.boolean(),

@@ -60,6 +60,14 @@ import { NotificationCenterComponent } from '../notification-center/notification
               </a>
               @if (vm.mac) { <span hlmSidebarMenuBadge><kbd hlmKbd>⌘N</kbd></span> }
             </li>
+            <!-- Seul accès à la palette au doigt, et sous Linux depuis un terminal (Ctrl+F y reste au terminal). -->
+            <li hlmSidebarMenuItem>
+              <button hlmSidebarMenuButton type="button" closeMobileSidebarOnClick [tooltip]="'Rechercher dans les sessions (' + vm.searchKey + ')'" (click)="vm.openSearch()">
+                <svg appIcon="search" width="16" height="16"></svg>
+                <span>Rechercher</span>
+              </button>
+              <span hlmSidebarMenuBadge><kbd hlmKbd>{{ vm.searchKey }}</kbd></span>
+            </li>
           </ul>
         </div>
 

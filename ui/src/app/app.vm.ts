@@ -1,11 +1,11 @@
-import { DestroyRef, Injectable, computed, inject, linkedSignal, signal } from '@angular/core';
+import { DOCUMENT, DestroyRef, Injectable,computed, inject, linkedSignal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { AttentionService } from './core/attention.service';
 import { ClaudeStatus, SessionSummary } from './core/models';
 import { activityMax, describeSession, rank } from './core/session-view';
-import { CLIENT_OS, restartCommand } from './core/platform';
+import { CLIENT_OS, isShortcut, restartCommand } from './core/platform';
 import { duration } from './core/format';
 import { VigieService, daemonError, isChat } from './core/vigie.service';
 
@@ -152,5 +152,33 @@ export class AppVm {
   newSession(event?: Event): void {
     event?.preventDefault();
     this.router.navigate(['/new']);
+  }
+
+  /** Palette de recherche dans les sessions (décision 049) : ouverte par ⌘F / Ctrl+F ou l'entrée « Rechercher » de la barre latérale. */
+  readonly searchOpen = signal(false);
+  readonly searchKey = this.mac ? '⌘F' : 'Ctrl+F';
+
+  /**
+   * ⌘F / Ctrl+F, écouté sur window (donc après les écouteurs de document des pages) : ignoré s'il est déjà pris (vue Fichiers :
+   * recherche dans le fichier), tapé hors mac dans un terminal (Ctrl+F lui appartient : caractère suivant pour readline…) ou dans
+   * un dialogue ouvert.
+   */
+  searchShortcut(e: KeyboardEvent): void {
+    if (e.defaultPrevented || !isShortcut(e, 'f', this.mac)) return;
+    const t = e.target instanceof Element ? e.target : null;
+    if ((!this.mac && t?.closest('.xterm')) || t?.closest('dialog[open], [role=dialog], [role=alertdialog]')) return;
+    e.preventDefault();
+    this.openSearch();
+  }
+
+  openSearch(): void {
+    this.searchOpen.set(true);
+  }
+
+  private readonly document = inject(DOCUMENT);
+
+  /** La palette n'a pas pu se charger (fichier disparu après une mise à jour de l'UI) : recharge toute l'app. */
+  reloadPage(): void {
+    this.document.location.reload();
   }
 }

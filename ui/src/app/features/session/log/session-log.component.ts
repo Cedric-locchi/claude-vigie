@@ -3,7 +3,6 @@ import { HlmBadge, BadgeVariants } from '@spartan-ng/helm/badge';
 import { HlmButton } from '@spartan-ng/helm/button';
 import { HlmEmptyImports } from '@spartan-ng/helm/empty';
 import { HlmInputGroupImports } from '@spartan-ng/helm/input-group';
-import { HlmKbd } from '@spartan-ng/helm/kbd';
 import { HlmSelectImports } from '@spartan-ng/helm/select';
 import { HlmToggleGroupImports } from '@spartan-ng/helm/toggle-group';
 import { LogKind } from '../../../core/models';
@@ -17,15 +16,13 @@ const BADGES: Record<LogKind, BadgeVariants['variant']> = {
 /** Onglet Journal : tout ce qui s'est passé dans la session (agents compris), avec recherche. */
 @Component({
   selector: 'app-session-log',
-  imports: [Icon, HlmBadge, HlmButton, HlmEmptyImports, HlmInputGroupImports, HlmKbd, HlmSelectImports, HlmToggleGroupImports],
+  imports: [Icon, HlmBadge, HlmButton, HlmEmptyImports, HlmInputGroupImports, HlmSelectImports, HlmToggleGroupImports],
   providers: [SessionLogVm],
-  host: { '(document:keydown)': 'focusSearch($event)' },
   template: `
     <div class="tools">
       <div hlmInputGroup class="search">
-        <input #search hlmInputGroupInput type="search" aria-label="Rechercher dans le journal" placeholder="Rechercher dans la session…" [value]="vm.query()" (input)="vm.setQuery($any($event.target).value)" />
+        <input hlmInputGroupInput type="search" aria-label="Rechercher dans le journal" placeholder="Rechercher dans la session…" [value]="vm.query()" (input)="vm.setQuery($any($event.target).value)" />
         <div hlmInputGroupAddon><svg appIcon="search" width="15" height="15"></svg></div>
-        <div hlmInputGroupAddon align="inline-end"><kbd hlmKbd>{{ vm.searchKey }}</kbd></div>
       </div>
       @let c = vm.counts();
       <div hlmToggleGroup type="single" [nullable]="false" variant="outline" size="sm" aria-label="Type d'événement" [value]="vm.filter()" (valueChange)="vm.setFilter($any($event))">
@@ -63,7 +60,8 @@ const BADGES: Record<LogKind, BadgeVariants['variant']> = {
               <span class="title">@for (p of e.titleParts; track $index) { @if (p.hit) { <mark>{{ p.text }}</mark> } @else { {{ p.text }} } }</span>
             </div>
             @if (e.text) {
-              <pre class="text" [class.clamp]="e.long && !e.open">@for (p of e.textParts; track $index) { @if (p.hit) { <mark>{{ p.text }}</mark> } @else { {{ p.text }} } }</pre>
+              <!-- Sans blanc entre les blocs : un <pre> garde ceux du gabarit (ils s'ajouteraient au texte de la ligne). -->
+              <pre class="text" [class.clamp]="e.long && !e.open">@for (p of e.textParts; track $index) {@if (p.hit) {<mark>{{ p.text }}</mark>} @else {{{ p.text }}}}</pre>
               @if (e.long || e.truncated) {
                 <div class="foot">
                   @if (e.long) { <button hlmBtn variant="link" size="xs" (click)="vm.toggle(e.id)">{{ e.open ? 'Réduire' : 'Tout afficher' }}</button> }
@@ -124,11 +122,10 @@ export class SessionLogComponent {
   readonly sessionId = input.required<string>();
   /** Dernière activité de la session : chaque changement déclenche le chargement de la suite du journal. */
   readonly lastTs = input.required<number>();
-  /** Recherche imposée de l'extérieur (« Voir dans le journal ») ; reste modifiable ensuite. */
-  readonly query = input('');
+  /** Recherche imposée de l'extérieur (« Voir dans le journal », palette) ; un objet par demande ; reste modifiable ensuite. */
+  readonly query = input<{ q: string } | null>(null);
 
   protected readonly vm = inject(SessionLogVm);
-  private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('search');
   protected readonly agentLabel = (a: string) => a || 'Tous les agents';
 
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
@@ -145,13 +142,5 @@ export class SessionLogComponent {
 
   protected badge(kind: LogKind): BadgeVariants['variant'] {
     return BADGES[kind];
-  }
-
-  /** Cmd+F / Ctrl+F : la recherche du journal plutôt que rien (pas de recherche native dans l'app Electron). */
-  protected focusSearch(event: KeyboardEvent): void {
-    if (!this.vm.isSearchShortcut(event)) return;
-    event.preventDefault();
-    this.searchInput()?.nativeElement.focus();
-    this.searchInput()?.nativeElement.select();
   }
 }

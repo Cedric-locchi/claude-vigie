@@ -667,23 +667,90 @@ test('relevés de la statusline : relus si le dossier change ou après une minut
   assert.equal(pct(), 0.8);
 });
 
-test('journal : 50 pistes gardées en mémoire, la moins récemment lue oubliée puis relue en entier', () => {
+test('journal : 200 pistes gardées en mémoire, la moins récemment lue oubliée puis relue en entier', () => {
   const tmp = tempDir('vigie-logs-');
   const dir = path.join(tmp, 'p');
   fs.mkdirSync(dir, { recursive: true });
   const ts = Date.now() - 60_000;
   const rec = (sid, text) => JSON.stringify({ type: 'user', timestamp: new Date(ts).toISOString(), sessionId: sid, cwd: '/dev/revu', message: { content: text } }) + '\n';
-  for (let i = 0; i <= 50; i++) fs.writeFileSync(path.join(dir, `s${i}.jsonl`), rec(`s${i}`, 'avant'));
+  for (let i = 0; i <= 200; i++) fs.writeFileSync(path.join(dir, `s${i}.jsonl`), rec(`s${i}`, 'avant'));
   const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), limitsDir: path.join(tmp, 'limits') });
   store.scan();
   const text = (sid) => store.sessionLog(sid).entries[0].text;
   // Réécrit à taille égale : une piste en cache ne relit que la suite (rien), une piste oubliée relit tout.
   const rewrite = (sid) => fs.writeFileSync(path.join(dir, `${sid}.jsonl`), rec(sid, 'après'));
-  for (let i = 0; i < 50; i++) assert.equal(text(`s${i}`), 'avant'); // 50 pistes en mémoire
+  for (let i = 0; i < 200; i++) assert.equal(text(`s${i}`), 'avant'); // 200 pistes en mémoire
   rewrite('s0');
   rewrite('s1');
   assert.equal(text('s0'), 'avant'); // en cache ; relue, elle devient la plus récente (s1 est alors la moins récente)
-  text('s50'); // 51ᵉ : s1 oubliée
+  text('s200'); // 201ᵉ : s1 oubliée
   assert.equal(text('s1'), 'après'); // relue en entier
   assert.equal(text('s0'), 'avant'); // gardée : lue récemment
+});
+
+test('recherche dans les sessions : titres et journaux (sous-agents compris), ordre, extraits, plafonds, annulation', async () => {
+  const tmp = tempDir('vigie-search-');
+  const dir = path.join(tmp, 'p');
+  fs.mkdirSync(path.join(dir, 'A', 'subagents'), { recursive: true });
+  const now = Date.now();
+  const rec = (sid, s, o) => JSON.stringify({ timestamp: new Date(now - s * 1000).toISOString(), sessionId: sid, cwd: '/dev/revu', ...o }) + '\n';
+  const say = (sid, s, text) => rec(sid, s, { type: 'assistant', message: { id: `m${sid}${s}`, stop_reason: 'end_turn', content: [{ type: 'text', text }] } });
+  // A : message principal, appel d'outil dont seul le titre contient le terme, résultat d'outil d'un sous-agent (plus récent).
+  fs.writeFileSync(path.join(dir, 'A.jsonl'),
+    rec('A', 100, { type: 'user', message: { content: 'trouve le bug' } }) +
+    say('A', 90, 'Je cherche une aiguille dans la botte.') +
+    rec('A', 80, { type: 'assistant', message: { id: 'mA80', content: [{ type: 'tool_use', id: 'x1', name: 'mcp__aiguille__lire', input: {} }] } }));
+  fs.writeFileSync(path.join(dir, 'A', 'subagents', 'agent-x.jsonl'),
+    rec('A', 70, { type: 'user', isSidechain: true, message: { content: 'explore' } }) +
+    rec('A', 60, { type: 'assistant', isSidechain: true, message: { id: 'sA60', content: [{ type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'ls' } }] } }) +
+    rec('A', 50, { type: 'user', isSidechain: true, message: { content: [{ type: 'tool_result', tool_use_id: 'b1', content: 'AIGUILLE trouvée' }] } }));
+  fs.writeFileSync(path.join(dir, 'A', 'subagents', 'agent-x.meta.json'), JSON.stringify({ agentType: 'Explore' }));
+  // B : trouvée par son seul titre (custom-title).
+  fs.writeFileSync(path.join(dir, 'B.jsonl'), say('B', 60, 'rien') + JSON.stringify({ type: 'custom-title', customTitle: 'Aiguille du midi', sessionId: 'B' }) + '\n');
+  // M : 7 lignes, dont une longue et une sur plusieurs lignes.
+  const long = 'x'.repeat(300) + ' Aiguille ' + 'y'.repeat(300);
+  fs.writeFileSync(path.join(dir, 'M.jsonl'), [36, 35, 34, 33, 32].map((s) => say('M', s, `aiguille ${s}`)).join('') +
+    say('M', 31, 'première ligne\ndeuxième avec aiguille') + say('M', 30, long));
+  // O : plus d'un jour ; H : masquée.
+  fs.writeFileSync(path.join(dir, 'O.jsonl'), say('O', 2 * 86_400, 'vieille aiguille'));
+  fs.writeFileSync(path.join(dir, 'H.jsonl'), say('H', 20, 'aiguille masquée'));
+  const store = createStore({ projectsDir: tmp, hiddenFile: path.join(tmp, 'hidden.json'), limitsDir: path.join(tmp, 'limits') });
+  store.scan();
+  store.hide('H');
+
+  const r = await store.searchSessions('aiguille', []);
+  conforme(C.SessionSearch, r);
+  assert.equal(r.truncated, false);
+  // Activité la plus récente d'abord, sous-agents compris (A : principal à −80 s, sous-agent à −50 s, devant B à −60 s).
+  assert.deepEqual(r.sessions.map((s) => [s.id, s.count]), [['M', 7], ['A', 3], ['B', 0]]);
+  const [m, a, b] = r.sessions;
+  assert.deepEqual(b.hits, []);
+  assert.deepEqual(a.hits.map(({ kind, title, agent, sub, text, at }) => ({ kind, title, agent, sub, text, at })), [
+    { kind: 'result', title: 'Bash', agent: 'Explore', sub: true, text: 'AIGUILLE trouvée', at: 0 },
+    { kind: 'tool', title: 'mcp__aiguille__lire · ', agent: 'Agent principal', sub: false, text: '', at: null },
+    { kind: 'assistant', title: 'Claude', agent: 'Agent principal', sub: false, text: 'Je cherche une aiguille dans la botte.', at: 15 },
+  ]);
+  const ids = new Set(store.sessionLog('A').entries.map((e) => e.id));
+  assert.ok(a.hits.every((h) => ids.has(h.id))); // id = LogEntry.id
+  // 5 plus récentes, ts décroissant ; extrait ≤ 200 autour du terme ; ligne du texte qui le contient.
+  assert.deepEqual(m.hits.map((h) => (now - h.ts) / 1000), [30, 31, 32, 33, 34]);
+  assert.ok(m.hits[0].text.length <= 200);
+  assert.equal(m.hits[0].text.slice(m.hits[0].at, m.hits[0].at + 8).toLowerCase(), 'aiguille');
+  assert.deepEqual([m.hits[1].text, m.hits[1].at], ['deuxième avec aiguille', 14]);
+
+  // Plus d'un jour : seulement avec un terminal claude ouvert.
+  const withTerm = await store.searchSessions('vieille', [{ id: 't', sessionId: 'O', kind: 'claude' }]);
+  assert.deepEqual(withTerm.sessions.map((s) => s.id), ['O']);
+  assert.deepEqual((await store.searchSessions('vieille', [])).sessions, []);
+  assert.deepEqual((await store.searchSessions('masquée', [])).sessions, []);
+  // Casse.
+  assert.deepEqual((await store.searchSessions('AIGUILLE', [], { matchCase: true })).sessions.map((s) => [s.id, s.count]), [['A', 1]]);
+  assert.deepEqual((await store.searchSessions('aIgUiLlE', [], { matchCase: true })).sessions, []);
+  // Plafonds : sessions rendues, pistes parcourues (A, principal + sous-agent, ne tient plus : sautée, B encore cherchée).
+  assert.deepEqual(await store.searchSessions('aiguille', [], { maxSessions: 1 }).then((x) => [x.sessions.map((s) => s.id), x.truncated]), [['M'], true]);
+  assert.deepEqual(await store.searchSessions('aiguille', [], { maxTracks: 2 }).then((x) => [x.sessions.map((s) => s.id), x.truncated]), [['M', 'B'], true]);
+  assert.equal(await store.searchSessions('aiguille', [], { signal: AbortSignal.abort() }), null);
+  // Ligne écrite après une recherche : trouvée à la suivante (le cache du journal lit la suite).
+  fs.appendFileSync(path.join(dir, 'B.jsonl'), say('B', 1, 'une aiguille de plus'));
+  assert.equal((await store.searchSessions('aiguille', [])).sessions.find((s) => s.id === 'B').count, 1);
 });

@@ -246,6 +246,21 @@ describe('SessionFilesVm', () => {
     expect(vm.tabs().length).toBe(1);
   });
 
+  it('Ctrl+F : recherche dans le fichier ouvert (un aperçu Markdown passe à la source) ; sans fichier, la vue Rechercher', async () => {
+    const { vm } = await setup();
+    const f = key('f');
+    expect(vm.shortcut(f)).toBe('search');
+    expect(f.preventDefault).toHaveBeenCalled();
+    expect(vm.side()).toBe('search');
+    await vm.open('a.ts');
+    expect(vm.shortcut(key('f'))).toBe('find');
+    await vm.open('README.md');
+    expect(vm.markdown()).not.toBeNull();
+    expect(vm.shortcut(key('f'))).toBe('find');
+    expect([vm.showSource(), vm.markdown()]).toEqual([true, null]);
+    expect(vm.shortcut(key('f', { metaKey: true }))).toBeNull(); // ⌘ hors mac : ignoré
+  });
+
   it('bloqué pendant que Claude travaille', async () => {
     const { vm, idle, vigie } = await setup();
     await vm.open('a.ts');

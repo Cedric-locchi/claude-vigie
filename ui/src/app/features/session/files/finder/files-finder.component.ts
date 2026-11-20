@@ -5,7 +5,8 @@ import { SessionFilesVm, base } from '../session-files.vm';
 import { FilesFinderVm, FinderMove } from './files-finder.vm';
 
 /**
- * Fenêtre flottante « Aller au fichier » (⌘P / Ctrl+P), dans un <dialog> natif centré en haut de l'écran : combobox + listbox,
+ * Fenêtre flottante « Aller au fichier » (⌘P / Ctrl+P), dans un <dialog> natif centré en haut de l'écran (classes `.palette*` de
+ * styles.css, partagées avec la palette de recherche dans les sessions) : combobox + listbox,
  * Échap ferme et le navigateur rend le focus à l'élément d'origine. Seule ombre de la vue Fichiers.
  * Vue seule : la logique est dans `FilesFinderVm`.
  */
@@ -14,17 +15,17 @@ import { FilesFinderVm, FinderMove } from './files-finder.vm';
   imports: [Icon, FileIconComponent],
   template: `
     @let hits = vm.hits();
-    <dialog #d class="quick" aria-label="Aller au fichier" (click)="$event.target === d && close()">
-      <div class="field">
-        <svg appIcon="search" class="lens"></svg>
-        <input #q class="q" type="text" role="combobox" aria-expanded="true" aria-controls="finder-list" aria-autocomplete="list"
+    <dialog #d class="palette" aria-label="Aller au fichier" (click)="$event.target === d && close()">
+      <div class="palette-field">
+        <svg appIcon="search" class="palette-lens"></svg>
+        <input #q class="palette-q" type="text" role="combobox" aria-expanded="true" aria-controls="finder-list" aria-autocomplete="list"
           [attr.aria-activedescendant]="vm.count() ? 'finder-opt-' + vm.index() : null" placeholder="Nom ou chemin du fichier" aria-label="Aller au fichier"
           maxlength="200" autocomplete="off" spellcheck="false" [value]="vm.query()" (input)="vm.query.set($any($event.target).value)" (keydown)="key($event)" />
       </div>
-      <ul id="finder-list" class="list" role="listbox" aria-label="Fichiers">
+      <ul id="finder-list" class="palette-list" role="listbox" aria-label="Fichiers">
         @for (f of hits; track f; let i = $index) {
           @let tc = files.touchedByPath().get(f);
-          <li role="option" class="opt" [id]="'finder-opt-' + i" [attr.aria-selected]="i === vm.index()" (click)="pick(i)" (mousemove)="vm.index.set(i)">
+          <li role="option" class="palette-opt opt" [id]="'finder-opt-' + i" [attr.aria-selected]="i === vm.index()" (click)="pick(i)" (mousemove)="vm.index.set(i)">
             <app-file-icon [name]="f" />
             <span class="name">{{ name(f) }}</span><span class="dir">{{ dir(f) }}</span>
             @if (tc) { <span class="mark" [class.edit]="tc.edited" aria-hidden="true"></span><span class="sr-only">, {{ tc.edited ? 'modifié' : 'lu' }} par Claude</span> }
@@ -33,7 +34,7 @@ import { FilesFinderVm, FinderMove } from './files-finder.vm';
           @if (!vm.q()) { <li class="none">Aucun fichier dans le projet.</li> }
         }
         @if (vm.q()) {
-          <li role="option" class="opt action" [id]="'finder-opt-' + hits.length" [attr.aria-selected]="hits.length === vm.index()" (click)="pick(hits.length)" (mousemove)="vm.index.set(hits.length)">
+          <li role="option" class="palette-opt opt action" [id]="'finder-opt-' + hits.length" [attr.aria-selected]="hits.length === vm.index()" (click)="pick(hits.length)" (mousemove)="vm.index.set(hits.length)">
             <svg appIcon="search" class="ic"></svg><span class="label">Chercher « {{ vm.q() }} » dans le contenu</span>
           </li>
         }
@@ -41,23 +42,7 @@ import { FilesFinderVm, FinderMove } from './files-finder.vm';
     </dialog>
   `,
   styles: `
-    .quick {
-      position: fixed; inset: 12vh auto auto 50%; translate: -50% 0; width: min(620px, calc(100vw - 32px)); max-height: 60vh; margin: 0; padding: 0;
-      display: none; flex-direction: column; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--nav); color: var(--text);
-      box-shadow: var(--elev-2); overflow: hidden;
-    }
-    .quick[open] { display: flex; }
-    @starting-style { .quick[open] { opacity: 0; translate: -50% -6px; } }
-    .quick { transition: opacity var(--dur-fast) var(--ease), translate var(--dur-fast) var(--ease); }
-    .quick::backdrop { background: transparent; }
-    .field { position: relative; flex: none; border-bottom: 1px solid var(--line); }
-    .lens { position: absolute; left: 12px; top: 12px; width: 16px; height: 16px; color: var(--faint); stroke-linecap: round; pointer-events: none; }
-    .q { width: 100%; height: 40px; padding: 0 14px 0 36px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; outline: none; }
-    .q::placeholder { color: var(--faint); }
-    .field:focus-within { box-shadow: inset 0 -1px 0 var(--brand); }
-    .list { flex: 1; min-height: 0; margin: 0; padding: 4px; overflow-y: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
-    .opt { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 4px; font-size: 13px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
-    .opt[aria-selected='true'] { background: var(--brand-bg); color: var(--text); }
+    .opt { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; font-size: 13px; white-space: nowrap; }
     .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
     .dir { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: 4px; font-size: 12px; color: var(--faint); }
     .mark { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--read); }
@@ -66,7 +51,6 @@ import { FilesFinderVm, FinderMove } from './files-finder.vm';
     .action .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .ic { flex: none; width: 15px; height: 15px; margin-inline: 1px 2px; stroke-linecap: round; color: var(--faint); }
     .none { padding: 6px 8px; font-size: 13px; color: var(--faint); }
-    @media (prefers-reduced-motion: reduce) { .quick { transition: none; } }
   `,
 })
 export class FilesFinderComponent {

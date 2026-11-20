@@ -1,7 +1,7 @@
-import { Injectable, Signal, computed, inject, linkedSignal, signal } from '@angular/core';
+import { Injectable, Signal, computed, linkedSignal, signal } from '@angular/core';
 import { clockSeconds } from '../../../core/format';
 import { LogKind } from '../../../core/models';
-import { CLIENT_OS, isShortcut } from '../../../core/platform';
+import { LOG_KIND_LABELS } from '../../../core/session-view';
 import { logFeed } from './log-feed';
 
 export type LogFilter = 'all' | 'talk' | 'tools' | 'errors' | 'system';
@@ -12,9 +12,6 @@ const FILTER_KINDS: Record<Exclude<LogFilter, 'all'>, LogKind[]> = {
   errors: ['error'],
   system: ['system'],
 };
-export const KIND_LABELS: Record<LogKind, string> = {
-  prompt: 'Ta demande', assistant: 'Message', thinking: 'Réflexion', tool: 'Outil', result: 'Résultat', error: 'Erreur', system: 'Système',
-};
 const PAGE = 200;
 /** Au-delà, une ligne est repliée (sauf si la recherche y trouve quelque chose). */
 const LONG = 400;
@@ -23,8 +20,7 @@ export interface TextPart { text: string; hit: boolean }
 
 @Injectable()
 export class SessionLogVm {
-  private readonly mac = inject(CLIENT_OS) === 'mac';
-  private readonly source = signal<{ id: Signal<string>; lastTs: Signal<number>; query: Signal<string> } | null>(null);
+  private readonly source = signal<{ id: Signal<string>; lastTs: Signal<number>; query: Signal<{ q: string } | null> } | null>(null);
 
   /** Session changée : on repart de zéro. Activité nouvelle (lastTs) : on ne demande que la suite. */
   private readonly feed = logFeed(() => {
@@ -37,18 +33,18 @@ export class SessionLogVm {
   readonly loading = this.feed.loading;
   readonly error = this.feed.error;
 
-  /** Raccourci de la recherche : Cmd+F sur mac, Ctrl+F ailleurs. */
-  readonly searchKey = this.mac ? '⌘F' : 'Ctrl+F';
-
-  /** Recherche : celle imposée par la page (« Voir dans le journal ») tant qu'on ne la retape pas. */
-  readonly query = linkedSignal(() => this.source()?.query() ?? '');
+  /**
+   * Recherche : celle imposée par la page (« Voir dans le journal », palette de recherche) tant qu'on ne la retape pas.
+   * Un objet par demande : redemander le même terme le réapplique.
+   */
+  readonly query = linkedSignal({ source: () => this.source()?.query(), computation: (r) => r?.q ?? '' });
   readonly filter = signal<LogFilter>('all');
   /** null : tous les agents. */
   readonly agent = signal<string | null>(null);
   readonly limit = signal(PAGE);
   private readonly expandedIds = signal<ReadonlySet<string>>(new Set());
 
-  connect(id: Signal<string>, lastTs: Signal<number>, query: Signal<string> = signal('')): void {
+  connect(id: Signal<string>, lastTs: Signal<number>, query: Signal<{ q: string } | null> = signal(null)): void {
     this.source.set({ id, lastTs, query });
   }
 
@@ -82,7 +78,7 @@ export class SessionLogVm {
     this.matches().slice(0, this.limit()).map((e) => ({
       ...e,
       time: clockSeconds(e.ts),
-      label: KIND_LABELS[e.kind],
+      label: LOG_KIND_LABELS[e.kind],
       long: e.text.length > LONG || e.text.split('\n').length > 8,
       /** Déplié à la main, ou parce que la recherche trouve quelque chose dans le texte. */
       open: this.expandedIds().has(e.id) || (!!this.needle() && e.text.toLowerCase().includes(this.needle())),
@@ -118,11 +114,5 @@ export class SessionLogVm {
       if (!next.delete(id)) next.add(id);
       return next;
     });
-  }
-
-  /** Hors mac, Ctrl+F tapé dans le terminal lui appartient (caractère suivant pour readline, etc.) : on le laisse passer. */
-  isSearchShortcut(e: KeyboardEvent): boolean {
-    if (!isShortcut(e, 'f', this.mac)) return false;
-    return this.mac || !(e.target instanceof Element && e.target.closest('.xterm'));
   }
 }

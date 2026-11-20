@@ -5,7 +5,7 @@ import * as C from '@vigie/contract';
 import { OUTDATED } from '../../plugin-sdk/host';
 import {
   BranchBody, CommitBody, CommitSuggestion, EmptyBody, FileBody, InputBody, NewSessionBody, PluginActionBody, PluginActionResult, PluginCallBody, PluginInfo,
-  PluginToggleBody, ProjectFiles, RestoreBody, SearchResults, SessionCost, SessionLog, SessionSummary, Settings, SettingsBody, Snapshot, Terminal, TerminalBody, WriteBody,
+  PluginToggleBody, ProjectFiles, RestoreBody, SearchResults, SessionCost, SessionLog, SessionSearch, SessionSummary, Settings, SettingsBody, Snapshot, Terminal, TerminalBody, WriteBody,
 } from './models';
 
 /** Discussion sans projet : lancée par Vigie dans ~/.vigie/chat. */
@@ -19,6 +19,11 @@ const WAKE_GAP_MS = 20_000;
 
 /** Réponse hors contrat : message lisible plutôt que le détail zod (affiché tel quel par certains écrans). Partagé avec les plugins. */
 export { OUTDATED };
+
+/** Recherches texte (fichiers, sessions) : le daemon refuse un terme plus court (SearchQuery). */
+export const SEARCH_MIN = 2;
+/** Attente après la dernière frappe avant d'interroger le daemon (ms). */
+export const SEARCH_DELAY = 250;
 
 /** Daemon injoignable (statut HTTP 0 : connexion refusée ou coupée). Fragment, comme les messages du daemon. */
 export const OFFLINE = 'le daemon ne répond pas';
@@ -267,6 +272,18 @@ export class VigieService {
   searchFiles(sessionId: string, q: string, matchCase: boolean, signal?: AbortSignal): Promise<SearchResults> {
     const params: Record<string, string> = matchCase ? { q, case: '1' } : { q };
     return abortable(this.http.get(`/api/sessions/${sessionId}/files/search`, { params }), signal).then(check(C.SearchResults));
+  }
+
+  /**
+   * Recherche texte littérale, insensible à la casse, dans les sessions du snapshot : titre et journal de chacune (décision 049).
+   * `signal` annulé : la requête HTTP est coupée et la promesse rejetée.
+   */
+  // ponytail: pas de « Respecter la casse » dans la palette ; le daemon le prend (`case=1`) si on l'ajoute.
+  searchSessions(q: string, signal?: AbortSignal): Promise<SessionSearch> {
+    // 404 : daemon d'avant la route (pas redémarré après la mise à jour), même message qu'une réponse hors contrat.
+    return abortable(this.http.get('/api/search', { params: { q } }), signal).then(check(C.SessionSearch), (e: unknown) => {
+      throw (e as { status?: unknown } | null)?.status === 404 ? new Error(OUTDATED) : e;
+    });
   }
 
   /** Écrit un fichier du projet ; refus si Claude travaille (409), si le fichier a changé (412) ou sous ~/.claude (403). */

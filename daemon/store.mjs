@@ -3,8 +3,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setImmediate } from 'node:timers/promises';
 import {
-  newTrack, readTrack, trackTokens, projectName, deriveState, readNewLines, logEntriesOf, WORKTREES,
+  newTrack, readTrack, trackTokens, projectName, deriveState, readNewLines, logEntriesOf, excerpt, WORKTREES,
 } from './ingest.mjs';
 import { openHistory, writeHistory } from './history.mjs';
 import { costOf } from './pricing.mjs';
@@ -15,8 +16,19 @@ import {
 } from './usage.mjs';
 
 const ACTIVITY_MIN = 15;
-/** Journaux gardés en mémoire (onglet Journal) : au-delà, le moins récemment lu est oublié (relu en entier s'il est rouvert). */
-const MAX_LOGS = 50;
+/**
+ * Journaux gardés en mémoire (onglet Journal, recherche dans les sessions) : au-delà, le moins récemment lu est oublié (relu en
+ * entier s'il est rouvert). Une recherche parcourt au plus SEARCH_TRACKS pistes, sous ce plafond : la marge garde au cache les
+ * journaux ouverts à côté (onglet Journal d'une vieille session), sinon chaque frappe chasserait une piste puis la relirait.
+ * ponytail: recherche servie par le cache du journal, plafond compté en pistes et non en octets (~37 Mo mesurés pour 80 pistes,
+ * 122 Mo de transcripts) ; au-delà de 150 pistes parcourues, sessions sautées (truncated). Suite : budget en caractères, ou index sur disque
+ * si une journée dépasse le plafond.
+ */
+const MAX_LOGS = 200;
+const SEARCH_TRACKS = 150;
+/** Recherche dans les sessions : sessions rendues au plus, lignes du journal montrées par session. */
+const SEARCH_SESSIONS = 50;
+const SEARCH_HITS = 5;
 /** Premier démarrage sans historique : on relit un mois de transcripts pour l'amorcer. */
 const SEED_DAYS = 31;
 // Aucun texte d'une discussion n'est écrit dans l'historique (elle est effacée de ~/.claude en la quittant).
@@ -46,7 +58,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
     } catch { /* reste masquée jusqu'au redémarrage */ }
   }
   // Une session supprimée qui reprend de l'activité (claude --resume) réapparaît.
-  const isHidden = (s) => hidden[s.id] && s.lastTs <= hidden[s.id];
+  const isHidden = (id, lastTs) => hidden[id] && lastTs <= hidden[id];
 
   // ── Historique de consommation (décision 025) ───────────────────────────
   // Lu une fois ici (cf. history.mjs), réécrit par saveHistory.
@@ -185,6 +197,14 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
   }
 
   const subagentsOf = (main) => subsByDir.get(sessionDir(main)) ?? [];
+  /** Dernière activité de la session, sous-agents compris. */
+  const lastOf = (main) => Math.max(main.lastTs, ...subagentsOf(main).map((s) => s.lastTs));
+  const titleOf = (main) => main.title ?? main.firstPrompt ?? '(sans titre)';
+  /** Pistes d'une session et nom de leur agent, comme dans le journal. */
+  const agentsOf = (main) => [
+    { t: main, agent: 'Agent principal', sub: false },
+    ...subagentsOf(main).map((t) => ({ t, agent: metaOf(t).agentType ?? 'sous-agent', sub: true })),
+  ];
 
   /**
    * Garde-fou avant d'effacer une session du disque : vrai seulement si c'est une discussion. Tous les transcripts qui
@@ -277,7 +297,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
       cwd: main.cwd,
       branch: main.branch,
       model: main.model,
-      title: main.title ?? main.firstPrompt ?? '(sans titre)',
+      title: titleOf(main),
       lastText: main.lastText.slice(0, 280),
       tool: tool ? `${tool.name} · ${tool.label}` : null,
       toolPath: tool?.path ?? null, // même source que TraceStep.path (ingest) : chemin complet, pas le libellé abrégé
@@ -289,7 +309,7 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
       cost: [main, ...subs].reduce((n, t) => n + [...t.usage.values()].reduce((m, u) => m + costOf(u), 0), 0),
       activity: activityOf([main, ...subs], now),
       firstTs: main.firstTs,
-      lastTs: Math.max(main.lastTs, ...subs.map((s) => s.lastTs)),
+      lastTs: lastOf(main),
       terminalId: term?.id ?? null,
     };
   }
@@ -319,16 +339,24 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
     };
   }
 
+  /**
+   * Sessions montrées (snapshot, recherche) : terminal claude ouvert ou activité (sous-agents compris) de moins d'un jour, non
+   * masquées. Filtre avant le résumé (coûteux).
+   */
+  function shown(now, terminals) {
+    return mains().filter((t) => {
+      const last = lastOf(t);
+      return (terminals.some((x) => x.sessionId === t.sessionId && x.kind === 'claude') || now - last < DAY) && !isHidden(t.sessionId, last);
+    });
+  }
+
   function snapshot(terminals) {
     const now = Date.now();
-    const known = mains();
-    const ids = new Set(known.map((t) => t.sessionId));
-    // Filtre avant le résumé (coûteux) : même règle qu'avant, terminal claude ouvert ou activité (sous-agents compris) de moins d'un jour.
-    const sessions = known
-      .filter((t) => terminals.some((x) => x.sessionId === t.sessionId && x.kind === 'claude') || now - Math.max(t.lastTs, ...subagentsOf(t).map((s) => s.lastTs)) < DAY)
+    // Tous les transcripts, vieux et masqués compris : une session connue ne reparaît jamais en « Nouvelle session ».
+    const ids = new Set(mains().map((t) => t.sessionId));
+    const sessions = shown(now, terminals)
       .map((t) => summary(t, now, terminals))
-      .concat(terminals.filter((t) => t.kind === 'claude' && !ids.has(t.sessionId)).map((t) => pendingSummary(t, now)))
-      .filter((s) => !isHidden(s))
+      .concat(terminals.filter((t) => t.kind === 'claude' && !ids.has(t.sessionId)).map((t) => pendingSummary(t, now)).filter((s) => !isHidden(s.id, s.lastTs)))
       .sort((a, b) => b.lastTs - a.lastTs);
     const open = readings(now).filter((r) => r.end > now);
     // ponytail: usageSummary reparcourt toutes les consommations des 14 jours à chaque snapshot (jusqu'à ~2,5 par seconde en
@@ -470,9 +498,38 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
   function sessionLog(sessionId, since = 0) {
     const main = mains().find((t) => t.sessionId === sessionId);
     if (!main) return null;
-    const agents = [{ t: main, agent: 'Agent principal', sub: false }, ...subagentsOf(main).map((t) => ({ t, agent: metaOf(t).agentType ?? 'sous-agent', sub: true }))];
-    const entries = agents.flatMap(({ t, agent, sub }) => logOf(t).filter((e) => e.ts >= since).map((e) => ({ ...e, agent, sub })));
+    const entries = agentsOf(main).flatMap(({ t, agent, sub }) => logOf(t).filter((e) => e.ts >= since).map((e) => ({ ...e, agent, sub })));
     return { entries: entries.sort((a, b) => a.ts - b.ts) };
+  }
+
+  /**
+   * Recherche d'un texte littéral dans les sessions montrées (cf. shown, contrat SessionSearch) : titre de la session, titre et
+   * texte des lignes de son journal (cache de logOf). Activité la plus récente d'abord ; au plus `maxTracks` pistes parcourues
+   * (une session qui n'y tient plus est sautée) et `maxSessions` sessions rendues, sinon `truncated`.
+   * Seule méthode asynchrone du store : cède la main entre deux pistes (le daemon sert ses terminaux pendant ce temps) ;
+   * null si `signal` est annulé. Ne lève pas.
+   */
+  async function searchSessions(q, terminals, { matchCase = false, signal, maxSessions = SEARCH_SESSIONS, maxTracks = SEARCH_TRACKS } = {}) {
+    const re = new RegExp(RegExp.escape(q), matchCase ? '' : 'i');
+    const sessions = [];
+    let budget = maxTracks, truncated = false;
+    for (const main of shown(Date.now(), terminals).sort((a, b) => lastOf(b) - lastOf(a))) {
+      const agents = agentsOf(main);
+      if (agents.length > budget) { truncated = true; continue; }
+      budget -= agents.length;
+      const found = [];
+      for (const { t, agent, sub } of agents) {
+        if (signal?.aborted) return null;
+        await setImmediate();
+        for (const e of logOf(t)) if (re.test(e.title) || re.test(e.text)) found.push({ e, agent, sub });
+      }
+      if (!found.length && !re.test(titleOf(main))) continue;
+      if (sessions.length === maxSessions) { truncated = true; break; }
+      // Extrait calculé pour les seules lignes montrées.
+      const hits = found.sort((a, b) => b.e.ts - a.e.ts).slice(0, SEARCH_HITS).map(({ e, agent, sub }) => hitOf(e, agent, sub, re));
+      sessions.push({ id: main.sessionId, count: found.length, hits });
+    }
+    return signal?.aborted ? null : { sessions, truncated };
   }
 
   /** Trace d'une session en tours (cf. trace.mjs) ; null si inconnue. */
@@ -484,7 +541,17 @@ export function createStore({ projectsDir, hiddenFile = path.join(os.homedir(), 
     return buildTrace({ main, subs, summary: summary(main, now, terminals), now });
   }
 
-  return { scan, scanFiles, onHook, snapshot, detail, usageRows: rows, saveHistory, sessionCost, sessionLog, sessionTrace, hide, purge, purgeChats, isChat, cwdOf, idle, recentDirs, tracks };
+  return { scan, scanFiles, onHook, snapshot, detail, usageRows: rows, saveHistory, sessionCost, sessionLog, searchSessions, sessionTrace, hide, purge, purgeChats, isChat, cwdOf, idle, recentDirs, tracks };
+}
+
+/** Ligne du journal trouvée (SessionSearchHit) : extrait de la première ligne du texte qui contient le terme, sinon texte vide (terme dans le titre seul). */
+function hitOf(e, agent, sub, re) {
+  const hit = { id: e.id, ts: e.ts, kind: e.kind, title: e.title, agent, sub };
+  for (const l of e.text.split(/\r?\n/)) {
+    const m = re.exec(l);
+    if (m) return { ...hit, ...excerpt(l, m.index, m[0].length) };
+  }
+  return { ...hit, text: '', at: null };
 }
 
 const LIMITS_DIR = path.join(os.homedir(), '.vigie', 'limits');

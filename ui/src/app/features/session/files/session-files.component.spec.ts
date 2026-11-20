@@ -194,4 +194,74 @@ describe('SessionFilesComponent', () => {
     expect(field.value).toBe('');
     el.remove();
   });
+
+  it('Ctrl+F dans un fichier : barre (graine, focus), surlignage, Entrée suivant, Échap ferme et sélectionne ; Markdown passe à la source', async () => {
+    const content = 'un\ndeux un\nUN trois';
+    const { el, settle, press, row } = render({
+      files: async () => aProjectFiles({ files: ['a.ts', 'notes.md'], collapsed: [] }),
+      readProjectFile: async (_id: string, path: string) => ({ path, content: path.endsWith('.md') ? '# Titre\n\nun texte' : content, hash: 'h' }),
+    });
+    await settle();
+    const ctrlF = async () => {
+      const ev = new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, cancelable: true });
+      document.dispatchEvent(ev);
+      await settle();
+      return ev;
+    };
+    row('a.ts').click();
+    await settle();
+    const ta = el.querySelector<HTMLTextAreaElement>('app-code-editor textarea')!;
+    ta.setSelectionRange(0, 2); // « un » sélectionné : graine de la recherche
+    expect((await ctrlF()).defaultPrevented).toBe(true);
+
+    const bar = el.querySelector('app-code-editor [role=search]')!;
+    expect(bar.getAttribute('aria-label')).toBe('Rechercher dans le fichier');
+    const field = bar.querySelector<HTMLInputElement>('input')!;
+    expect(document.activeElement).toBe(field);
+    expect([field.value, field.selectionStart, field.selectionEnd]).toEqual(['un', 0, 2]);
+    const layer = el.querySelector('app-code-editor pre.find')!;
+    expect(layer.textContent).toBe(content); // le calque garde le texte au caractère près (sinon le surlignage décroche)
+    expect([...layer.querySelectorAll('mark')].map((m) => m.textContent)).toEqual(['un', 'un', 'UN']);
+    expect(layer.querySelectorAll('mark.cur')).toHaveLength(1);
+    expect(layer.querySelector('mark')!.classList).toContain('cur');
+    const status = bar.querySelector('[role=status]')!;
+    expect(status.textContent).toContain('1/3');
+    expect(status.querySelector('.sr-only')!.textContent).toBe('Résultat 1 sur 3');
+
+    await press(field, 'Enter');
+    expect(status.textContent).toContain('2/3');
+    expect(layer.querySelectorAll('mark')[1].classList).toContain('cur');
+    await press(field, 'Enter', { shiftKey: true });
+    expect(status.textContent).toContain('1/3');
+    await press(field, 'Enter');
+
+    await press(field, 'Escape');
+    expect(el.querySelector('app-code-editor [role=search]')).toBeNull();
+    expect(el.querySelector('app-code-editor pre.find')).toBeNull();
+    expect(document.activeElement).toBe(ta);
+    expect([ta.selectionStart, ta.selectionEnd]).toEqual([8, 10]); // le « un » de la ligne 2
+    expect(el.querySelector('app-files-status')!.textContent).toContain('2:6');
+
+    // Aperçu Markdown : ⌘F passe à la source, puis ouvre la barre.
+    row('notes.md').click();
+    await settle();
+    expect(el.querySelector('.markdown')).not.toBeNull();
+    await ctrlF();
+    await settle();
+    expect(el.querySelector('.markdown')).toBeNull();
+    expect(document.activeElement).toBe(el.querySelector('app-code-editor [role=search] input'));
+    el.remove();
+  });
+
+  it('Ctrl+F sans fichier ouvert : comme Ctrl+Shift+F, la vue Rechercher', async () => {
+    const { el, settle } = render();
+    await settle();
+    const ev = new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, cancelable: true });
+    document.dispatchEvent(ev);
+    await settle();
+    expect(ev.defaultPrevented).toBe(true);
+    expect(el.querySelector('.tw-title')!.textContent).toBe('Rechercher');
+    expect(document.activeElement).toBe(el.querySelector('app-files-search input'));
+    el.remove();
+  });
 });

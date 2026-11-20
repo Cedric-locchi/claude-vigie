@@ -275,6 +275,25 @@
   .stripes::after { content: ''; position: absolute; inset: 0 0 0 -14px; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--stripe) 5px 10px) 0 0 / 14px 14px; animation: stripes 0.8s linear infinite; }
   @keyframes stripes { to { transform: translateX(14px); } }
 
+  /* Fenêtre flottante de recherche (DESIGN.md, Elevation : --elev-2) : « Aller au fichier » (⌘P, vue Fichiers) et palette de recherche
+     dans les sessions (⌘F, coque). <dialog> modal centré en haut ; champ en combobox, liste en listbox, option choisie en lavé principal. */
+  .palette {
+    position: fixed; inset: 12vh auto auto 50%; translate: -50% 0; width: min(620px, calc(100vw - 32px)); max-height: 60vh; margin: 0; padding: 0;
+    display: none; flex-direction: column; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--nav); color: var(--text);
+    box-shadow: var(--elev-2); overflow: hidden; transition: opacity var(--dur-fast) var(--ease), translate var(--dur-fast) var(--ease);
+  }
+  .palette[open] { display: flex; }
+  @starting-style { .palette[open] { opacity: 0; translate: -50% -6px; } }
+  .palette::backdrop { background: transparent; }
+  .palette-field { position: relative; flex: none; border-bottom: 1px solid var(--line); }
+  .palette-field:focus-within { box-shadow: inset 0 -1px 0 var(--brand); }
+  .palette-lens { position: absolute; left: 12px; top: 12px; width: 16px; height: 16px; color: var(--faint); stroke-linecap: round; pointer-events: none; }
+  .palette-q { width: 100%; height: 40px; padding: 0 14px 0 36px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; outline: none; }
+  .palette-q::placeholder { color: var(--faint); }
+  .palette-list { flex: 1; min-height: 0; margin: 0; padding: 4px; overflow-y: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+  .palette-opt { border-radius: 4px; color: var(--text-2); cursor: pointer; }
+  .palette-opt[aria-selected='true'] { background: var(--brand-bg); color: var(--text); }
+
   /* Gabarit des pages et règle de défilement : shell/page (app-page). --sticky-top y est défini. */
   /* Hauteur de la barre mobile et des bandeaux (app.ts) : retranchée par les vues à hauteur propre sur téléphone (terminal, éditeur). */
   :root { --chrome-top: 0px; }

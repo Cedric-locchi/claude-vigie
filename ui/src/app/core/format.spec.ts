@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clock, clockSeconds, duration, pct, tokens } from './format';
+import { clock, clockSeconds, duration, excerpt, pct, tokens } from './format';
 
 describe('format', () => {
   it('abrège les tokens', () => {
@@ -23,5 +23,10 @@ describe('format', () => {
   it('heure locale, à la minute ou à la seconde', () => {
     const ts = new Date(2026, 10, 19, 14, 5, 9).getTime();
     expect([clock(ts), clockSeconds(ts)]).toEqual(['14:05', '14:05:09']);
+  });
+
+  it('extrait de recherche : indentation retirée, long début coupé pour garder le texte trouvé visible', () => {
+    expect(excerpt('  export const b = 2;', 2, 6)).toEqual({ pre: '', hit: 'export', post: ' const b = 2;' });
+    expect(excerpt('x'.repeat(100) + 'trouvé fin', 100, 6)).toEqual({ pre: '…' + 'x'.repeat(40), hit: 'trouvé', post: ' fin' });
   });
 });

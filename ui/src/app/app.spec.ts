@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { Router, provideRouter } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
@@ -6,6 +6,7 @@ import { SessionSummary } from './core/models';
 import { aSession, aSnapshot, provideVigieServiceMock } from './core/vigie.service.mock';
 import { CLIENT_OS, ClientOs } from './core/platform';
 import { App } from './app';
+import { AppVm } from './app.vm';
 
 const NOW = new Date('2026-11-08T15:00:00').getTime();
 
@@ -73,10 +74,66 @@ describe('App (sidebar)', () => {
     expect(navigate).toHaveBeenCalled();
   });
 
-  it('hors mac, pas de libellé ⌘N (Chrome réserve Ctrl+N)', () => {
-    expect(render([], true, 'mac').el.querySelector('kbd')!.textContent).toBe('⌘N');
+  it('hors mac, pas de libellé ⌘N (Chrome réserve Ctrl+N) ; la recherche affiche le raccourci de la plateforme', () => {
+    const keys = (el: HTMLElement) => [...el.querySelectorAll('kbd')].map((k) => k.textContent);
+    expect(keys(render([], true, 'mac').el)).toEqual(['⌘N', '⌘F']);
     TestBed.resetTestingModule();
-    expect(render([], true, 'linux').el.querySelector('kbd')).toBeNull();
+    expect(keys(render([], true, 'linux').el)).toEqual(['Ctrl+F']);
+  });
+
+  it('⌘F ou « Rechercher » dans la barre latérale : palette de recherche dans les sessions, focus dans le champ ; Échap la retire', async () => {
+    const { fixture, el } = render(SESSIONS);
+    document.body.append(el); // focus : seulement dans le document
+    const settle = async () => { fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges(); };
+    const ev = new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true });
+    document.body.dispatchEvent(ev); // écouté sur window
+    await settle();
+    expect(ev.defaultPrevented).toBe(true);
+    const dialog = el.querySelector('app-search-palette dialog')!;
+    expect(dialog.hasAttribute('open')).toBe(true);
+    expect(dialog.getAttribute('aria-label')).toBe('Rechercher dans les sessions');
+    const input = dialog.querySelector<HTMLInputElement>('[role=combobox]')!;
+    expect(document.activeElement).toBe(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await settle();
+    expect(el.querySelector('app-search-palette')).toBeNull();
+
+    [...el.querySelectorAll<HTMLButtonElement>('hlm-sidebar button')].find((b) => b.textContent!.includes('Rechercher'))!.click();
+    await settle();
+    expect(el.querySelector('app-search-palette dialog[open]')).not.toBeNull();
+    el.remove();
+  });
+
+  it('palette impossible à charger : message, Recharger, Fermer ou Échap la retirent ; une réouverture rend à nouveau le message', async () => {
+    TestBed.configureTestingModule({ deferBlockBehavior: DeferBlockBehavior.Manual });
+    const { fixture, el } = render();
+    const vm = fixture.debugElement.injector.get(AppVm);
+    const reload = vi.spyOn(vm, 'reloadPage').mockImplementation(() => undefined);
+    /** Ouvre la recherche et fait échouer le chargement de la palette. */
+    const failOpen = async () => {
+      vm.openSearch();
+      fixture.detectChanges();
+      const [block] = await fixture.getDeferBlocks();
+      await block.render(DeferBlockState.Error);
+      return el.querySelector('dialog.search-error')!;
+    };
+
+    const box = await failOpen();
+    expect(box.querySelector('[role=alert]')!.textContent).toBe("La recherche n'a pas pu se charger : l'interface a peut-être été mise à jour.");
+    const [close, reloadBtn] = [...box.querySelectorAll('button')];
+    expect([close.textContent, reloadBtn.textContent]).toEqual(['Fermer', 'Recharger']);
+    reloadBtn.click();
+    expect(reload).toHaveBeenCalledOnce();
+    close.click();
+    fixture.detectChanges();
+    expect(vm.searchOpen()).toBe(false);
+    expect(el.querySelector('dialog.search-error')).toBeNull();
+
+    expect(await failOpen()).not.toBeNull();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(vm.searchOpen()).toBe(false);
+    expect(el.querySelector('dialog.search-error')).toBeNull();
   });
 
   it('met en évidence la session ouverte, même hors des groupes du jour', async () => {
