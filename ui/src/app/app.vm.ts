@@ -8,6 +8,7 @@ import { activityMax, describeSession, rank } from './core/session-view';
 import { CLIENT_OS, isShortcut, restartCommand } from './core/platform';
 import { duration } from './core/format';
 import { VigieService, daemonError, isChat } from './core/vigie.service';
+import { APP_VERSION } from './core/version';
 
 const SPARK_H = 12;
 const GROUPS = [
@@ -36,6 +37,8 @@ export class AppVm {
   /** Raccourcis ⌘N / ⌘B affichés seulement sur mac. */
   // ponytail: raccourcis N et B absents hors mac (Chrome réserve Ctrl+N, Ctrl+B appartient au terminal) ; en ajouter (Alt+…) si demandé.
   readonly mac = this.os === 'mac';
+  /** Version de l'app, sous Réglages dans la barre latérale. */
+  readonly version = APP_VERSION;
 
   readonly connected = this.vigie.connected;
   readonly incompatible = this.vigie.incompatible;

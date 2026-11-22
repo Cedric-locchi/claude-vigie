@@ -44,6 +44,11 @@ describe('App (sidebar)', () => {
     expect(el.querySelector('.mobile-bar app-notification-center')).not.toBeNull();
   });
 
+  it('version de l\'app sous Réglages', () => {
+    const { el } = render(SESSIONS);
+    expect(el.querySelector('hlm-sidebar .app-version')?.textContent?.trim()).toMatch(/^Vigie v\d+\.\d+\.\d+/);
+  });
+
   it('déplie les terminées à la demande', () => {
     const { fixture, el } = render(SESSIONS);
     el.querySelector<HTMLButtonElement>('button[hlmSidebarGroupLabel]')!.click();

@@ -159,6 +159,7 @@ import { NotificationCenterComponent } from '../notification-center/notification
               <span>Réglages</span>
             </a>
           </li>
+          <li class="app-version expanded-only">Vigie v{{ vm.version }}</li>
         </ul>
       </div>
       <button hlmSidebarRail aria-label="Replier ou déplier la barre latérale"></button>
@@ -179,6 +180,7 @@ import { NotificationCenterComponent } from '../notification-center/notification
     .pulse { transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
     .pulse:hover { border-color: var(--line-strong); background: var(--hover); color: var(--text); }
     .pulse:active { background: var(--press); }
+    .app-version { padding: 4px 8px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
     .pulse-row { display: flex; justify-content: space-between; gap: 8px; }
     .limit { color: var(--text); font-weight: 600; }
     .session .lines { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
