@@ -50,7 +50,19 @@ export function newTrack(file) {
     pending: null, // dernier tool_use sans résultat
     lastError: null,
     plan: null, // dernier ExitPlanMode : {text, ts}
+    planDraft: null, // fichier de plan écrit par l'agent (`…/plans/*.md`) : {path, text}, pour un ExitPlanMode à input {}
   };
+}
+
+/** Suit le fichier de plan (`…/plans/<nom>.md`) : Write le remplace, Edit s'y applique si on en connaît le texte. */
+function trackPlanDraft(t, name, input) {
+  const file = input?.file_path;
+  if (typeof file !== 'string' || path.basename(path.dirname(file)) !== 'plans' || path.extname(file) !== '.md') return;
+  if (name === 'Write' && typeof input.content === 'string') t.planDraft = { path: file, text: input.content };
+  else if (name === 'Edit' && t.planDraft?.path === file && typeof input.old_string === 'string' && typeof input.new_string === 'string') {
+    const { text } = t.planDraft;
+    t.planDraft.text = input.replace_all ? text.split(input.old_string).join(input.new_string) : text.replace(input.old_string, () => input.new_string);
+  }
 }
 
 export function applyRecord(t, o) {
@@ -86,9 +98,14 @@ export function applyRecord(t, o) {
         const file = c.input?.file_path ?? c.input?.notebook_path;
         if (typeof file === 'string' && file) tool.path = file;
         if (c.name === 'AskUserQuestion') tool.question = c.input?.questions?.[0]?.question ?? '';
-        // Plan proposé : certaines lignes ExitPlanMode portent un input {} (ignorées) ; planFilePath n'est pas lu sur disque.
+        trackPlanDraft(t, c.name, c.input);
+        // Plan proposé : avant Claude Code 2.1.326, dans input.plan ; depuis, input {} et le plan est le fichier écrit juste avant
+        // (planDraft, rejoué depuis les Write / Edit du transcript : le fichier n'est pas lu sur disque).
         // ponytail: texte gardé en entier (5–8 Ko en pratique) ; plafond à poser si un plan géant apparaît.
-        if (c.name === 'ExitPlanMode' && typeof c.input?.plan === 'string' && c.input.plan.trim()) t.plan = { text: c.input.plan, ts };
+        if (c.name === 'ExitPlanMode') {
+          const text = typeof c.input?.plan === 'string' ? c.input.plan : t.planDraft?.text;
+          if (text?.trim()) t.plan = { text, ts };
+        }
         t.tools.set(c.id, tool);
         t.pending = tool;
       }

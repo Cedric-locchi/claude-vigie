@@ -165,6 +165,20 @@ test('plan : dernier ExitPlanMode non vide retenu, input {} ou plan blanc ignor�
   assert.deepEqual(trackFrom([...LINES, plan(30, 'a', { plan: '# Plan A' }), plan(40, 'd', { plan: '# Plan B' })]).plan, { text: '# Plan B', ts: T0 + 40_000 });
 });
 
+test('plan : input {} (Claude Code ≥ 2.1.326) = dernier fichier plans/*.md écrit puis édité', () => {
+  const use = (s, id, name, input) => ({ type: 'assistant', timestamp: at(s), sessionId: 'S', message: { id, content: [{ type: 'tool_use', id: `u${id}`, name, input }] } });
+  const file = path.join(path.sep, 'h', '.claude', 'plans', 'x.md');
+  const other = path.join(path.sep, 'p', 'notes.md');
+  assert.equal(trackFrom([...LINES, use(30, 'a', 'ExitPlanMode', {})]).plan, null);
+  const t = trackFrom([...LINES,
+    use(30, 'a', 'Write', { file_path: file, content: '# Plan\n- a $& b\n- a' }),
+    use(31, 'b', 'Edit', { file_path: file, old_string: '- a', new_string: '- c $&' }),
+    use(32, 'c', 'Write', { file_path: other, content: 'pas un plan' }),
+    use(33, 'd', 'ExitPlanMode', {}),
+  ]);
+  assert.deepEqual(t.plan, { text: '# Plan\n- c $& $& b\n- a', ts: T0 + 33_000 });
+});
+
 test('batchWatch : un lot 250 ms après le premier événement, noms accumulés, sans nom = scan complet', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const dir = path.join(path.sep, 'p');
