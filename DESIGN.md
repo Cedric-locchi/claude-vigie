@@ -319,7 +319,7 @@ Précis et retenus.
 - **Texte trouvé :** fond `--brand-bg` et trait bas `--brand` (vue Rechercher, palette, barre de recherche de l'éditeur ; le Journal garde un fond violet à 30 % sans trait) ; l'occurrence courante de l'éditeur est en plus cerclée de `--brand`. Jamais d'orange.
 
 ### Navigation
-- Barre latérale en panneau détaché (décision 043) : variante `floating` de spartan, marge autour sur le fond pointillé, fond `panel` (`--sidebar`), rayon 12px, `--elev-1` ; en mobile, panneau coulissant de spartan. Sessions groupées par état (attend → à toi → en cours → terminé, ce dernier repliable).
+- Barre latérale en panneau détaché (décision 043) : variante `floating` de spartan, marge autour sur le fond pointillé, fond `panel` (`--sidebar`), rayon 12px, `--elev-1` ; en mobile, panneau coulissant de spartan. Sessions groupées par état (attend → à toi → en cours → terminé, ce dernier repliable). Sous Réglages, la version de l'app (`Vigie v1.2.3`, 11px, `--faint`, lue au build dans le `package.json` racine par `core/version.ts`), masquée en mode icônes.
 - Élément actif : fond `violet-wash`, barre d'état violette à gauche, icône et titre en violet.
 - Session urgente : barre d'état orange, sous-titre orange en mono, point d'état qui pulse (coupé si « réduire les animations »).
 - Replié : chaque session devient son initiale dans un carré de 22px, avec le point d'état en coin.
