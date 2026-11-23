@@ -198,8 +198,8 @@ Le snapshot reste léger et poussé ; tout ce qui est lourd ou propre à une ses
   présent, même service arrêté) → message (« lance `vigie uninstall` ») et sortie, launchd / systemd relanceraient son daemon. Sinon, un
   daemon qui répond déjà sur le port : confirmation (« Quitter » par défaut / « Arrêter et continuer », avec le nombre de terminaux
   vivants ; sortie demandée pendant le dialogue → rien n'est arrêté), puis `POST /api/shutdown` (fetch du process principal : ni `Origin`
-  ni `Sec-Fetch-Site`, la garde d'origine passe ; 3 s) et attente de l'arrêt (5 s, aussi après un échec autre que 404) ; refus, 404
-  (daemon d'avant la route) ou daemon toujours vivant → message, `app.quit()`. Relancer l'app (`second-instance`) ou cliquer sur son icône du Dock (`activate`, macOS) rouvre la fenêtre principale si elle
+  ni `Sec-Fetch-Site`, la garde d'origine passe ; 3 s) et attente de l'arrêt (5 s, aussi après un échec autre que 404) ; refus → `app.quit()`
+  sans message ; 404 (daemon d'avant la route) ou daemon toujours vivant → message, puis `app.quit()`. Relancer l'app (`second-instance`) ou cliquer sur son icône du Dock (`activate`, macOS) rouvre la fenêtre principale si elle
   est fermée (même si un terminal détaché reste ouvert), sinon la ramène au premier plan.
 - Identifiants d'URL : `[\w-]+` ; noms de fichiers de relevé nettoyés (`[^\w-]` retiré).
 - Dépôt de l'utilisateur : seuls `git.restoreFile`, `commitAll`, `createBranch` et `git.replaceFile` le modifient. `restoreFile` (efface un non suivi,

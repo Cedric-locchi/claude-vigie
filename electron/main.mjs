@@ -116,7 +116,7 @@ async function takeOver() {
   const { response } = await dialog.showMessageBox({
     type: 'warning', buttons: ['Quitter', 'Arrêter et continuer'], defaultId: 0, cancelId: 0, title: 'Un autre daemon Vigie tourne',
     message: n === 0 ? 'Il n\'a aucun terminal en cours.' : n === 1 ? 'Il a un terminal en cours.' : `Il a ${n} terminaux en cours, claude compris.`,
-    detail: 'Il a été lancé hors de l\'app (npm start, vigie start…). L\'app le remplace par le sien.',
+    detail: 'Il a été lancé hors de l\'app (npm start, vigie start…). L\'app le remplace par le sien : ses terminaux s\'arrêtent et ses discussions sont effacées.',
   });
   // Sortie demandée pendant le dialogue (⌘Q) : on n'arrête pas l'autre daemon pour rien.
   if (response !== 1 || quitting) return false;

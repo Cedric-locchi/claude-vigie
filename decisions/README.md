@@ -40,7 +40,7 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [032](2026-11-17-032-eslint.md) | ESLint sur le code Node (daemon, contract, bin, electron) | Acceptée | 2026-11-17 |
 | [033](2026-11-17-033-eslint-ui.md) | ESLint sur l'UI Angular (angular-eslint, typescript-eslint) | Acceptée | 2026-11-17 |
 | [034](2026-11-18-034-systeme-de-plugins.md) | Système de plugins : de nouveaux onglets de session, vue déclarative rendue par l'UI, plugins locaux activés d'un clic | Acceptée (alias remplacés par 035, vue déclarative par 037) | 2026-11-18 |
-| [035](2026-11-18-035-retrait-direct-des-routes-mise-xcode.md) | Retrait direct des routes mise et Xcode, sans alias ; DerivedData sous `~/.vigie/plugins-data/xcode` | Acceptée | 2026-11-18 |
+| [035](2026-11-18-035-retrait-direct-des-routes-mise-xcode.md) | Retrait direct des routes mise et Xcode, sans alias ; DerivedData sous `~/.vigie/plugins-data/xcode` (complétée par [050](2026-11-22-050-l-app-possede-son-daemon.md) : l'app ne réutilise plus le service) | Acceptée | 2026-11-18 |
 | [036](2026-11-18-036-budget-bundle-800k.md) | Budget du chargement initial porté à 800 kB | Acceptée | 2026-11-18 |
 | [037](2026-11-18-037-front-des-plugins-en-angular.md) | Le plugin porte son front : composants Angular compilés avec l'app, prêts pour Native Federation (remplace la vue déclarative de la 034) | Acceptée | 2026-11-18 |
 | [038](2026-11-18-038-plugins-npm-et-nx.md) | Plugins npm et Nx : lecture sans process pour npm, `nx graph` sans réseau ni écriture dans le dépôt, refus si télémétrie Nx | Acceptée | 2026-11-18 |
