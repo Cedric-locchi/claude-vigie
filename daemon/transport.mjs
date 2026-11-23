@@ -32,9 +32,10 @@ const SCROLLBACK = 512 * 1024;
  * `listLocales` : sortie de `locale -a` (promesse de texte, null = indisponible) ; `settingsFile` : réglages du daemon (~/.vigie/settings.json), gardés en mémoire seulement s'il est absent ;
  * `spoolFile` : spool des hooks (~/.vigie/spool.jsonl), où POST /api/hook ajoute ce que Claude Code poste ;
  * `pluginsDir` : dossier des plugins livrés (plugins/ du dépôt, null = aucun) ; `pluginsDataDir` : leurs données (~/.vigie/plugins-data) ;
- * `commitDir` : dossier vide d'où part `claude -p` pour un message de commit (~/.vigie/commit-message, créé au premier clic).
+ * `commitDir` : dossier vide d'où part `claude -p` pour un message de commit (~/.vigie/commit-message, créé au premier clic) ;
+ * `shutdown` : appelé une fois la réponse de POST /api/shutdown envoyée (null = route absente, 404).
  */
-export function createTransport({ store, port, uiDir, home, platform, chatDir, hooksFile, settingsFile = null, spoolFile = null, dev = false, pluginsDir = null, pluginsDataDir = path.join(home, '.vigie', 'plugins-data'), commitDir = path.join(home, '.vigie', 'commit-message'), claudeStatus = () => undefined, listLocales = systemLocales }) {
+export function createTransport({ store, port, uiDir, home, platform, chatDir, hooksFile, settingsFile = null, spoolFile = null, dev = false, pluginsDir = null, pluginsDataDir = path.join(home, '.vigie', 'plugins-data'), commitDir = path.join(home, '.vigie', 'commit-message'), claudeStatus = () => undefined, listLocales = systemLocales, shutdown = null }) {
   const ORIGINS = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...(dev ? ['http://localhost:4200'] : [])]);
   const originOk = (req) => !req.headers.origin || ORIGINS.has(req.headers.origin);
   // Un GET same-origin du navigateur n'envoie pas `Origin`, mais `Sec-Fetch-Site: same-origin` (`none` : URL tapée) ; une page
@@ -325,8 +326,15 @@ export function createTransport({ store, port, uiDir, home, platform, chatDir, h
       try { return json(res, 201, publicTerm(startSession(b))); } catch (e) { return json(res, 400, { error: e.message }); }
     }
     // Routes sans paramètre : corps `{}` seulement (rien de l'UI n'est ignoré sans avoir été décrit).
-    const empty = /^\/api\/(chat(\/[\w-]+\/delete)?|sessions\/[\w-]+\/(delete|git\/commit-message)|terminals\/[\w-]+\/close)$/.test(url.pathname);
+    const empty = /^\/api\/(shutdown|chat(\/[\w-]+\/delete)?|sessions\/[\w-]+\/(delete|git\/commit-message)|terminals\/[\w-]+\/close)$/.test(url.pathname);
     if (empty && !valid(EmptyBody, body, res)) return;
+    // Arrêt demandé par l'app (décision 050) : l'app possède son daemon et remplace celui lancé hors d'elle. Après la garde
+    // d'origine et le content-type JSON (préflight) : une page étrangère ne peut pas l'atteindre. Arrêt une fois la réponse
+    // envoyée (`finish`) ; c'est `server.mjs` qui sait comment s'arrêter (SIGTERM → killAll), le transport ne touche pas au process.
+    if (url.pathname === '/api/shutdown' && shutdown) {
+      res.on('finish', shutdown);
+      return json(res, 200, { ok: true });
+    }
     if (url.pathname === '/api/chat') {
       // Commande fixée ici, pas par l'UI : une discussion reste toujours en mode plan.
       return json(res, 201, publicTerm(startSession({ cwd: chatDir, command: 'claude --permission-mode plan' })));

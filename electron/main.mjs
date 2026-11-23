@@ -1,5 +1,6 @@
-// App Electron : ouvre la fenêtre tout de suite, réutilise le daemon s'il tourne déjà (`vigie install`, `vigie start`, `npm start`),
-// sinon le lance dans un utilityProcess (process Node séparé : le process principal reste libre pour la fenêtre).
+// App Electron : ouvre la fenêtre tout de suite et lance toujours son propre daemon dans un utilityProcess (process Node séparé :
+// le process principal reste libre pour la fenêtre). Un daemon lancé hors de l'app (`vigie start`, `npm start`) est arrêté après
+// confirmation (POST /api/shutdown) ; avec le service installé (`vigie install`), l'app refuse de démarrer (décision 050).
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, utilityProcess } from 'electron';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
@@ -7,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expandHome } from '../daemon/paths.mjs';
-import { isWsl, LOGIN_SHELL_ENV_ARGS, openUrlCommands, parseLoginShellEnv, quitsWithLastWindow } from '../daemon/platform.mjs';
+import { isWsl, LOGIN_SHELL_ENV_ARGS, openUrlCommands, parseLoginShellEnv, quitsWithLastWindow, serviceFiles } from '../daemon/platform.mjs';
 
 const PORT = Number(process.env.VIGIE_PORT ?? 4317);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -94,10 +95,53 @@ ipcMain.handle('vigie:pick-folder', async (e, from) => {
   return IOS_CONTAINER.test(picked) || !isDir ? path.dirname(picked) : picked;
 });
 
+/** Terminaux vivants du daemon sur le port (claude compris) ; daemon injoignable ou réponse illisible : 0. */
+async function liveTerminals() {
+  const terms = await fetch(`${ORIGIN}/api/snapshot`, { signal: AbortSignal.timeout(1500) }).then((r) => r.json()).then((j) => j.terminals, () => []);
+  return Array.isArray(terms) ? terms.filter((t) => t && t.exited === false).length : 0;
+}
+
+/** Message bloquant à un bouton (« Quitter ») ; renvoie false, pour `return stop(…)`. */
+async function stop(message, detail) {
+  await dialog.showMessageBox({ type: 'info', buttons: ['Quitter'], defaultId: 0, title: 'Vigie', message, detail });
+  return false;
+}
+
+/**
+ * Un daemon tourne déjà sur le port : l'app possède le sien (décision 050), elle arrête l'autre après confirmation.
+ * Renvoie vrai si le port est libéré (le cas du service installé est traité avant, dans startDaemon).
+ */
+async function takeOver() {
+  const n = await liveTerminals();
+  const { response } = await dialog.showMessageBox({
+    type: 'warning', buttons: ['Quitter', 'Arrêter et continuer'], defaultId: 0, cancelId: 0, title: 'Un autre daemon Vigie tourne',
+    message: n === 0 ? 'Il n\'a aucun terminal en cours.' : n === 1 ? 'Il a un terminal en cours.' : `Il a ${n} terminaux en cours, claude compris.`,
+    detail: 'Il a été lancé hors de l\'app (npm start, vigie start…). L\'app le remplace par le sien.',
+  });
+  // Sortie demandée pendant le dialogue (⌘Q) : on n'arrête pas l'autre daemon pour rien.
+  if (response !== 1 || quitting) return false;
+  // Pas d'en-tête Origin ni Sec-Fetch-Site depuis le process principal (fetch de Node) : la garde d'origine du daemon laisse passer.
+  const status = await fetch(`${ORIGIN}/api/shutdown`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(3000) })
+    .then((r) => r.status, () => 0);
+  if (status === 404) return stop('Ce daemon est d\'une version plus ancienne et ne sait pas s\'arrêter à la demande.', 'Arrête-le (Ctrl-C dans son terminal), puis rouvre l\'app.');
+  // Autre échec (délai, connexion coupée…) : on regarde seulement s'il s'arrête, comme après un 200.
+  for (let i = 0; i < 20; i++) {
+    if (!(await alive())) return true;
+    await sleep(250);
+  }
+  return stop('L\'autre daemon Vigie ne s\'est pas arrêté.', 'Arrête-le (Ctrl-C dans son terminal), puis rouvre l\'app.');
+}
+
+/** true : daemon prêt ; false : il ne répond pas ; 'quit' : un autre daemon garde le port (refus ou échec de takeOver). */
 async function startDaemon() {
-  if (await alive()) return true;
+  // Service installé (même arrêté) : launchd / systemd relanceraient son daemon et reprendraient le port ; on refuse toujours.
+  if (serviceFiles({ home: os.homedir(), env: process.env }).some((f) => fs.existsSync(f))) {
+    await stop('Le service Vigie (vigie install) est installé : il redémarrerait son daemon.', 'Lance `vigie uninstall`, puis rouvre l\'app.');
+    return 'quit';
+  }
+  if ((await alive()) && !(await takeOver())) return 'quit';
   await pathReady; // les terminaux du daemon doivent trouver `claude`
-  // ponytail: le daemon embarqué meurt avec l'app (et ses PTY) ; on prévient avant de quitter (confirmQuit). Pour qu'ils survivent, `vigie install` (launchd / systemd --user).
+  // ponytail: le daemon embarqué meurt avec l'app (et ses PTY) ; on prévient avant de quitter (confirmQuit). Pour qu'ils survivent, Vigie dans le navigateur avec `vigie install` (launchd / systemd --user).
   daemon = utilityProcess.fork(DAEMON, [], {
     serviceName: 'Vigie daemon',
     stdio: 'inherit',
@@ -119,13 +163,12 @@ async function startDaemon() {
 // Quitter tue le daemon embarqué et donc ses terminaux (claude, scripts, builds) : on demande confirmation s'il en reste de vivants.
 // Daemon injoignable ou réponse illisible : on ne bloque pas la sortie.
 async function confirmQuit() {
-  const terms = await fetch(`${ORIGIN}/api/snapshot`, { signal: AbortSignal.timeout(1500) }).then((r) => r.json()).then((j) => j.terminals, () => []);
-  const n = Array.isArray(terms) ? terms.filter((t) => t && t.exited === false).length : 0;
+  const n = await liveTerminals();
   if (!n) return true;
   const { response } = await dialog.showMessageBox({
     type: 'warning', buttons: ['Annuler', 'Quitter'], defaultId: 0, cancelId: 0, title: 'Quitter Vigie ?',
     message: n === 1 ? 'Un terminal est encore en cours.' : `${n} terminaux sont encore en cours.`,
-    detail: 'Quitter Vigie les arrête, claude compris. Pour qu\'ils survivent à l\'app, installe le service avec `vigie install`.',
+    detail: 'Quitter Vigie les arrête, claude compris. Pour qu\'ils survivent à l\'app, utilise Vigie dans le navigateur avec le service : vigie install.',
   });
   return response === 1;
 }
@@ -171,7 +214,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => { if (quitsWithLastWindow({ platform: process.platform })) app.quit(); });
   let asking = false;
   app.on('before-quit', (e) => {
-    // Pas de daemon à nous (celui d'un service) : rien ne meurt avec l'app, pas de question.
+    // Pas de daemon (pas encore lancé, planté, ou sortie après le refus de takeOver) : rien ne meurt avec l'app, pas de question.
     if (!daemon || confirmed) return;
     e.preventDefault();
     if (asking) return;
@@ -190,8 +233,10 @@ if (!app.requestSingleInstanceLock()) {
   // Pas de top-level await : avec une entrée ESM, Electron n'émet `ready` qu'une fois le module évalué → deadlock.
   app.whenReady().then(async () => {
     open(); // fenêtre tout de suite, sur la page d'attente
-    ready = await startDaemon();
+    const started = await startDaemon();
+    if (started === 'quit') return app.quit();
+    ready = started;
     if (ready) win?.loadURL(ORIGIN);
-    else win?.loadURL(splash(`Le daemon Vigie ne répond pas sur le port ${PORT}. Regarde la sortie de l'app, ou ~/.vigie/daemon.log s'il tourne en service (vigie install).`));
+    else win?.loadURL(splash(`Le daemon Vigie ne répond pas sur le port ${PORT} (port pris par un autre programme ?). Regarde la sortie de l'app.`));
   });
 }

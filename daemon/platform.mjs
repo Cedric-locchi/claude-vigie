@@ -70,6 +70,14 @@ export const hasSystemd = ({ platform, exists, userBus }) => platform === 'linux
 /** Agent launchd de l'utilisateur (macOS). */
 export const launchAgentFile = ({ home, label }) => path.join(home, 'Library', 'LaunchAgents', `${label}.plist`);
 
+/** Label du service (launchd) : `vigie install`, `vigie uninstall`. */
+export const SERVICE_LABEL = 'dev.vigie.daemon';
+/**
+ * Fichiers que `vigie install` peut avoir posés (agent launchd, unité systemd), sans branche par OS : l'appelant teste leur
+ * présence. L'app refuse de démarrer tant que l'un existe (décision 050) : le service relancerait le daemon qu'elle arrête.
+ */
+export const serviceFiles = ({ home, env = {} }) => [launchAgentFile({ home, label: SERVICE_LABEL }), path.join(systemdUserDir({ env, home }), 'vigie.service')];
+
 /** Explication de `vigie install` sans gestionnaire de services : les instructions de WSL seulement sous WSL. */
 export function noServiceHelp({ platform, wsl }) {
   const profile = `Démarrer le daemon à l'ouverture d'un shell : ajouter à ~/.profile
@@ -148,7 +156,8 @@ const execQuote = (s) => unitQuote(s).replace(/\$/g, '$$$$');
 
 /** Unité systemd --user : équivalent du plist (démarrage à la connexion, relance si le daemon tombe, `configDir` compris). */
 // StartLimitIntervalSec=0 : si le port est déjà pris (daemon lancé par `vigie start` ou l'app), on réessaie indéfiniment
-// comme launchd, au lieu de passer en failed pour toujours après 5 échecs en 10 s.
+// comme launchd, au lieu de passer en failed pour toujours après 5 échecs en 10 s. (L'app, elle, refuse de démarrer tant que
+// le service est installé : `serviceFiles`, décision 050.)
 export function systemdUnit({ node, server, path: PATH, shell, log, configDir = null }) {
   return `[Unit]
 Description=Vigie, daemon de monitoring des sessions Claude Code

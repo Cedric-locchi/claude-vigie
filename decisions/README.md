@@ -55,6 +55,7 @@ Une décision technique ou produit par fichier, nommé `AAAA-MM-JJ-NNN-titre.md`
 | [047](2026-11-19-047-agent-doc-auditor.md) | Agent `doc-auditor` en lecture seule : la doc vérifiée contre le code en fin de toute session qui modifie le code (complète la 002 et la 045) | Acceptée | 2026-11-19 |
 | [048](2026-11-19-048-multilangue-transloco.md) | Multilangue de l'UI : Transloco, français (source) et anglais, langue choisie dans Réglages ; traduction page par page, Réglages d'abord | Acceptée | 2026-11-19 |
 | [049](2026-11-20-049-recherche-dans-les-sessions.md) | Recherche : ⌘F dans le fichier ouvert (barre, surlignage), ailleurs palette qui cherche dans toutes les sessions du snapshot (`GET /api/search`, cache du journal porté à 200 pistes ; lève la limite « pas de recherche intégrée » de la 027) | Acceptée | 2026-11-20 |
+| [050](2026-11-22-050-l-app-possede-son-daemon.md) | L'app possède son daemon : elle remplace un daemon déjà lancé, ne réutilise plus le service | Acceptée | 2026-11-22 |
 
 ## En attente de ton choix
 

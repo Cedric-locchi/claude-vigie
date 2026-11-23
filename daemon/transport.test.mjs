@@ -17,7 +17,7 @@ const HOST = `127.0.0.1:${PORT}`;
 
 const LOCALES = 'C\nPOSIX\nen_US.UTF-8\nfr_FR.UTF-8\n'; // `locale -a` simulé : les tests ne dépendent pas de la machine
 
-function fixture({ claudeStatus, pluginsDir, settingsFile, dev } = {}) {
+function fixture({ claudeStatus, pluginsDir, settingsFile, dev, shutdown } = {}) {
   const tmp = tempDir('vigie-transport-');
   const home = path.join(tmp, 'home');
   const chatDir = path.join(home, '.vigie', 'chat');
@@ -36,21 +36,24 @@ function fixture({ claudeStatus, pluginsDir, settingsFile, dev } = {}) {
   fs.writeFileSync(path.join(dir, 'W.jsonl'), rec('W', path.join(proj, '.claude', 'worktrees', 'x')));
   const store = createStore({ projectsDir: path.join(tmp, 'projects'), hiddenFile: path.join(tmp, 'hidden.json'), chatDir, limitsDir: path.join(tmp, 'limits') });
   store.scan();
-  const { server } = createTransport({ store, port: PORT, uiDir, home, chatDir, hooksFile: path.join(tmp, 'hooks.json'), claudeStatus, pluginsDir, pluginsDataDir: path.join(tmp, 'plugins-data'), settingsFile, dev, listLocales: async () => LOCALES });
+  const { server } = createTransport({ store, port: PORT, uiDir, home, chatDir, hooksFile: path.join(tmp, 'hooks.json'), claudeStatus, pluginsDir, pluginsDataDir: path.join(tmp, 'plugins-data'), settingsFile, dev, shutdown, listLocales: async () => LOCALES });
   return { server, dir, store, proj, tmp };
 }
 
 /** Envoie une requête simulée ; résout { status, body } quand la réponse est terminée. */
 /** `abortAfter` (ms) : la connexion se ferme avant la réponse (`close` sans `writableFinished`), comme un onglet fermé. */
+let ended = 0; // réponses terminées (end), vu par l'espion de /api/shutdown
 function request(server, method, url, { headers = {}, body, abortAfter } = {}) {
   const req = Object.assign(Readable.from(body ? [body] : []), { method, url, headers: { host: HOST, ...headers } });
   return new Promise((resolve) => {
     const closers = [];
+    const finishers = [];
     const res = {
       statusCode: 0, headersSent: false, writableFinished: false, headers: {},
       writeHead(code, headers = {}) { this.statusCode = code; this.headersSent = true; this.headers = headers; },
-      end(data = '') { this.writableFinished = true; resolve({ status: this.statusCode, body: String(data), headers: this.headers }); },
-      on(ev, fn) { if (ev === 'close') closers.push(fn); return this; }, // res.on('close') : recherche et méthodes de plugin s'annulent
+      // `finish` après la réponse, comme http : /api/shutdown s'arrête une fois la réponse envoyée.
+      end(data = '') { this.writableFinished = true; ended++; resolve({ status: this.statusCode, body: String(data), headers: this.headers }); for (const fn of finishers) fn(); },
+      on(ev, fn) { if (ev === 'close') closers.push(fn); if (ev === 'finish') finishers.push(fn); return this; }, // res.on('close') : recherche et méthodes de plugin s'annulent
     };
     if (abortAfter !== undefined) setTimeout(() => { for (const fn of closers) fn(); }, abortAfter);
     server.emit('request', req, res);
@@ -100,6 +103,28 @@ test('GET /api/* : Sec-Fetch-Site étranger refusé même sans Origin (<img>, fe
   assert.equal((await post(server, '/api/sessions/S/delete', { 'sec-fetch-site': 'cross-site' })).status, 403);
   const missing = await request(server, 'GET', '/api/sessions/inconnue');
   assert.deepStrictEqual([missing.status, ErrorBody.parse(JSON.parse(missing.body))], [404, { error: 'session inconnue' }]);
+});
+
+test('POST /api/shutdown : origine refusée, JSON exigé, {} seul ; arrêt après la réponse ; sans option 404', async () => {
+  const { ErrorBody } = await import('../contract/index.mjs');
+  const seen = []; // valeur de `ended` à chaque appel de l'espion
+  const { server } = fixture({ shutdown: () => seen.push(ended) });
+  const send = (body, headers = {}) => request(server, 'POST', '/api/shutdown', { headers: { 'content-type': 'application/json', ...headers }, body });
+  for (const headers of [{ origin: 'http://evil.com' }, { 'sec-fetch-site': 'cross-site' }, { 'sec-fetch-site': 'same-site' }]) {
+    const r = await send('{}', headers);
+    assert.deepStrictEqual([r.status, ErrorBody.parse(JSON.parse(r.body))], [403, { error: 'origine refusée' }], JSON.stringify(headers));
+  }
+  assert.equal((await send('{}', { 'content-type': 'text/plain' })).status, 415);
+  const bad = await send('{"x":1}');
+  assert.deepEqual([bad.status, JSON.parse(bad.body)], [400, { error: 'Corps de requête invalide' }]);
+  assert.deepEqual(seen, []);
+  // Process principal d'Electron : ni Origin ni Sec-Fetch-Site. Arrêt une fois la réponse terminée, pas avant.
+  const before = ended;
+  const ok = await send('{}');
+  assert.deepEqual([ok.status, JSON.parse(ok.body)], [200, { ok: true }]);
+  assert.deepEqual(seen, [before + 1]);
+  const none = fixture().server;
+  assert.equal((await request(none, 'POST', '/api/shutdown', { headers: { 'content-type': 'application/json' }, body: '{}' })).status, 404);
 });
 
 test('statiques : CSP de la décision 044 sur les fichiers de l’UI, pas sur l’API', async () => {

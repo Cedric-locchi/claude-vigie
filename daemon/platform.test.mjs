@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { localeInstalled, defaultLocale, findOnPath, hasSystemd, isWsl, launchAgentFile, LOGIN_SHELL_ENV_ARGS, nodeVersionOk, launchdPlist, localeEnv, managedSettingsFile, noServiceHelp, openUrlCommands, parseLoginShellEnv, quitsWithLastWindow, startupMethod, systemdUnit, systemdUserDir } from './platform.mjs';
+import { localeInstalled, defaultLocale, findOnPath, hasSystemd, isWsl, launchAgentFile, LOGIN_SHELL_ENV_ARGS, nodeVersionOk, launchdPlist, localeEnv, managedSettingsFile, noServiceHelp, openUrlCommands, parseLoginShellEnv, quitsWithLastWindow, SERVICE_LABEL, serviceFiles, startupMethod, systemdUnit, systemdUserDir } from './platform.mjs';
 
 test('isWsl : noyau Microsoft ou WSL_DISTRO_NAME, sous Linux seulement', () => {
   assert.equal(isWsl({ platform: 'darwin', release: '25.0.0' }), false);
@@ -33,6 +33,19 @@ test('startupMethod : launchd, systemd, ou rien', () => {
 test('systemdUserDir : XDG_CONFIG_HOME, sinon ~/.config', () => {
   assert.equal(systemdUserDir({ env: {}, home: '/home/a' }), '/home/a/.config/systemd/user');
   assert.equal(systemdUserDir({ env: { XDG_CONFIG_HOME: '/x' }, home: '/home/a' }), '/x/systemd/user');
+});
+
+test('serviceFiles : agent launchd du label du service et unité systemd (XDG_CONFIG_HOME, sinon ~/.config)', () => {
+  const home = path.join(path.sep, 'home', 'a');
+  const xdg = path.join(path.sep, 'x');
+  assert.deepEqual(serviceFiles({ home, env: {} }), [
+    path.join(home, 'Library', 'LaunchAgents', 'dev.vigie.daemon.plist'),
+    path.join(home, '.config', 'systemd', 'user', 'vigie.service'),
+  ]);
+  assert.equal(serviceFiles({ home, env: { XDG_CONFIG_HOME: xdg } })[1], path.join(xdg, 'systemd', 'user', 'vigie.service'));
+  // Le plist posé par `vigie install` porte ce label : le fichier testé par l'app est bien celui du service.
+  assert.equal(path.basename(serviceFiles({ home })[0]), `${SERVICE_LABEL}.plist`);
+  assert.ok(launchdPlist({ ...base, label: SERVICE_LABEL }).includes(`<key>Label</key><string>${SERVICE_LABEL}</string>`));
 });
 
 const base = { label: 'dev.vigie.daemon', node: '/usr/local/bin/node', server: '/opt/vigie/daemon/server.mjs', path: '/usr/bin:/bin', shell: '/bin/zsh', log: '/Users/a/.vigie/daemon.log' };
