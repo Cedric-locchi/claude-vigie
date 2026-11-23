@@ -25,7 +25,7 @@ npm run build   # construit l'UI Angular (ui/dist), servie par le daemon
 
 ```bash
 npm start                     # daemon au premier plan → http://127.0.0.1:4317
-npm run app                   # app Electron (réutilise le daemon s'il tourne, sinon l'embarque)
+npm run app                   # app Electron (lance son propre daemon ; arrête celui de npm start après confirmation, décision 050)
 ```
 
 CLI (`bin/vigie.mjs`) :
@@ -69,7 +69,7 @@ npm run dist:linux    # Linux → paquet .deb (à lancer SUR Linux : node-pty s'
 
 - Le paquet `.deb` installe l'app sous le nom `vigie-app` (la commande `vigie` reste la CLI `bin/vigie.mjs`).
 - `vigie install` utilise systemd utilisateur. Pour que le daemon tourne sans session ouverte : `loginctl enable-linger`.
-- **Fermer la fenêtre de l'app quitte l'app** : si le daemon y est embarqué, ses sessions s'arrêtent. Installe le service (`vigie install`) pour qu'elles survivent.
+- **Fermer la fenêtre de l'app quitte l'app** : son daemon et ses sessions s'arrêtent. Pour qu'elles survivent, utilise Vigie dans le navigateur avec le service (`vigie install`).
 - **WSL** : Vigie et Claude Code tournent dans la distribution ; ouvre l'UI depuis un navigateur Windows sur `http://localhost:4317`, ou l'app Linux sous WSLg. Sans systemd (`[boot] systemd=true` dans `/etc/wsl.conf`), `vigie install` explique le repli (`vigie start` dans `~/.profile`). Les sessions de Claude Code lancées côté Windows ne sont pas visibles (leurs transcripts sont sous `C:\Users\…\.claude`).
 
 ## Comment ça marche
@@ -87,7 +87,7 @@ npm run dist:linux    # Linux → paquet .deb (à lancer SUR Linux : node-pty s'
 
 - Sessions lancées hors Vigie : suivies par leur transcript seulement (pas d'état temps réel, pas de réponses rapides).
 - Fenêtre de 5 h : chiffres réels de Claude Code tant qu'une session Vigie tourne, sinon estimation (100 % = plus grosse fenêtre des 14 derniers jours).
-- App Electron : réutilise le daemon s'il tourne déjà (service), sinon l'embarque — il meurt alors avec l'app, PTY compris.
+- App Electron : lance toujours son daemon, qui meurt avec l'app, PTY compris (décision 050). Un daemon déjà lancé (`npm start`, `vigie start`) est arrêté après confirmation ; avec le service installé, l'app demande `vigie uninstall` ; un daemon 1.6.0 ou plus ancien est à arrêter à la main.
 - Statut de Claude derrière un proxy : seul un daemon lancé depuis un shell qui déclare `HTTPS_PROXY` passe par le proxy ; lancé par launchd, systemd ou le Finder, le statut reste « inconnu ».
 - Coûts : tarifs relevés à la main (`daemon/pricing.mjs`, sources non officielles) ; un changement de prix fausse les coûts jusqu'à sa correction.
 - Historique : un transcript effacé pendant que le daemon est arrêté, ou après un arrêt brutal, perd la consommation qui suit le dernier enregistrement (10 min au plus).

@@ -78,7 +78,9 @@ function writeHooks() {
 // que lire (seule exception : un usage.json illisible est mis de côté, ce que le premier daemon a déjà fait au sien).
 const store = createStore({ projectsDir: PROJECTS, hiddenFile: path.join(VIGIE_DIR, 'hidden.json'), chatDir: CHAT_DIR, limitsDir: path.join(VIGIE_DIR, 'limits'), historyFile: path.join(VIGIE_DIR, 'usage.json') });
 let claudeStatus; // absent du snapshot jusqu'au premier relevé
-const { server, changed } = createTransport({ store, port: PORT, uiDir: UI_DIR, home: HOME, platform: process.platform, chatDir: CHAT_DIR, hooksFile: HOOKS_FILE, settingsFile: path.join(VIGIE_DIR, 'settings.json'), pluginsDir: path.join(ROOT, 'plugins'), pluginsDataDir: path.join(VIGIE_DIR, 'plugins-data'), commitDir: path.join(VIGIE_DIR, 'commit-message'), spoolFile: SPOOL, dev: DEV, claudeStatus: () => claudeStatus });
+const { server, changed } = createTransport({ store, port: PORT, uiDir: UI_DIR, home: HOME, platform: process.platform, chatDir: CHAT_DIR, hooksFile: HOOKS_FILE, settingsFile: path.join(VIGIE_DIR, 'settings.json'), pluginsDir: path.join(ROOT, 'plugins'), pluginsDataDir: path.join(VIGIE_DIR, 'plugins-data'), commitDir: path.join(VIGIE_DIR, 'commit-message'), spoolFile: SPOOL, dev: DEV, claudeStatus: () => claudeStatus,
+  // POST /api/shutdown (décision 050) : même chemin qu'un SIGTERM (stopChildren, puis sortie).
+  shutdown: () => process.kill(process.pid, 'SIGTERM') });
 
 /** Callback de timer ou de watcher : une exception y tuerait le daemon et tous ses PTY ; on la journalise et on continue. */
 const guarded = (label, fn) => (...args) => { try { fn(...args); } catch (e) { console.error(`[vigie] ${label} :`, e); } };

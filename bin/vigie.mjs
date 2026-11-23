@@ -12,13 +12,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Snapshot } from '../contract/index.mjs';
 import { claudeConfigDir } from '../daemon/paths.mjs';
-import { hasSystemd, isWsl, launchAgentFile, launchdPlist, noServiceHelp, openUrlCommands, startupMethod, systemdUnit, systemdUserDir } from '../daemon/platform.mjs';
+import { hasSystemd, isWsl, launchdPlist, noServiceHelp, openUrlCommands, SERVICE_LABEL as LABEL, serviceFiles, startupMethod, systemdUnit } from '../daemon/platform.mjs';
 
 const PORT = Number(process.env.VIGIE_PORT ?? 4317);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const SERVER = path.join(ROOT, 'daemon', 'server.mjs');
-const LABEL = 'dev.vigie.daemon';
 const LOG = path.join(os.homedir(), '.vigie', 'daemon.log');
 
 const snapshot = () => fetch(`${ORIGIN}/api/snapshot`, { signal: AbortSignal.timeout(1500) }).then((r) => r.json());
@@ -77,8 +76,7 @@ const tryRun = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore' 
 // Chemins et tests propres à l'OS dans platform.mjs ; ici, seulement les effets (existsSync, systemctl).
 const systemd = () => hasSystemd({ platform: process.platform, exists: fs.existsSync, userBus: () => tryRun('systemctl', ['--user', 'show-environment']) });
 const method = () => startupMethod({ platform: process.platform, hasSystemd: systemd() });
-const PLIST = launchAgentFile({ home: os.homedir(), label: LABEL });
-const UNIT = path.join(systemdUserDir({ env: process.env, home: os.homedir() }), 'vigie.service');
+const [PLIST, UNIT] = serviceFiles({ home: os.homedir(), env: process.env });
 
 function install() {
   // PATH, SHELL et CLAUDE_CONFIG_DIR (s'il est défini, résolu comme le daemon le résout) du moment de l'installation : lancé par
